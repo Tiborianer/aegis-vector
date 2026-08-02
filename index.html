@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050b19" />
-    <meta name="description" content="Aegis Vector — a futuristic browser arcade shooter." />
+    <meta name="description" content="Aegis Vector — a futuristic browser arcade campaign." />
     <title>Aegis Vector</title>
   </head>
   <body>
@@ -27,34 +27,38 @@
           </div>
 
           <div class="hud-cluster hud-score glass-panel">
-            <div class="score-label">SCORE</div>
-            <div id="score-value" class="score-value">000000</div>
+            <div class="score-line"><span>SCORE</span><b id="score-value">000000</b></div>
+            <div class="credit-line"><span>AEGIS CREDITS</span><b id="credit-value">0</b></div>
             <div class="score-meta"><span id="multiplier">×1</span><span id="high-score">BEST 000000</span></div>
           </div>
 
-          <div class="mission-track" aria-label="Stage progress">
-            <span>SECTOR 01</span>
+          <div class="mission-track" aria-label="Mission progress">
+            <span id="mission-label">SECTOR 01</span>
             <div class="track"><i id="stage-progress"></i></div>
-            <span id="stage-time">06:00</span>
+            <span id="stage-time">03:15</span>
           </div>
 
           <div id="boss-hud" class="boss-hud hidden">
-            <div class="boss-label"><span>DREADNOUGHT</span><span id="boss-percent">100%</span></div>
+            <div class="boss-label"><span id="boss-name">DREADNOUGHT</span><span id="boss-percent">100%</span></div>
             <div class="boss-track"><i id="boss-progress"></i></div>
           </div>
 
           <div id="weapon-rack" class="weapon-rack glass-panel" aria-label="Weapon levels"></div>
+          <div class="ability-rack glass-panel">
+            <button id="emp-button" class="emp-button" aria-label="Activate EMP"><kbd>X</kbd><span>EMP</span><b id="emp-count">1 / 2</b></button>
+            <div id="effect-readout" class="effect-readout"></div>
+          </div>
           <button id="pause-button" class="icon-button" aria-label="Pause game">Ⅱ</button>
           <div id="announcement" class="announcement" aria-live="polite"></div>
         </section>
 
         <section id="start-screen" class="overlay active" aria-labelledby="game-title">
-          <div class="menu-card">
-            <div class="eyebrow">NIGHT OCEAN DEFENCE // 01</div>
+          <div class="menu-card start-card">
+            <div class="eyebrow">PELAGOS CAMPAIGN // AV-7 FLIGHT CONTROL</div>
             <h1 id="game-title"><span>AEGIS</span><strong>VECTOR</strong></h1>
-            <p class="tagline">Hold the line. Break the sky.</p>
+            <p class="tagline">Three vectors. One last line.</p>
             <div class="fighter-mark" aria-hidden="true"><i></i><b></b><i></i></div>
-            <p class="briefing">Enemy squadrons are converging on the Pelagos Array. Launch the AV-7 and intercept the aerial fortress.</p>
+            <p class="briefing">Fight three short missions, salvage Aegis Credits, and shape a new combat build before the final Dreadnought assault.</p>
 
             <div class="difficulty" role="group" aria-label="Difficulty">
               <button data-difficulty="cadet">CADET<small>Relaxed</small></button>
@@ -62,8 +66,55 @@
               <button data-difficulty="ace">ACE<small>Intense</small></button>
             </div>
 
-            <button id="launch-button" class="primary-button">LAUNCH MISSION <span>→</span></button>
-            <div class="controls"><span><kbd>WASD</kbd> / <kbd>ARROWS</kbd> Move</span><span><kbd>SPACE</kbd> / <kbd>Z</kbd> Fire</span><span><kbd>ESC</kbd> Pause</span></div>
+            <button id="launch-button" class="primary-button">START NEW CAMPAIGN <span>→</span></button>
+            <button id="continue-button" class="secondary-button hidden">RESUME SAVED CAMPAIGN</button>
+            <div class="controls">
+              <span><kbd>WASD</kbd> / <kbd>ARROWS</kbd> Move</span>
+              <span><kbd>SPACE</kbd> / <kbd>Z</kbd> Fire</span>
+              <span><kbd>X</kbd> EMP</span>
+              <span><kbd>ESC</kbd> Pause</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="hangar-screen" class="overlay hidden" aria-labelledby="hangar-title">
+          <div class="hangar-card">
+            <header class="hangar-header">
+              <div>
+                <div id="hangar-kicker" class="eyebrow">AEGIS HANGAR // MISSION REPORT</div>
+                <h2 id="hangar-title">REARM &amp; REDEPLOY</h2>
+              </div>
+              <div class="hangar-wallet"><small>AVAILABLE</small><strong><span id="hangar-credits">0</span> C</strong></div>
+            </header>
+
+            <aside class="hangar-sidebar">
+              <section id="mission-report" class="hangar-panel">
+                <div class="panel-title">LAST SORTIE</div>
+                <div class="report-grid">
+                  <div><small>SCORE</small><strong id="report-score">—</strong></div>
+                  <div><small>HOSTILES</small><strong id="report-kills">—</strong></div>
+                  <div><small>CREDITS</small><strong id="report-credits">—</strong></div>
+                  <div><small>ACCURACY</small><strong id="report-accuracy">—</strong></div>
+                  <div><small>DAMAGE</small><strong id="report-damage">—</strong></div>
+                </div>
+              </section>
+
+              <section class="hangar-panel next-vector">
+                <div class="panel-title">NEXT VECTOR</div>
+                <h3 id="next-mission-title">COASTAL INTERCEPT</h3>
+                <p id="next-mission-briefing"></p>
+                <div id="next-threats" class="threat-list"></div>
+              </section>
+
+              <button id="hangar-launch-button" class="primary-button">LAUNCH NEXT MISSION <span>→</span></button>
+              <button id="respec-button" class="secondary-button">FREE RESPEC AVAILABLE</button>
+              <button id="hangar-abandon-button" class="text-button">ABANDON CAMPAIGN</button>
+            </aside>
+
+            <section class="upgrade-bay" aria-label="Campaign upgrade tree">
+              <div class="tree-legend"><span>CAMPAIGN UPGRADE TREE</span><small>Choose one node per tier. Sibling choices lock for this campaign.</small></div>
+              <div id="upgrade-tree" class="upgrade-tree"></div>
+            </section>
           </div>
         </section>
 
@@ -72,23 +123,30 @@
             <div class="eyebrow">FLIGHT SUSPENDED</div>
             <h2 id="pause-title">PAUSED</h2>
             <button id="resume-button" class="primary-button">RESUME <span>→</span></button>
-            <button id="restart-button" class="secondary-button">RESTART MISSION</button>
+            <button id="restart-button" class="secondary-button">RETRY FROM CHECKPOINT</button>
+            <button id="pause-abandon-button" class="text-button">ABANDON CAMPAIGN</button>
           </div>
         </section>
 
         <section id="result-screen" class="overlay hidden" aria-labelledby="result-title">
           <div class="menu-card compact">
-            <div id="result-kicker" class="eyebrow">MISSION REPORT</div>
-            <h2 id="result-title">SECTOR SECURED</h2>
+            <div id="result-kicker" class="eyebrow">MISSION FAILED // CHECKPOINT RESTORED</div>
+            <h2 id="result-title">FIGHTER DOWN</h2>
             <div class="result-grid">
-              <div><small>FINAL SCORE</small><strong id="result-score">000000</strong></div>
+              <div><small id="result-score-label">ATTEMPT SCORE</small><strong id="result-score">000000</strong></div>
               <div><small>HOSTILES</small><strong id="result-kills">0</strong></div>
             </div>
-            <button id="replay-button" class="primary-button">FLY AGAIN <span>→</span></button>
+            <button id="result-action-button" class="primary-button">RETRY MISSION <span>→</span></button>
+            <button id="result-abandon-button" class="secondary-button">ABANDON CAMPAIGN</button>
           </div>
         </section>
 
-        <button id="sound-button" class="sound-button" aria-label="Toggle sound">SOUND ON</button>
+        <button id="audio-button" class="sound-button" aria-expanded="false" aria-controls="audio-panel">AUDIO</button>
+        <section id="audio-panel" class="audio-panel hidden" aria-label="Audio settings">
+          <label><span>MUSIC</span><input id="music-volume" type="range" min="0" max="100" step="1" /></label>
+          <label><span>SFX</span><input id="sfx-volume" type="range" min="0" max="100" step="1" /></label>
+          <small>Drop ElevenLabs files into <b>public/audio</b>.</small>
+        </section>
       </div>
     </main>
     <script type="module" src="/src/main.ts"></script>

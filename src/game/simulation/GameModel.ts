@@ -1,75 +1,122 @@
-import { DIFFICULTY, SHIELD_RECHARGE_MS, STAGE_DURATION_MS } from '../content/balance';
-import type { DamageResult, Difficulty, GameMode, GameSnapshot, UpgradeType, WeaponLevels } from './types';
+import { DEFAULT_COMBAT_MODIFIERS } from '../content/upgrades';
+import type {
+  CombatModifiers,
+  DamageResult,
+  GameMode,
+  GameSnapshot,
+  KillResult,
+  MissionId,
+  MissionStartConfig,
+  UpgradeResult,
+  UpgradeType,
+  UtilityPickupType,
+  WeaponLevels,
+} from './types';
 
 const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0 });
 
 export class GameModel {
   mode: GameMode = 'briefing';
-  difficulty: Difficulty = 'pilot';
+  difficulty: MissionStartConfig['difficulty'] = 'pilot';
+  mission: { id: MissionId; number: number; title: string } = {
+    id: 'coastal',
+    number: 1,
+    title: 'COASTAL INTERCEPT',
+  };
   hull = 3;
-  readonly hullMax = 3;
+  hullMax = 3;
   shield = 1;
   shieldMax = 1;
+  shieldBaseMax = 1;
   weapons = emptyWeapons();
   score = 0;
   highScore = 0;
   multiplier = 1;
   kills = 0;
+  creditsEarned = 0;
+  empCharges = 1;
+  empMax = 2;
+  shotsFired = 0;
+  shotsHit = 0;
+  damageTaken = 0;
   stageElapsedMs = 0;
-  stageDurationMs = STAGE_DURATION_MS;
+  stageDurationMs = 195_000;
   bossActive = false;
+  bossName = '';
   bossHealthRatio = 1;
+  modifiers: CombatModifiers = { ...DEFAULT_COMBAT_MODIFIERS };
 
   private lastDamageAt = Number.NEGATIVE_INFINITY;
   private invulnerableUntil = 0;
   private comboUntil = 0;
   private comboKills = 0;
+  private overdriveUntil = 0;
+  private reactorUntil = 0;
+  private tractorUntil = 0;
+  private phoenixAvailable = false;
 
   constructor(highScore = 0) {
     this.highScore = highScore;
   }
 
-  start(difficulty: Difficulty, stageDurationMs = STAGE_DURATION_MS): void {
+  start(config: MissionStartConfig): void {
     this.mode = 'playing';
-    this.difficulty = difficulty;
+    this.difficulty = config.difficulty;
+    this.mission = {
+      id: config.mission.id,
+      number: config.mission.number,
+      title: config.mission.title,
+    };
+    this.modifiers = { ...config.modifiers };
+    this.hullMax = Math.min(5, 3 + this.modifiers.hullBonus);
     this.hull = this.hullMax;
-    this.shieldMax = 1;
+    this.shieldBaseMax = Math.max(1, Math.min(3, config.shieldBaseMax));
+    this.shieldMax = Math.min(3, this.shieldBaseMax + this.modifiers.shieldBonus);
     this.shield = this.shieldMax;
-    this.weapons = emptyWeapons();
-    this.score = 0;
+    this.weapons = { ...config.weapons };
+    this.score = Math.max(0, config.score);
     this.multiplier = 1;
     this.kills = 0;
+    this.creditsEarned = 0;
+    this.empMax = 2 + this.modifiers.empCapacityBonus;
+    this.empCharges = 1;
+    this.shotsFired = 0;
+    this.shotsHit = 0;
+    this.damageTaken = 0;
     this.stageElapsedMs = 0;
-    this.stageDurationMs = stageDurationMs;
+    this.stageDurationMs = config.debugDurationMs ?? config.mission.durationMs;
     this.bossActive = false;
+    this.bossName = '';
     this.bossHealthRatio = 1;
     this.lastDamageAt = Number.NEGATIVE_INFINITY;
     this.invulnerableUntil = 0;
     this.comboUntil = 0;
     this.comboKills = 0;
+    this.overdriveUntil = 0;
+    this.reactorUntil = 0;
+    this.tractorUntil = 0;
+    this.phoenixAvailable = this.modifiers.phoenixProtocol;
   }
 
   tick(deltaMs: number): boolean {
     if (this.mode !== 'playing') return false;
-
     this.stageElapsedMs += deltaMs;
     if (this.multiplier > 1 && this.stageElapsedMs >= this.comboUntil) {
       this.multiplier = 1;
       this.comboKills = 0;
     }
 
-    if (this.shield < this.shieldMax && this.stageElapsedMs - this.lastDamageAt >= SHIELD_RECHARGE_MS) {
+    if (this.shield < this.shieldMax && this.stageElapsedMs - this.lastDamageAt >= this.modifiers.shieldRechargeMs) {
       this.shield = this.shieldMax;
       return true;
     }
-
     return false;
   }
 
   takeDamage(): DamageResult {
     if (this.mode !== 'playing' || this.stageElapsedMs < this.invulnerableUntil) return 'ignored';
-
     this.lastDamageAt = this.stageElapsedMs;
+    this.damageTaken += 1;
     if (this.shield > 0) {
       this.shield -= 1;
       this.invulnerableUntil = this.stageElapsedMs + 420;
@@ -77,7 +124,13 @@ export class GameModel {
     }
 
     this.hull -= 1;
-    this.invulnerableUntil = this.stageElapsedMs + 1_250;
+    this.invulnerableUntil = this.stageElapsedMs + this.modifiers.hullInvulnerabilityMs;
+    if (this.hull <= 0 && this.phoenixAvailable) {
+      this.phoenixAvailable = false;
+      this.hull = 1;
+      this.invulnerableUntil = this.stageElapsedMs + 2_000;
+      return 'phoenix';
+    }
     if (this.hull <= 0) {
       this.hull = 0;
       this.mode = 'gameover';
@@ -86,13 +139,14 @@ export class GameModel {
     return 'hull';
   }
 
-  upgrade(type: UpgradeType): { upgraded: boolean; level: number } {
+  upgrade(type: UpgradeType): UpgradeResult {
     if (type === 'shield') {
-      if (this.shieldMax >= 3) {
+      if (this.shieldBaseMax >= 3) {
         this.addFlatScore(1_000);
         return { upgraded: false, level: this.shieldMax };
       }
-      this.shieldMax += 1;
+      this.shieldBaseMax += 1;
+      this.shieldMax = Math.min(3, this.shieldBaseMax + this.modifiers.shieldBonus);
       this.shield = this.shieldMax;
       return { upgraded: true, level: this.shieldMax };
     }
@@ -105,14 +159,67 @@ export class GameModel {
     return { upgraded: true, level: this.weapons[type] };
   }
 
-  registerKill(baseScore: number): number {
+  collectUtility(type: UtilityPickupType): { applied: boolean; scoreAwarded: number } {
+    if (type === 'repair') {
+      if (this.hull >= this.hullMax) {
+        this.addFlatScore(500);
+        return { applied: false, scoreAwarded: 500 };
+      }
+      this.hull += 1;
+      return { applied: true, scoreAwarded: 0 };
+    }
+    if (type === 'overdrive') {
+      const duration = 10_000 * this.modifiers.utilityDurationMultiplier;
+      const cap = 20_000 * this.modifiers.utilityDurationMultiplier;
+      const remaining = Math.max(0, this.overdriveUntil - this.stageElapsedMs);
+      this.overdriveUntil = this.stageElapsedMs + Math.min(cap, remaining + duration);
+      return { applied: true, scoreAwarded: 0 };
+    }
+    if (type === 'tractor') {
+      this.tractorUntil = this.stageElapsedMs + 12_000 * this.modifiers.utilityDurationMultiplier;
+      return { applied: true, scoreAwarded: 0 };
+    }
+    if (this.empCharges < this.empMax) {
+      this.empCharges += 1;
+      return { applied: true, scoreAwarded: 0 };
+    }
+    if (this.modifiers.utilityDurationMultiplier > 1) {
+      this.addFlatScore(500);
+      return { applied: false, scoreAwarded: 500 };
+    }
+    return { applied: false, scoreAwarded: 0 };
+  }
+
+  activateEmp(): boolean {
+    if (this.mode !== 'playing' || this.empCharges <= 0) return false;
+    this.empCharges -= 1;
+    return true;
+  }
+
+  registerShot(count = 1): void {
+    this.shotsFired += Math.max(0, count);
+  }
+
+  registerHit(): void {
+    this.shotsHit += 1;
+  }
+
+  registerKill(baseScore: number, baseCredits: number): KillResult {
     this.kills += 1;
     this.comboKills += 1;
-    this.multiplier = Math.min(5, 1 + Math.floor(this.comboKills / 5));
-    this.comboUntil = this.stageElapsedMs + 2_700;
-    const awarded = Math.round(baseScore * this.multiplier * DIFFICULTY[this.difficulty].scoreScale);
-    this.addFlatScore(awarded);
-    return awarded;
+    this.multiplier = Math.min(this.modifiers.comboMax, 1 + Math.floor(this.comboKills / 5));
+    this.comboUntil = this.stageElapsedMs + this.modifiers.comboWindowMs;
+    const points = Math.round(baseScore * this.multiplier * this.difficultyScoreScale());
+    const credits = Math.round(baseCredits * this.modifiers.creditMultiplier);
+    this.creditsEarned += credits;
+    this.addFlatScore(points);
+
+    const overdriveTriggered = this.modifiers.overdriveReactor && this.comboKills === 10;
+    if (overdriveTriggered) this.reactorUntil = this.stageElapsedMs + 6_000;
+    const fabricatedPickup = this.modifiers.fieldFabricator && this.kills % 30 === 0
+      ? this.hull < this.hullMax ? 'repair' : 'overdrive'
+      : undefined;
+    return { points, credits, overdriveTriggered, fabricatedPickup };
   }
 
   addFlatScore(points: number): void {
@@ -121,12 +228,13 @@ export class GameModel {
   }
 
   setPaused(paused: boolean): void {
-    if (this.mode === 'gameover' || this.mode === 'victory') return;
+    if (this.mode === 'gameover' || this.mode === 'victory' || this.mode === 'complete') return;
     this.mode = paused ? 'paused' : 'playing';
   }
 
-  setBoss(healthRatio: number): void {
+  setBoss(name: string, healthRatio: number): void {
     this.bossActive = healthRatio > 0;
+    this.bossName = name;
     this.bossHealthRatio = Math.max(0, Math.min(1, healthRatio));
   }
 
@@ -135,33 +243,70 @@ export class GameModel {
     this.lastDamageAt = Number.NEGATIVE_INFINITY;
   }
 
-  win(): void {
-    this.mode = 'victory';
+  complete(finalVictory = false): void {
+    this.mode = finalVictory ? 'victory' : 'complete';
     this.bossActive = false;
     this.bossHealthRatio = 0;
+  }
+
+  get fireIntervalMultiplier(): number {
+    const pickupBoost = this.stageElapsedMs < this.overdriveUntil ? 0.7 : 1;
+    const reactorBoost = this.stageElapsedMs < this.reactorUntil ? 0.75 : 1;
+    return this.modifiers.fireIntervalMultiplier * pickupBoost * reactorBoost;
+  }
+
+  get damageMultiplier(): number {
+    return this.modifiers.damageMultiplier;
+  }
+
+  get tractorRadius(): number {
+    return Math.max(this.modifiers.passiveTractorRadius, this.stageElapsedMs < this.tractorUntil ? 220 : 0);
+  }
+
+  get empDamageMultiplier(): number {
+    return this.modifiers.empDamageMultiplier;
   }
 
   snapshot(): GameSnapshot {
     const remaining = this.shield >= this.shieldMax
       ? 0
-      : Math.max(0, SHIELD_RECHARGE_MS - (this.stageElapsedMs - this.lastDamageAt));
+      : Math.max(0, this.modifiers.shieldRechargeMs - (this.stageElapsedMs - this.lastDamageAt));
     return {
       mode: this.mode,
       difficulty: this.difficulty,
+      missionId: this.mission.id,
+      missionNumber: this.mission.number,
+      missionTitle: this.mission.title,
       hull: this.hull,
       hullMax: this.hullMax,
       shield: this.shield,
       shieldMax: this.shieldMax,
+      shieldBaseMax: this.shieldBaseMax,
       shieldRechargeRemainingMs: remaining,
       weapons: { ...this.weapons },
       score: this.score,
       highScore: this.highScore,
       multiplier: this.multiplier,
       kills: this.kills,
+      creditsEarned: this.creditsEarned,
+      empCharges: this.empCharges,
+      empMax: this.empMax,
+      overdriveRemainingMs: Math.max(0, this.overdriveUntil - this.stageElapsedMs),
+      tractorRemainingMs: Math.max(0, this.tractorUntil - this.stageElapsedMs),
+      shotsFired: this.shotsFired,
+      shotsHit: this.shotsHit,
+      damageTaken: this.damageTaken,
       stageElapsedMs: this.stageElapsedMs,
       stageDurationMs: this.stageDurationMs,
       bossActive: this.bossActive,
+      bossName: this.bossName,
       bossHealthRatio: this.bossHealthRatio,
     };
+  }
+
+  private difficultyScoreScale(): number {
+    if (this.difficulty === 'cadet') return 0.85;
+    if (this.difficulty === 'ace') return 1.25;
+    return 1;
   }
 }

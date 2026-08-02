@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { ASSET_KEYS } from '../../game/assets/manifest';
 import { WEAPON_LABELS } from '../../game/content/balance';
-import type { UpgradeType, WeaponType } from '../../game/simulation/types';
+import type { PickupType, WeaponType } from '../../game/simulation/types';
 
 const polygon = (points: Array<[number, number]>): Phaser.Geom.Point[] =>
   points.map(([x, y]) => new Phaser.Geom.Point(x, y));
@@ -30,6 +30,21 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawEnemy(g, ASSET_KEYS.interceptor, 76, 68, 0xff9a56, [[38, 65], [4, 17], [28, 27], [38, 4], [48, 27], [72, 17]]);
   drawEnemy(g, ASSET_KEYS.bomber, 104, 78, 0xff5e73, [[52, 74], [7, 42], [5, 20], [38, 27], [52, 4], [66, 27], [99, 20], [97, 42]]);
   drawEnemy(g, ASSET_KEYS.elite, 112, 86, 0xc66cff, [[56, 82], [10, 62], [3, 27], [40, 36], [56, 4], [72, 36], [109, 27], [102, 62]]);
+  drawEnemy(g, ASSET_KEYS.charger, 78, 76, 0xff3f56, [[39, 73], [8, 24], [29, 31], [39, 3], [49, 31], [70, 24]]);
+  drawEnemy(g, ASSET_KEYS.sniper, 88, 70, 0xff72ca, [[44, 67], [5, 38], [28, 30], [36, 8], [44, 2], [52, 8], [60, 30], [83, 38]]);
+  drawEnemy(g, ASSET_KEYS.mineLayer, 112, 74, 0xffa33f, [[56, 70], [8, 52], [4, 25], [38, 31], [56, 5], [74, 31], [108, 25], [104, 52]]);
+  drawEnemy(g, ASSET_KEYS.shieldCarrier, 104, 84, 0x8b7dff, [[52, 80], [10, 59], [6, 24], [36, 33], [52, 4], [68, 33], [98, 24], [94, 59]]);
+  drawEnemy(g, ASSET_KEYS.warden, 190, 104, 0xf06cff, [[95, 99], [12, 67], [5, 30], [66, 42], [95, 4], [124, 42], [185, 30], [178, 67]]);
+
+  g.fillStyle(0xffb640, 0.14).fillCircle(28, 28, 27);
+  g.fillStyle(0x2b1724, 1).fillCircle(28, 28, 17);
+  g.lineStyle(3, 0xffb640, 1).strokeCircle(28, 28, 16);
+  for (let index = 0; index < 8; index += 1) {
+    const angle = index * Math.PI / 4;
+    g.lineBetween(28 + Math.cos(angle) * 17, 28 + Math.sin(angle) * 17, 28 + Math.cos(angle) * 25, 28 + Math.sin(angle) * 25);
+  }
+  g.fillStyle(0xfff1bd, 1).fillCircle(28, 28, 5);
+  g.generateTexture(ASSET_KEYS.mine, 56, 56).clear();
 
   // The aerial fortress is wide, layered, and easy to read at a glance.
   g.fillStyle(0xff576f, 0.1).fillEllipse(150, 74, 280, 112);
@@ -74,7 +89,8 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawOceanTexture(g);
   drawCloudTexture(g);
 
-  (['spread', 'missile', 'laser', 'drone', 'shield'] as UpgradeType[]).forEach((type) => drawPickup(g, type));
+  (['spread', 'missile', 'laser', 'drone', 'shield', 'repair', 'overdrive', 'tractor', 'emp'] as PickupType[])
+    .forEach((type) => drawPickup(g, type));
   g.destroy();
 }
 
@@ -118,8 +134,18 @@ function drawCloudTexture(g: Phaser.GameObjects.Graphics): void {
   g.generateTexture(ASSET_KEYS.cloud, 768, 320).clear();
 }
 
-function drawPickup(g: Phaser.GameObjects.Graphics, type: UpgradeType): void {
-  const color = type === 'shield' ? 0x63a8ff : WEAPON_LABELS[type as WeaponType].color;
+function drawPickup(g: Phaser.GameObjects.Graphics, type: PickupType): void {
+  const color = type === 'shield'
+    ? 0x63a8ff
+    : type === 'repair'
+      ? 0xff667c
+      : type === 'overdrive'
+        ? 0xffb640
+        : type === 'tractor'
+          ? 0x65ffb1
+          : type === 'emp'
+            ? 0x8b7dff
+            : WEAPON_LABELS[type as WeaponType].color;
   g.fillStyle(color, 0.16).fillCircle(30, 30, 29);
   g.lineStyle(3, color, 1).strokeCircle(30, 30, 22);
   g.lineStyle(2, 0xffffff, 0.85);
@@ -133,9 +159,19 @@ function drawPickup(g: Phaser.GameObjects.Graphics, type: UpgradeType): void {
   } else if (type === 'drone') {
     g.strokeCircle(30, 30, 8).strokeCircle(15, 30, 4).strokeCircle(45, 30, 4);
     g.lineBetween(19, 30, 22, 30).lineBetween(38, 30, 41, 30);
-  } else {
+  } else if (type === 'shield') {
     g.strokePoints(polygon([[30, 9], [47, 18], [43, 40], [30, 51], [17, 40], [13, 18]]), true);
     g.lineBetween(30, 18, 30, 41);
+  } else if (type === 'repair') {
+    g.lineBetween(30, 16, 30, 44).lineBetween(16, 30, 44, 30);
+  } else if (type === 'overdrive') {
+    g.strokePoints(polygon([[34, 10], [20, 31], [30, 31], [25, 50], [42, 25], [31, 25]]), true);
+  } else if (type === 'tractor') {
+    g.strokeCircle(30, 30, 14).strokeCircle(30, 30, 6);
+    g.lineBetween(30, 8, 30, 16).lineBetween(30, 44, 30, 52).lineBetween(8, 30, 16, 30).lineBetween(44, 30, 52, 30);
+  } else {
+    g.strokeCircle(30, 30, 15);
+    g.lineBetween(22, 21, 38, 39).lineBetween(38, 21, 22, 39);
   }
   g.generateTexture(`${ASSET_KEYS.pickupPrefix}${type}`, 60, 60).clear();
 }
