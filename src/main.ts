@@ -96,6 +96,14 @@ let defeatStingIndex = 0;
 let savedCampaign = loadCampaign();
 let campaign = new CampaignModel(savedCampaign);
 const debugMode = new URLSearchParams(window.location.search).get('debug') === '1';
+const quickDebugMode = debugMode && new URLSearchParams(window.location.search).get('quick') === '1';
+const collisionDebugMode = debugMode && new URLSearchParams(window.location.search).get('collisionDebug') === '1';
+const requestedDebugTrack = new URLSearchParams(window.location.search).get('audioTrack');
+const debugInitialTrack = debugMode && [
+  'menu', 'hangar', 'mission-coastal', 'mission-minefield', 'mission-fortress', 'boss', 'victory', 'defeat',
+].includes(requestedDebugTrack ?? '')
+  ? requestedDebugTrack as MusicTrack
+  : 'menu';
 const audio = new SoundEngine();
 
 ui.launch.disabled = true;
@@ -114,6 +122,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((butto
 ui.launch.addEventListener('click', () => {
   if (!ready) return;
   void audio.unlock();
+  preloadUpgradeIcons();
   campaign.startNew(difficulty);
   saveCampaign();
   startCurrentMission();
@@ -122,6 +131,7 @@ ui.launch.addEventListener('click', () => {
 ui.continue.addEventListener('click', () => {
   if (!ready || !savedCampaign) return;
   void audio.unlock();
+  preloadUpgradeIcons();
   campaign = new CampaignModel(savedCampaign);
   openHangar();
 });
@@ -221,6 +231,12 @@ window.addEventListener('aegis:announce', (raw) => {
   announceTimer = window.setTimeout(() => ui.announcement.classList.remove('show'), 2_300);
 });
 
+if (debugMode) {
+  window.addEventListener('aegis:debug-combat', (raw) => {
+    ui.hud.dataset.enemies = JSON.stringify((raw as CustomEvent<unknown>).detail);
+  });
+}
+
 window.addEventListener('aegis:sound', (raw) => audio.play((raw as CustomEvent<SoundCue>).detail));
 window.addEventListener('aegis:music', (raw) => {
   const track = (raw as CustomEvent<MusicTrack>).detail;
@@ -257,7 +273,7 @@ window.addEventListener('aegis:mission-ended', (raw) => {
 function startCurrentMission(): void {
   if (!ready) return;
   void audio.unlock();
-  const debugDurationMs = debugMode ? 24_000 : undefined;
+  const debugDurationMs = quickDebugMode ? 24_000 : undefined;
   const config = campaign.beginMission(debugDurationMs);
   saveCampaign();
   resultIsVictory = false;
@@ -330,7 +346,23 @@ function renderUpgradeTree(state: CampaignSnapshot): void {
         button.className = `upgrade-node${owned ? ' owned' : ''}${availability.reason === 'locked' ? ' locked' : ''}`;
         button.disabled = !owned && !availability.ok;
         const status = owned ? 'INSTALLED' : availability.reason === 'locked' ? 'LOCKED' : `${node.cost} C`;
-        button.innerHTML = `<span class="node-status">${status}</span><b>${node.name}</b><p>${node.description}</p>`;
+        const statusElement = document.createElement('span');
+        statusElement.className = 'node-status';
+        statusElement.textContent = status;
+        const icon = document.createElement('img');
+        icon.className = 'upgrade-icon';
+        icon.src = node.icon;
+        icon.alt = '';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.decoding = 'async';
+        const copy = document.createElement('span');
+        copy.className = 'node-copy';
+        const name = document.createElement('b');
+        name.textContent = node.name;
+        const description = document.createElement('p');
+        description.textContent = node.description;
+        copy.append(name, description);
+        button.append(statusElement, icon, copy);
         pair.append(button);
       });
       tierElement.append(pair);
@@ -415,7 +447,15 @@ function updateHud(snapshot: GameSnapshot): void {
   ui.empCount.textContent = `${snapshot.empCharges} / ${snapshot.empMax}`;
   ui.empButton.disabled = snapshot.empCharges <= 0;
   const effects: string[] = [];
-  if (snapshot.overdriveRemainingMs > 0) effects.push(`OVERDRIVE ${(snapshot.overdriveRemainingMs / 1_000).toFixed(1)}s`);
+  if (snapshot.weaponOverdriveState !== 'inactive') {
+    const label = snapshot.weaponOverdriveState === 'stacked'
+      ? 'OVERDRIVE ×2'
+      : snapshot.weaponOverdriveState === 'reactor'
+        ? 'REACTOR OVERDRIVE'
+        : 'OVERDRIVE';
+    const remaining = Math.max(snapshot.overdriveRemainingMs, snapshot.reactorOverdriveRemainingMs);
+    effects.push(`${label} ${(remaining / 1_000).toFixed(1)}s`);
+  }
   if (snapshot.tractorRemainingMs > 0) effects.push(`TRACTOR ${(snapshot.tractorRemainingMs / 1_000).toFixed(1)}s`);
   if (snapshot.chronoRemainingMs > 0) effects.push(`CHRONO ${(snapshot.chronoRemainingMs / 1_000).toFixed(1)}s`);
   if (snapshot.reserveShieldAvailable) effects.push('RESERVE SHIELD');
@@ -440,18 +480,26 @@ function renderPips(container: HTMLElement, max: number, value: number, type: 'h
 
 function renderWeapons(snapshot: GameSnapshot): void {
   const weaponTypes = Object.keys(WEAPON_LABELS) as WeaponType[];
-  const signature = weaponTypes.map((type) => snapshot.weapons[type]).join(':');
+  const signature = `${weaponTypes.map((type) => snapshot.weapons[type]).join(':')}:${snapshot.weaponOverdriveState}`;
   if (ui.weaponRack.dataset.signature === signature) return;
   ui.weaponRack.dataset.signature = signature;
   ui.weaponRack.replaceChildren(...weaponTypes.map((type) => {
     const data = WEAPON_LABELS[type];
     const level = snapshot.weapons[type];
     const chip = document.createElement('div');
-    chip.className = `weapon-chip${level > 0 ? ' active' : ''}`;
+    chip.className = `weapon-chip${level > 0 ? ' active' : ''}${level > 0 && snapshot.weaponOverdriveState !== 'inactive' ? ' overdrive' : ''}`;
     chip.style.setProperty('--weapon', data.css);
     chip.innerHTML = `<b>${data.short}</b><span>${[1, 2, 3, 4, 5].map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>`;
     return chip;
   }));
+}
+
+function preloadUpgradeIcons(): void {
+  UPGRADE_NODES.forEach((node) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = node.icon;
+  });
 }
 
 function branchIcon(branch: UpgradeBranch): string {
@@ -511,7 +559,7 @@ const config: Phaser.Types.Core.GameConfig = {
     default: 'arcade',
     arcade: {
       gravity: { x: 0, y: 0 },
-      debug: new URLSearchParams(window.location.search).get('hitboxes') === '1',
+      debug: collisionDebugMode,
     },
   },
   scale: {
@@ -546,4 +594,28 @@ Object.defineProperty(window, '__AEGIS_AUDIO__', {
   configurable: true,
 });
 
-void audio.playMusic('menu');
+if (debugMode) {
+  window.setInterval(() => {
+    const state = audio.getDebugState();
+    ui.audioPanel.dataset.contextState = state.contextState;
+    ui.audioPanel.dataset.playbackState = state.playbackState;
+    ui.audioPanel.dataset.desiredTrack = state.desiredTrack ?? '';
+    ui.audioPanel.dataset.currentTrack = state.currentTrack ?? '';
+    ui.audioPanel.dataset.positionSeconds = state.positionSeconds.toFixed(3);
+    ui.audioPanel.dataset.logicalStarts = String(state.logicalStartCount);
+    ui.audioPanel.dataset.queuedSources = String(state.queuedSources);
+    ui.audioPanel.dataset.loopIteration = String(state.loopIteration);
+    ui.audioPanel.dataset.loopRegion = state.loopRegion
+      ? `${state.loopRegion.startSeconds.toFixed(3)}-${state.loopRegion.endSeconds.toFixed(3)}`
+      : '';
+    ui.audioPanel.dataset.lastError = state.lastError ?? '';
+    if (latestSnapshot) {
+      ui.hud.dataset.mode = latestSnapshot.mode;
+      ui.hud.dataset.mission = latestSnapshot.missionId;
+      ui.hud.dataset.overdrive = latestSnapshot.weaponOverdriveState;
+      ui.hud.dataset.threat = String(latestSnapshot.threatLevel);
+    }
+  }, 500);
+}
+
+void audio.playMusic(debugInitialTrack);

@@ -27,6 +27,8 @@ import {
 import { GameModel } from '../../game/simulation/GameModel';
 import type {
   EnemyKind,
+  EnemyHitboxRect,
+  EnemyHitZoneRole,
   GameSnapshot,
   MissionStartConfig,
   PickupType,
@@ -56,7 +58,30 @@ const event = <T>(name: string, detail?: T): void => {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 };
 
-const SPECIALISTS: EnemyKind[] = ['charger', 'sniper', 'mineLayer', 'shieldCarrier'];
+const SPECIALISTS: EnemyKind[] = ['charger', 'sniper', 'mineLayer', 'shieldCarrier', 'bulwark'];
+
+const STANDARD_HITBOXES: readonly EnemyHitboxRect[] = [
+  { role: 'core', x: 0, y: -0.05, width: 0.28, height: 0.8 },
+  { role: 'wing', x: 0, y: 0.04, width: 0.94, height: 0.3 },
+  { role: 'wing', x: 0, y: 0.3, width: 0.58, height: 0.2 },
+];
+
+const LARGE_HITBOXES: readonly EnemyHitboxRect[] = [
+  { role: 'core', x: 0, y: -0.02, width: 0.34, height: 0.82 },
+  { role: 'wing', x: 0, y: 0.04, width: 0.96, height: 0.34 },
+  { role: 'wing', x: 0, y: 0.3, width: 0.68, height: 0.23 },
+];
+
+const BULWARK_HITBOXES: readonly EnemyHitboxRect[] = [
+  { role: 'core', x: 0, y: -0.02, width: 0.35, height: 0.82 },
+  { role: 'wing', x: -0.28, y: 0.12, width: 0.38, height: 0.3 },
+  { role: 'wing', x: 0.28, y: 0.12, width: 0.38, height: 0.3 },
+  { role: 'weakpoint', x: -0.29, y: 0.04, width: 0.18, height: 0.28 },
+  { role: 'weakpoint', x: 0.29, y: 0.04, width: 0.18, height: 0.28 },
+];
+
+const OVERDRIVE_CORE = 0xfff6cf;
+const OVERDRIVE_GOLD = 0xffb640;
 
 export class BattleScene extends Phaser.Scene {
   private model = new GameModel(BattleScene.loadHighScore());
@@ -64,6 +89,7 @@ export class BattleScene extends Phaser.Scene {
   private playerBullets!: Phaser.Physics.Arcade.Group;
   private enemyBullets!: Phaser.Physics.Arcade.Group;
   private enemies!: Phaser.Physics.Arcade.Group;
+  private enemyHitZones!: Phaser.Physics.Arcade.Group;
   private pickups!: Phaser.Physics.Arcade.Group;
   private mines!: Phaser.Physics.Arcade.Group;
   private horizonHaze!: Phaser.GameObjects.TileSprite;
@@ -97,12 +123,18 @@ export class BattleScene extends Phaser.Scene {
   private bossSpawned = false;
   private missionEnding = false;
   private debugMode = false;
+  private godMode = false;
   private nextCarrierIndex = 0;
   private killsSinceUtilityDrop = 0;
   private offerId = 0;
   private lastThreatLevel = 1;
   private encounterDirector?: EncounterDirector;
   private graphicsQuality: GraphicsQuality = 'auto';
+  private hitboxDebug = false;
+  private hitboxGraphics?: Phaser.GameObjects.Graphics;
+  private bulwarkIntroduced = false;
+  private lastUtility?: UtilityPickupType;
+  private armamentOfferHistory: Array<readonly [UpgradeType, UpgradeType]> = [];
 
   private readonly startHandler = (raw: Event): void => {
     this.startMission((raw as CustomEvent<MissionStartConfig>).detail);
@@ -117,7 +149,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.debugMode = new URLSearchParams(window.location.search).get('debug') === '1';
+    const query = new URLSearchParams(window.location.search);
+    this.debugMode = query.get('debug') === '1';
+    this.godMode = this.debugMode && query.get('god') === '1';
+    this.hitboxDebug = this.debugMode && query.get('collisionDebug') === '1';
     this.graphicsQuality = this.resolveGraphicsQuality();
     this.createEnvironment();
     this.createPhysicsGroups();
@@ -161,6 +196,7 @@ export class BattleScene extends Phaser.Scene {
     }
 
     this.updatePlayer(time, delta);
+    this.hitboxGraphics?.clear();
     this.updateDrones(delta);
     this.updateProjectiles(delta);
     this.updateEnemies(time, delta);
@@ -239,8 +275,10 @@ export class BattleScene extends Phaser.Scene {
     this.playerBullets = this.physics.add.group({ maxSize: 180, runChildUpdate: false });
     this.enemyBullets = this.physics.add.group({ maxSize: MAX_HOSTILE_PROJECTILES, runChildUpdate: false });
     this.enemies = this.physics.add.group({ maxSize: MAX_ACTIVE_ENEMIES, runChildUpdate: false });
+    this.enemyHitZones = this.physics.add.group({ runChildUpdate: false });
     this.pickups = this.physics.add.group({ runChildUpdate: false });
     this.mines = this.physics.add.group({ maxSize: MAX_ACTIVE_MINES, runChildUpdate: false });
+    if (this.hitboxDebug) this.hitboxGraphics = this.add.graphics().setDepth(20);
   }
 
   private createPlayer(): void {
@@ -277,6 +315,7 @@ export class BattleScene extends Phaser.Scene {
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FIVE).on('down', () => this.collectPickup('shield'));
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SIX).on('down', () => this.collectPickup('emp'));
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I).on('down', () => this.collectPickup('ion'));
+      this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.O).on('down', () => this.collectPickup('overdrive'));
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B).on('down', () => this.spawnBoss());
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => this.damagePlayer(true));
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C).on('down', () => this.debugCompleteMission());
@@ -290,8 +329,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private createCollisions(): void {
-    this.physics.add.overlap(this.playerBullets, this.enemies, (bullet, enemy) => {
-      this.hitEnemy(bullet as Phaser.Physics.Arcade.Sprite, enemy as Phaser.Physics.Arcade.Sprite);
+    this.physics.add.overlap(this.playerBullets, this.enemyHitZones, (bullet, zone) => {
+      this.hitEnemy(bullet as Phaser.Physics.Arcade.Sprite, zone as Phaser.GameObjects.Zone);
     });
     this.physics.add.overlap(this.playerBullets, this.mines, (bullet, mine) => {
       this.hitMine(bullet as Phaser.Physics.Arcade.Sprite, mine as Phaser.Physics.Arcade.Sprite);
@@ -302,8 +341,13 @@ export class BattleScene extends Phaser.Scene {
       this.disableBody(projectile);
       this.damagePlayer();
     });
-    this.physics.add.overlap(this.player, this.enemies, (_player, enemy) => {
-      const target = enemy as Phaser.Physics.Arcade.Sprite;
+    this.physics.add.overlap(this.player, this.enemyHitZones, (_player, hitZone) => {
+      const zone = hitZone as Phaser.GameObjects.Zone;
+      const target = zone.getData('enemy') as Phaser.Physics.Arcade.Sprite;
+      if (!target?.active || target.getData('combatReady') === false) return;
+      const lastRamAt = (target.getData('lastRamAt') as number | undefined) ?? Number.NEGATIVE_INFINITY;
+      if (this.time.now - lastRamAt < 250) return;
+      target.setData('lastRamAt', this.time.now);
       this.damagePlayer();
       const kind = target.getData('kind') as EnemyKind;
       if (kind !== 'boss' && kind !== 'warden') this.damageEnemy(target, 8);
@@ -352,6 +396,9 @@ export class BattleScene extends Phaser.Scene {
     this.killsSinceUtilityDrop = 0;
     this.offerId = 0;
     this.lastThreatLevel = 1;
+    this.bulwarkIntroduced = false;
+    this.lastUtility = undefined;
+    this.armamentOfferHistory = [];
     this.model.start(config);
     this.encounterDirector = new EncounterDirector(config.campaignSeed, config.difficulty, config.mission.id);
 
@@ -390,7 +437,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private clearBattlefield(): void {
-    for (const group of [this.playerBullets, this.enemyBullets, this.enemies, this.pickups, this.mines]) group.clear(true, true);
+    for (const group of [this.playerBullets, this.enemyBullets, this.enemies, this.enemyHitZones, this.pickups, this.mines]) group.clear(true, true);
     this.transientViews.forEach((view) => view.destroy());
     this.transientViews.clear();
     this.drones.forEach((drone) => drone.setVisible(false));
@@ -522,7 +569,14 @@ export class BattleScene extends Phaser.Scene {
     const damage = (2.4 + level * 0.8) * (level >= 4 ? 1.25 : 1) * this.model.damageMultiplier;
     hit.forEach((enemy) => {
       this.model.registerHit();
-      this.damageEnemy(enemy, damage);
+      const weakpoint = this.firstActiveBulwarkReactorZone(enemy);
+      this.damageEnemy(
+        enemy,
+        damage,
+        weakpoint ? 'weakpoint' : 'core',
+        weakpoint ? weakpoint.getData('zoneIndex') as number : -1,
+        this.model.weaponOverdriveState !== 'inactive',
+      );
     });
     if (level >= 5 && !boss) {
       const final = hit[hit.length - 1];
@@ -543,8 +597,9 @@ export class BattleScene extends Phaser.Scene {
       ));
     }
     points.push(new Phaser.Math.Vector2(x2, y2));
-    arc.lineStyle(7, 0x8b7dff, 0.2).strokePoints(points);
-    arc.lineStyle(2, 0xf3efff, 0.96).strokePoints(points);
+    const overdrive = this.model.weaponOverdriveState !== 'inactive';
+    arc.lineStyle(7, overdrive ? OVERDRIVE_GOLD : 0x8b7dff, overdrive ? 0.34 : 0.2).strokePoints(points);
+    arc.lineStyle(2, overdrive ? OVERDRIVE_CORE : 0xf3efff, 0.96).strokePoints(points);
     this.transientViews.add(arc);
     this.tweens.add({ targets: arc, alpha: 0, duration: 150, onComplete: () => this.destroyTransient(arc) });
   }
@@ -557,15 +612,30 @@ export class BattleScene extends Phaser.Scene {
       }
       return true;
     });
-    const pulse = this.add.circle(x, y, 8, 0xb79cff, 0.16).setDepth(6).setStrokeStyle(2, 0xf3efff, 0.9);
+    const overdrive = this.model.weaponOverdriveState !== 'inactive';
+    const pulse = this.add.circle(x, y, 8, overdrive ? OVERDRIVE_GOLD : 0xb79cff, 0.16)
+      .setDepth(6)
+      .setStrokeStyle(2, overdrive ? OVERDRIVE_CORE : 0xf3efff, 0.9);
     this.transientViews.add(pulse);
     this.tweens.add({ targets: pulse, scale: 5.2, alpha: 0, duration: 220, onComplete: () => this.destroyTransient(pulse) });
   }
 
   private spawnPlayerBullet(x: number, y: number, texture: string, angle: number, baseDamage: number): void {
-    const bullet = this.playerBullets.get(x, y, texture) as Phaser.Physics.Arcade.Sprite | null;
+    const overdriveState = this.model.weaponOverdriveState;
+    const renderTexture = overdriveState === 'inactive'
+      ? texture
+      : texture === ASSET_KEYS.missile
+        ? ASSET_KEYS.missileOverdrive
+        : texture === ASSET_KEYS.laser
+          ? ASSET_KEYS.laserOverdrive
+          : ASSET_KEYS.playerBulletOverdrive;
+    const bullet = this.playerBullets.get(x, y, renderTexture) as Phaser.Physics.Arcade.Sprite | null;
     if (!bullet) return;
-    bullet.setTexture(texture).setPosition(x, y).setActive(true).setVisible(true).setDepth(4).setAlpha(1).setScale(1);
+    bullet.clearTint().setTexture(renderTexture).setPosition(x, y).setActive(true).setVisible(true).setDepth(4).setAlpha(1).setScale(1);
+    if (overdriveState !== 'inactive') {
+      this.particles.setParticleTint(OVERDRIVE_GOLD);
+      this.particles.explode(2, x, y);
+    }
     if (texture === ASSET_KEYS.laser && this.model.modifiers.splitCapacitors) bullet.setScale(1.2, 1);
     const body = bullet.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
@@ -574,6 +644,8 @@ export class BattleScene extends Phaser.Scene {
     bullet.setDataEnabled()
       .setData('damage', baseDamage * this.model.damageMultiplier)
       .setData('missile', missile)
+      .setData('overdriveVisual', overdriveState !== 'inactive')
+      .setData('nextTrailAt', 0)
       .setData('pierce', this.model.modifiers.phaseArsenal ? 1 : 0)
       .setData('hitTargets', new Set<number>());
     const speed = missile ? 620 : 940;
@@ -587,6 +659,11 @@ export class BattleScene extends Phaser.Scene {
       const bullet = child as Phaser.Physics.Arcade.Sprite;
       if (!bullet.active) return true;
       if (bullet.getData('missile')) this.homeMissile(bullet, delta);
+      if (bullet.getData('overdriveVisual') && this.time.now >= ((bullet.getData('nextTrailAt') as number | undefined) ?? 0)) {
+        bullet.setData('nextTrailAt', this.time.now + 70);
+        this.particles.setParticleTint(OVERDRIVE_GOLD);
+        this.particles.explode(1, bullet.x, bullet.y + 8);
+      }
       if (bullet.y < -80 || bullet.x < -80 || bullet.x > WORLD_WIDTH + 80) this.disableBody(bullet);
       return true;
     });
@@ -604,15 +681,21 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private homeMissile(missile: Phaser.Physics.Arcade.Sprite, delta: number): void {
-    let nearest: Phaser.Physics.Arcade.Sprite | undefined;
+    let nearest: Phaser.Math.Vector2 | undefined;
     let distance = Number.POSITIVE_INFINITY;
     this.enemies.children.each((child) => {
       const enemy = child as Phaser.Physics.Arcade.Sprite;
       if (!enemy.active || enemy.getData('combatReady') === false) return true;
-      const candidate = Phaser.Math.Distance.Squared(missile.x, missile.y, enemy.x, enemy.y);
-      if (candidate < distance) {
-        distance = candidate;
-        nearest = enemy;
+      const weakpoints = ((enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined) ?? [])
+        .filter((zone) => zone.active && zone.getData('role') === 'weakpoint');
+      const targets = weakpoints.length > 0 ? weakpoints : [enemy];
+      for (const target of targets) {
+        const preference = weakpoints.length > 0 ? 0.55 : 1;
+        const candidate = Phaser.Math.Distance.Squared(missile.x, missile.y, target.x, target.y) * preference;
+        if (candidate < distance) {
+          distance = candidate;
+          nearest = new Phaser.Math.Vector2(target.x, target.y);
+        }
       }
       return true;
     });
@@ -626,6 +709,12 @@ export class BattleScene extends Phaser.Scene {
     missile.rotation = next + Math.PI / 2;
   }
 
+  private firstActiveBulwarkReactorZone(enemy: Phaser.Physics.Arcade.Sprite): Phaser.GameObjects.Zone | undefined {
+    if (enemy.getData('kind') !== 'bulwark') return undefined;
+    return ((enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined) ?? [])
+      .find((zone) => zone.active && zone.getData('role') === 'weakpoint');
+  }
+
   private updateDrones(delta: number): void {
     const level = this.model.weapons.drone;
     const count = level === 0 ? 0 : level === 1 ? 1 : level < 4 ? 2 : level === 4 ? 3 : 4;
@@ -633,6 +722,7 @@ export class BattleScene extends Phaser.Scene {
       const visible = index < count;
       drone.setVisible(visible);
       if (!visible) return;
+      drone.clearTint().setTexture(this.model.weaponOverdriveState !== 'inactive' ? ASSET_KEYS.droneOverdrive : ASSET_KEYS.drone);
       const side = index === 0 ? -1 : 1;
       const targetX = this.player.x + side * (58 + level * 4);
       const targetY = this.player.y + 17 + Math.sin(this.time.now * 0.004 + index * Math.PI) * 6;
@@ -654,6 +744,7 @@ export class BattleScene extends Phaser.Scene {
       this.announce(`THREAT LEVEL ${threat} // PRESSURE RISING`);
       this.emitSound('warning');
     }
+    if (this.maybeIntroduceBulwark(progress)) return;
     this.maybeSpawnArmamentCarrier(progress);
     this.maybeSpawnCommandTargets();
     if (this.model.stageElapsedMs >= this.model.stageDurationMs && this.commandSpawned && this.commandRemaining <= 0) {
@@ -666,6 +757,21 @@ export class BattleScene extends Phaser.Scene {
     const tuning = this.encounterDirector?.tuning(progress) ?? getThreatTuning(progress, this.model.difficulty, this.model.mission.id);
     this.spawnThreatEscorts(tuning.waveBudget);
     this.nextWaveAt = time + tuning.waveIntervalMs;
+  }
+
+  private maybeIntroduceBulwark(progress: number): boolean {
+    if (this.model.mission.id !== 'minefield' || this.bulwarkIntroduced || progress < 0.55 || this.wardenActive) return false;
+    if (this.enemies.countActive(true) > 0) {
+      this.nextWaveAt = Math.max(this.nextWaveAt, this.time.now + 900);
+      return true;
+    }
+    const bulwark = this.spawnEnemy('bulwark', WORLD_WIDTH / 2, -100, 0);
+    if (!bulwark) return true;
+    this.bulwarkIntroduced = true;
+    this.nextWaveAt = this.time.now + 5_400;
+    this.announce('NEW CONTACT // BULWARK GUNSHIP');
+    this.emitSound('warning');
+    return true;
   }
 
   private maybeSpawnArmamentCarrier(progress: number): void {
@@ -702,13 +808,14 @@ export class BattleScene extends Phaser.Scene {
       this.commandRemaining = 1;
       this.wardenActive = true;
       this.enemies.clear(true, true);
+      this.enemyHitZones.clear(true, true);
       this.enemyBullets.clear(true, true);
       this.cleanupDetachedViews();
       this.announce('WARNING // WARDEN DETECTED');
       this.emitSound('warning');
       const warden = this.spawnEnemy('warden', WORLD_WIDTH / 2, -105, 0);
       warden?.setData('commandTarget', true).setData('attackIndex', 0);
-      if (warden) this.markCarrier(warden, globalCarrierIndex('minefield', 3));
+      if (warden) this.markCarrier(warden, globalCarrierIndex('minefield', 3), false);
       this.model.setBoss('WARDEN', 1);
     } else if (this.model.mission.id === 'fortress' && remaining <= 25_000) {
       this.commandSpawned = true;
@@ -717,7 +824,10 @@ export class BattleScene extends Phaser.Scene {
       const left = this.spawnEnemy('elite', 390, -80, 1);
       const right = this.spawnEnemy('elite', 890, -130, 2);
       left?.setData('commandTarget', true);
-      if (left) this.markCarrier(left, globalCarrierIndex('fortress', 4));
+      if (left) {
+        this.markCarrier(left, globalCarrierIndex('fortress', 4), false);
+        this.configureDepthArrival(left, 1_200);
+      }
       right?.setData('commandTarget', true);
       if (right) this.configureDepthArrival(right, 1_200);
       this.spawnEnemy('shieldCarrier', WORLD_WIDTH / 2, -180, 0);
@@ -748,7 +858,11 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (this.model.mission.id === 'minefield') {
-      if (pattern === 2 || pattern === 5) {
+      if (progress > 0.7 && pattern === 4 && this.countActiveEnemies('bulwark') === 0) {
+        this.spawnEnemy('bulwark', WORLD_WIDTH / 2, -90, index);
+        this.spawnEnemy('scout', 350, -145, 1);
+        this.spawnEnemy('scout', 930, -145, 2);
+      } else if (pattern === 2 || pattern === 5) {
         this.spawnEnemy('mineLayer', this.waveX(index, 4, 260, 1020), -80, index);
         for (let i = 0; i < 3; i += 1) this.spawnEnemy('scout', 260 + i * 380, -130 - i * 30, i);
       } else if (pattern === 4) {
@@ -760,7 +874,14 @@ export class BattleScene extends Phaser.Scene {
     }
 
     const specialist = SPECIALISTS[(index + Math.floor(progress * 4)) % SPECIALISTS.length];
-    if (pattern === 2 || pattern === 4) {
+    if (pattern === 2 && progress > 0.35 && this.countActiveEnemies('bulwark') === 0) {
+      this.spawnEnemy('bulwark', this.waveX(index, 5, 360, 920), -90, index);
+      this.spawnEnemy('interceptor', -30, 120, 1);
+      this.spawnEnemy('interceptor', WORLD_WIDTH + 30, 210, 2);
+    } else if (pattern === 4 && progress > 0.58 && this.countActiveEnemies('bulwark') === 0) {
+      this.spawnEnemy('bulwark', this.waveX(index, 5, 360, 920), -90, index);
+      this.spawnEnemy('sniper', this.waveX(index, 9, 250, 1030), -150, index + 1);
+    } else if (pattern === 2 || pattern === 4) {
       this.spawnEnemy(specialist, this.waveX(index, 5, 260, 1020), -80, index);
       this.spawnEnemy(pattern === 2 ? 'bomber' : 'elite', this.waveX(index, 6, 300, 980), -160, index + 1);
     } else if (pattern === 5) {
@@ -796,29 +917,39 @@ export class BattleScene extends Phaser.Scene {
 
   private spawnEnemy(kind: EnemyKind, x: number, y: number, phase: number): Phaser.Physics.Arcade.Sprite | undefined {
     if (this.enemies.countActive(true) >= MAX_ACTIVE_ENEMIES) return undefined;
+    if (kind === 'bulwark' && this.countActiveEnemies('bulwark') >= 1) return undefined;
     const key = ASSET_KEYS[kind];
     const enemy = this.physics.add.sprite(x, y, key).setDepth(3);
     this.enemies.add(enemy);
     const config = ENEMIES[kind];
     const progress = Math.min(1, this.model.stageElapsedMs / Math.max(1, this.model.stageDurationMs));
     const threat = getThreatTuning(progress, this.model.difficulty, this.model.mission.id);
-    const health = Math.max(1, Math.round(config.health * DIFFICULTY[this.model.difficulty].enemyHealth * threat.enemyHealth));
+    const health = Math.max(1, Math.round(config.health * threat.enemyHealth));
     enemy.setDataEnabled()
       .setData('entityId', ++this.entityId)
       .setData('kind', kind)
       .setData('health', health)
       .setData('maxHealth', health)
       .setData('originX', x)
+      .setData('motionOriginX', x)
       .setData('phase', phase)
       .setData('spawnedAt', this.time.now)
+      .setData('motionStartedAt', this.time.now)
       .setData('state', 'entry')
       .setData('combatReady', true)
       .setData('speedScale', threat.movementSpeed)
       .setData('fireScale', threat.fireRate)
       .setData('chronoScale', 1)
       .setData('nextFire', this.time.now + Phaser.Math.Between(900, 2_100));
+    if (kind === 'bulwark') {
+      enemy.setData('reactorHealth', [7, 7])
+        .setData('armorBroken', false)
+        .setData('armorDisabledUntil', 0)
+        .setData('attackIndex', 0);
+    }
     const body = enemy.body as Phaser.Physics.Arcade.Body;
     body.setSize(enemy.width * (kind === 'boss' || kind === 'warden' ? 0.78 : 0.58), enemy.height * 0.52);
+    this.createEnemyHitZones(enemy);
 
     if (kind === 'interceptor') {
       const fromLeft = x < 0;
@@ -835,10 +966,84 @@ export class BattleScene extends Phaser.Scene {
       enemy.setData('aura', aura);
       this.transientViews.add(aura);
     }
-    if (['charger', 'mineLayer', 'shieldCarrier', 'warden', 'boss'].includes(kind)) {
-      this.configureDepthArrival(enemy, kind === 'boss' ? 1_800 : kind === 'warden' ? 1_400 : 900);
+    if (['charger', 'mineLayer', 'shieldCarrier', 'bulwark', 'warden', 'boss'].includes(kind)) {
+      this.configureDepthArrival(enemy, kind === 'boss' ? 1_800 : kind === 'warden' ? 1_400 : kind === 'bulwark' ? 1_100 : 900);
     }
     return enemy;
+  }
+
+  private countActiveEnemies(kind: EnemyKind): number {
+    let count = 0;
+    this.enemies.children.each((child) => {
+      const enemy = child as Phaser.Physics.Arcade.Sprite;
+      if (enemy.active && enemy.getData('kind') === kind) count += 1;
+      return true;
+    });
+    return count;
+  }
+
+  private hitboxDefinitions(kind: EnemyKind): readonly EnemyHitboxRect[] {
+    if (kind === 'bulwark') return BULWARK_HITBOXES;
+    if (kind === 'boss' || kind === 'warden' || kind === 'elite' || kind === 'bomber') return LARGE_HITBOXES;
+    return STANDARD_HITBOXES;
+  }
+
+  private createEnemyHitZones(enemy: Phaser.Physics.Arcade.Sprite): void {
+    const kind = enemy.getData('kind') as EnemyKind;
+    const zones = this.hitboxDefinitions(kind).map((definition, zoneIndex) => {
+      const zone = this.add.zone(enemy.x, enemy.y, 8, 8).setDataEnabled();
+      this.physics.add.existing(zone);
+      this.enemyHitZones.add(zone);
+      zone.setData('enemy', enemy)
+        .setData('role', definition.role)
+        .setData('zoneIndex', zoneIndex)
+        .setData('definition', definition);
+      return zone;
+    });
+    enemy.setData('hitZones', zones);
+    this.syncEnemyHitZones(enemy);
+  }
+
+  private setEnemyHitZonesEnabled(enemy: Phaser.Physics.Arcade.Sprite, enabled: boolean): void {
+    const zones = (enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined) ?? [];
+    zones.forEach((zone) => {
+      const body = zone.body as Phaser.Physics.Arcade.Body;
+      body.enable = enabled && zone.getData('reactorDestroyed') !== true;
+      zone.setActive(body.enable);
+    });
+  }
+
+  private syncEnemyHitZones(enemy: Phaser.Physics.Arcade.Sprite): void {
+    const zones = (enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined) ?? [];
+    const ready = enemy.getData('combatReady') !== false;
+    zones.forEach((zone) => {
+      if (!zone.active && zone.getData('reactorDestroyed') === true) return;
+      const definition = zone.getData('definition') as EnemyHitboxRect;
+      const localX = definition.x * enemy.displayWidth;
+      const localY = definition.y * enemy.displayHeight;
+      const cos = Math.cos(Phaser.Math.DegToRad(enemy.angle));
+      const sin = Math.sin(Phaser.Math.DegToRad(enemy.angle));
+      const x = enemy.x + localX * cos - localY * sin;
+      const y = enemy.y + localX * sin + localY * cos;
+      const width = Math.max(5, definition.width * enemy.displayWidth);
+      const height = Math.max(5, definition.height * enemy.displayHeight);
+      zone.setPosition(x, y).setSize(width, height);
+      const body = zone.body as Phaser.Physics.Arcade.Body;
+      body.setSize(width, height);
+      body.reset(x, y);
+      body.enable = ready && zone.getData('reactorDestroyed') !== true;
+      if (this.hitboxGraphics) {
+        const role = zone.getData('role') as EnemyHitZoneRole;
+        const color = role === 'core' ? 0x35e8ff : role === 'weakpoint' ? 0x65ffb1 : 0xffb640;
+        this.hitboxGraphics.lineStyle(1, color, body.enable ? 0.85 : 0.28).strokeRect(x - width / 2, y - height / 2, width, height);
+      }
+    });
+  }
+
+  private destroyEnemyHitZones(enemy: Phaser.Physics.Arcade.Sprite): void {
+    const zones = (enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined) ?? [];
+    zones.forEach((zone) => zone.destroy());
+    enemy.setData('hitZones', undefined);
   }
 
   private updateEnemies(time: number, delta: number): void {
@@ -859,6 +1064,7 @@ export class BattleScene extends Phaser.Scene {
       else if (kind === 'sniper') this.updateSniper(enemy, time);
       else if (kind === 'mineLayer') this.updateMineLayer(enemy, time);
       else if (kind === 'shieldCarrier') this.updateShieldCarrier(enemy, time);
+      else if (kind === 'bulwark') this.updateBulwark(enemy, time);
       else this.updateStandardEnemy(enemy, kind, time);
 
       const chronoScale = this.model.chronoScale;
@@ -878,6 +1084,7 @@ export class BattleScene extends Phaser.Scene {
     const targetY = kind === 'boss' ? 128 : kind === 'warden' ? 125 : 115;
     const body = enemy.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
+    this.setEnemyHitZonesEnabled(enemy, false);
     enemy.setData('combatReady', false)
       .setData('arrivalElapsed', -600)
       .setData('arrivalDuration', duration)
@@ -918,11 +1125,16 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     this.destroyEnemyView(enemy, 'arrivalRing');
-    enemy.setScale(1).setAlpha(1).setY(targetY).setData('combatReady', true).setData('nextFire', this.time.now + 450);
+    enemy.setScale(1).setAlpha(1).setY(targetY)
+      .setData('combatReady', true)
+      .setData('motionStartedAt', this.time.now)
+      .setData('motionOriginX', enemy.x)
+      .setData('nextFire', this.time.now + 450);
     const body = enemy.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
     body.setSize(enemy.width * (command ? 0.78 : 0.58), enemy.height * 0.52);
     enemy.setVelocityY(ENEMIES[kind].speed * (enemy.getData('speedScale') as number));
+    this.setEnemyHitZonesEnabled(enemy, true);
     this.particles.setParticleTint(command ? 0xf06cff : 0x35e8ff);
     this.particles.explode(command ? 28 : 16, enemy.x, enemy.y);
   }
@@ -947,26 +1159,29 @@ export class BattleScene extends Phaser.Scene {
     if (aura?.active) aura.setPosition(enemy.x, enemy.y);
     const carrierAura = enemy.getData('carrierAura') as Phaser.GameObjects.Arc | undefined;
     if (carrierAura?.active) carrierAura.setPosition(enemy.x, enemy.y).setRotation(this.time.now * 0.001);
+    this.syncEnemyHitZones(enemy);
   }
 
-  private markCarrier(enemy: Phaser.Physics.Arcade.Sprite, carrierIndex: number): void {
-    enemy.setData('carrierIndex', carrierIndex)
-      .setData('health', Math.ceil((enemy.getData('health') as number) * 1.35))
-      .setData('maxHealth', Math.ceil((enemy.getData('maxHealth') as number) * 1.35));
+  private markCarrier(enemy: Phaser.Physics.Arcade.Sprite, carrierIndex: number, reinforced = true): void {
+    enemy.setData('carrierIndex', carrierIndex);
+    if (reinforced) {
+      enemy.setData('health', Math.ceil((enemy.getData('health') as number) * 1.35))
+        .setData('maxHealth', Math.ceil((enemy.getData('maxHealth') as number) * 1.35));
+    }
     const aura = this.add.circle(enemy.x, enemy.y, Math.max(38, enemy.width * 0.48), 0xffb640, 0.06)
       .setDepth(2)
       .setStrokeStyle(3, 0xffcf68, 0.82);
     enemy.setData('carrierAura', aura);
     this.transientViews.add(aura);
-    if (enemy.getData('combatReady') !== false && !['boss', 'warden'].includes(enemy.getData('kind') as string)) {
+    if (reinforced && enemy.getData('combatReady') !== false && !['boss', 'warden'].includes(enemy.getData('kind') as string)) {
       this.configureDepthArrival(enemy, 1_100);
     }
   }
 
   private updateStandardEnemy(enemy: Phaser.Physics.Arcade.Sprite, kind: EnemyKind, time: number): void {
-    const aliveMs = time - (enemy.getData('spawnedAt') as number);
+    const aliveMs = time - (enemy.getData('motionStartedAt') as number);
     const phase = enemy.getData('phase') as number;
-    const originX = enemy.getData('originX') as number;
+    const originX = enemy.getData('motionOriginX') as number;
     if (kind === 'scout') enemy.x = originX + Math.sin(aliveMs * 0.0024 + phase) * 54;
     if (kind === 'bomber' && enemy.y > 135) {
       enemy.setVelocityY(36 * (enemy.getData('speedScale') as number));
@@ -1019,16 +1234,17 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (state === 'hover') {
-      enemy.x = (enemy.getData('originX') as number) + Math.sin(time * 0.0012) * 90;
+      const motionTime = time - (enemy.getData('motionStartedAt') as number);
+      enemy.x = (enemy.getData('motionOriginX') as number) + Math.sin(motionTime * 0.0012) * 90;
       if (time >= (enemy.getData('nextFire') as number)) {
         const aim = this.add.graphics().setDepth(4);
         this.transientViews.add(aim);
-        enemy.setData('state', 'aiming').setData('aimUntil', time + 1_000).setData('telegraph', aim);
+        enemy.setData('state', 'tracking').setData('trackUntil', time + 700).setData('telegraph', aim);
         this.emitSound('warning');
       }
       return;
     }
-    if (state === 'aiming') {
+    if (state === 'tracking') {
       const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
       enemy.setData('aimAngle', angle);
       const aim = enemy.getData('telegraph') as Phaser.GameObjects.Graphics;
@@ -1036,7 +1252,21 @@ export class BattleScene extends Phaser.Scene {
         aim.clear().lineStyle(2, 0xff72ca, 0.62);
         aim.lineBetween(enemy.x, enemy.y, enemy.x + Math.cos(angle) * 1_500, enemy.y + Math.sin(angle) * 1_500);
       }
-      if (time >= (enemy.getData('aimUntil') as number)) {
+      if (time >= (enemy.getData('trackUntil') as number)) {
+        enemy.setData('state', 'locked').setData('lockedUntil', time + 650).setData('aimAngle', angle);
+        this.emitSound('warning');
+      }
+      return;
+    }
+    if (state === 'locked') {
+      const angle = enemy.getData('aimAngle') as number;
+      const aim = enemy.getData('telegraph') as Phaser.GameObjects.Graphics;
+      if (aim?.active) {
+        const pulse = 0.72 + Math.sin(time * 0.032) * 0.2;
+        aim.clear().lineStyle(8, 0xff72ca, 0.12).lineBetween(enemy.x, enemy.y, enemy.x + Math.cos(angle) * 1_500, enemy.y + Math.sin(angle) * 1_500);
+        aim.lineStyle(2, 0xffffff, pulse).lineBetween(enemy.x, enemy.y, enemy.x + Math.cos(angle) * 1_500, enemy.y + Math.sin(angle) * 1_500);
+      }
+      if (time >= (enemy.getData('lockedUntil') as number)) {
         this.fireSniperBeam(enemy, angle);
         enemy.setData('state', 'hover').setData('nextFire', time + ENEMIES.sniper.fireMs / (enemy.getData('fireScale') as number));
       }
@@ -1058,7 +1288,7 @@ export class BattleScene extends Phaser.Scene {
   private updateMineLayer(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
     if (enemy.y < 125) return;
     enemy.setVelocityY(18 * (enemy.getData('speedScale') as number));
-    enemy.x = WORLD_WIDTH / 2 + Math.sin((time - (enemy.getData('spawnedAt') as number)) * 0.0011) * 430;
+    enemy.x = (enemy.getData('motionOriginX') as number) + Math.sin((time - (enemy.getData('motionStartedAt') as number)) * 0.0011) * 430;
     if (time >= (enemy.getData('nextFire') as number)) {
       this.spawnMine(enemy.x, enemy.y + 32);
       const interval = ENEMIES.mineLayer.fireMs / (DIFFICULTY[this.model.difficulty].enemyFireRate * (enemy.getData('fireScale') as number));
@@ -1069,7 +1299,7 @@ export class BattleScene extends Phaser.Scene {
   private updateShieldCarrier(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
     if (enemy.y > 125) {
       enemy.setVelocityY(18 * (enemy.getData('speedScale') as number));
-      enemy.x = (enemy.getData('originX') as number) + Math.sin(time * 0.0014) * 180;
+      enemy.x = (enemy.getData('motionOriginX') as number) + Math.sin((time - (enemy.getData('motionStartedAt') as number)) * 0.0014) * 180;
     }
     const aura = enemy.getData('aura') as Phaser.GameObjects.Arc;
     if (aura?.active) aura.setPosition(enemy.x, enemy.y);
@@ -1079,14 +1309,57 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  private updateBulwark(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
+    const state = enemy.getData('state') as string;
+    const speedScale = enemy.getData('speedScale') as number;
+    if (state === 'entry') {
+      enemy.setVelocity(0, 0).setData('state', 'hover').setData('nextFire', Math.max(time + 450, enemy.getData('nextFire') as number));
+      return;
+    }
+    const motionTime = time - (enemy.getData('motionStartedAt') as number);
+    enemy.x = (enemy.getData('motionOriginX') as number) + Math.sin(motionTime * 0.00105) * 95;
+    enemy.setVelocityY(12 * speedScale);
+    if (state === 'hover' && time >= (enemy.getData('nextFire') as number)) {
+      const warning = this.add.graphics().setDepth(4);
+      const leftX = enemy.x - enemy.displayWidth * 0.29;
+      const rightX = enemy.x + enemy.displayWidth * 0.29;
+      warning.lineStyle(3, 0xffb640, 0.42);
+      warning.lineBetween(leftX, enemy.y + 16, this.player.x - 62, WORLD_HEIGHT + 20);
+      warning.lineBetween(rightX, enemy.y + 16, this.player.x + 62, WORLD_HEIGHT + 20);
+      this.transientViews.add(warning);
+      enemy.setData('state', 'volleyWarning').setData('volleyAt', time + 700).setData('telegraph', warning);
+      this.emitSound('warning');
+      return;
+    }
+    if (state === 'volleyWarning' && time >= (enemy.getData('volleyAt') as number)) {
+      this.destroyEnemyView(enemy, 'telegraph');
+      const attackIndex = enemy.getData('attackIndex') as number;
+      const leftX = enemy.x - enemy.displayWidth * 0.29;
+      const rightX = enemy.x + enemy.displayWidth * 0.29;
+      const fireWing = (originX: number, targetOffset: number): void => {
+        const angle = Phaser.Math.Angle.Between(originX, enemy.y + 16, this.player.x + targetOffset, this.player.y);
+        [-0.09, 0, 0.09].forEach((offset) => this.spawnEnemyBullet(originX, enemy.y + 16, angle + offset, true));
+      };
+      const firstLeft = attackIndex % 2 === 0;
+      fireWing(firstLeft ? leftX : rightX, firstLeft ? -62 : 62);
+      this.time.delayedCall(140, () => {
+        if (enemy.active) fireWing(firstLeft ? rightX : leftX, firstLeft ? 62 : -62);
+      });
+      enemy.setData('attackIndex', attackIndex + 1)
+        .setData('state', 'hover')
+        .setData('nextFire', time + ENEMIES.bulwark.fireMs / (DIFFICULTY[this.model.difficulty].enemyFireRate * (enemy.getData('fireScale') as number)));
+      this.emitSound('enemy-fire');
+    }
+  }
+
   private updateWarden(warden: Phaser.Physics.Arcade.Sprite, time: number): void {
     if (warden.y < 125) {
       warden.setVelocityY(50);
       return;
     }
     warden.setVelocityY(0);
-    const aliveMs = time - (warden.getData('spawnedAt') as number);
-    warden.x = WORLD_WIDTH / 2 + Math.sin(aliveMs * 0.0009) * 280;
+    const aliveMs = time - (warden.getData('motionStartedAt') as number);
+    warden.x = (warden.getData('motionOriginX') as number) + Math.sin(aliveMs * 0.0009) * 280;
     const healthRatio = (warden.getData('health') as number) / (warden.getData('maxHealth') as number);
     this.model.setBoss('WARDEN', healthRatio);
     if (time < (warden.getData('nextFire') as number)) return;
@@ -1204,6 +1477,7 @@ export class BattleScene extends Phaser.Scene {
     if (this.bossSpawned || this.model.mode !== 'playing') return;
     this.bossSpawned = true;
     this.enemies.clear(true, true);
+    this.enemyHitZones.clear(true, true);
     this.enemyBullets.clear(true, true);
     this.mines.clear(true, true);
     this.cleanupDetachedViews();
@@ -1224,8 +1498,8 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     boss.setVelocityY(0);
-    const aliveMs = time - (boss.getData('spawnedAt') as number);
-    boss.x = WORLD_WIDTH / 2 + Math.sin(aliveMs * 0.00075) * 320;
+    const aliveMs = time - (boss.getData('motionStartedAt') as number);
+    boss.x = (boss.getData('motionOriginX') as number) + Math.sin(aliveMs * 0.00075) * 320;
     const healthRatio = (boss.getData('health') as number) / (boss.getData('maxHealth') as number);
     this.model.setBoss('DREADNOUGHT', healthRatio);
     if (time < (boss.getData('nextFire') as number)) return;
@@ -1249,7 +1523,8 @@ export class BattleScene extends Phaser.Scene {
     this.emitSound('enemy-fire');
   }
 
-  private hitEnemy(bullet: Phaser.Physics.Arcade.Sprite, enemy: Phaser.Physics.Arcade.Sprite): void {
+  private hitEnemy(bullet: Phaser.Physics.Arcade.Sprite, zone: Phaser.GameObjects.Zone): void {
+    const enemy = zone.getData('enemy') as Phaser.Physics.Arcade.Sprite;
     if (!bullet.active || !enemy.active || enemy.getData('combatReady') === false) return;
     const targetId = enemy.getData('entityId') as number;
     const hitTargets = bullet.getData('hitTargets') as Set<number>;
@@ -1263,40 +1538,74 @@ export class BattleScene extends Phaser.Scene {
     const pierce = bullet.getData('pierce') as number;
     if (pierce > 0) bullet.setData('pierce', pierce - 1);
     else this.disableBody(bullet);
-    this.damageEnemy(enemy, damage);
+    const overdriveVisual = Boolean(bullet.getData('overdriveVisual'));
+    this.damageEnemy(enemy, damage, zone.getData('role') as EnemyHitZoneRole, zone.getData('zoneIndex') as number, overdriveVisual);
     const missileLevel = this.model.weapons.missile;
     const splashRadius = this.model.modifiers.phaseArsenal ? 90 : missileLevel >= 5 ? 55 : 0;
-    if (missile && splashRadius > 0) this.applyMissileSplash(impactX, impactY, targetId, damage * 0.55, splashRadius);
+    if (missile && splashRadius > 0) this.applyMissileSplash(impactX, impactY, targetId, damage * 0.55, splashRadius, overdriveVisual);
   }
 
-  private applyMissileSplash(x: number, y: number, excludedId: number, damage: number, radius: number): void {
+  private applyMissileSplash(x: number, y: number, excludedId: number, damage: number, radius: number, overdriveVisual = false): void {
     const targets: Phaser.Physics.Arcade.Sprite[] = [];
     this.enemies.children.each((child) => {
       const enemy = child as Phaser.Physics.Arcade.Sprite;
       if (enemy.active && enemy.getData('combatReady') !== false && enemy.getData('entityId') !== excludedId && Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y) <= radius) targets.push(enemy);
       return true;
     });
-    targets.forEach((enemy) => this.damageEnemy(enemy, damage));
-    const blast = this.add.circle(x, y, 16, 0xffb640, 0.18).setDepth(5).setStrokeStyle(2, 0xffe7a0, 0.8);
+    targets.forEach((enemy) => this.damageEnemy(enemy, damage, 'core', -1, overdriveVisual));
+    const blast = this.add.circle(x, y, 16, OVERDRIVE_GOLD, overdriveVisual ? 0.28 : 0.18)
+      .setDepth(5)
+      .setStrokeStyle(2, overdriveVisual ? OVERDRIVE_CORE : 0xffe7a0, 0.8);
     this.transientViews.add(blast);
     this.tweens.add({ targets: blast, scale: radius / 16, alpha: 0, duration: 240, onComplete: () => this.destroyTransient(blast) });
   }
 
-  private damageEnemy(enemy: Phaser.Physics.Arcade.Sprite, rawDamage: number): void {
+  private damageEnemy(
+    enemy: Phaser.Physics.Arcade.Sprite,
+    rawDamage: number,
+    role: EnemyHitZoneRole = 'core',
+    zoneIndex = -1,
+    overdriveVisual = false,
+  ): void {
     if (!enemy.active || enemy.getData('combatReady') === false) return;
     const kind = enemy.getData('kind') as EnemyKind;
+    if (kind === 'bulwark' && role === 'weakpoint') {
+      const reactorIndex = Math.max(0, zoneIndex - 3);
+      const reactors = [...(enemy.getData('reactorHealth') as number[])];
+      if ((reactors[reactorIndex] ?? 0) <= 0) return;
+      reactors[reactorIndex] = Math.max(0, reactors[reactorIndex] - rawDamage);
+      enemy.setData('reactorHealth', reactors);
+      this.particles.setParticleTint(overdriveVisual ? OVERDRIVE_GOLD : 0x65ffb1);
+      this.particles.explode(6, enemy.x + (reactorIndex === 0 ? -41 : 41), enemy.y + 4);
+      if (reactors[reactorIndex] <= 0) {
+        enemy.setData('armorBroken', true);
+        const zone = ((enemy.getData('hitZones') as Phaser.GameObjects.Zone[]) ?? [])[zoneIndex];
+        if (zone) {
+          zone.setData('reactorDestroyed', true).setActive(false);
+          (zone.body as Phaser.Physics.Arcade.Body).enable = false;
+        }
+        this.announce(`BULWARK ${reactorIndex === 0 ? 'PORT' : 'STARBOARD'} REACTOR DESTROYED`);
+        this.emitSound('explode');
+      }
+      return;
+    }
     const protectedByCarrier = kind !== 'shieldCarrier' && kind !== 'boss' && kind !== 'warden' && this.isProtectedByCarrier(enemy);
-    const damage = rawDamage * (protectedByCarrier ? 0.3 : 1);
+    const bulwarkArmor = kind === 'bulwark'
+      && !enemy.getData('armorBroken')
+      && this.time.now >= ((enemy.getData('armorDisabledUntil') as number | undefined) ?? 0)
+      && role === 'core';
+    const damage = rawDamage * (protectedByCarrier ? 0.3 : 1) * (bulwarkArmor ? 0.45 : 1);
     const health = (enemy.getData('health') as number) - damage;
     enemy.setData('health', health);
     enemy.setTintFill(protectedByCarrier ? 0x8b7dff : 0xffffff);
     this.time.delayedCall(45, () => enemy.active && enemy.clearTint());
-    this.particles.setParticleTint(protectedByCarrier ? 0x8b7dff : kind === 'elite' || kind === 'warden' ? 0xf06cff : 0xff6f61);
+    this.particles.setParticleTint(overdriveVisual ? OVERDRIVE_GOLD : protectedByCarrier ? 0x8b7dff : kind === 'elite' || kind === 'warden' ? 0xf06cff : 0xff6f61);
     this.particles.explode(3, enemy.x, enemy.y);
     if (health <= 0) this.destroyEnemy(enemy);
   }
 
   private isProtectedByCarrier(target: Phaser.Physics.Arcade.Sprite): boolean {
+    if (target.getData('kind') === 'bulwark' && this.model.difficulty !== 'ace') return false;
     let protectedTarget = false;
     this.enemies.children.each((child) => {
       const carrier = child as Phaser.Physics.Arcade.Sprite;
@@ -1322,6 +1631,7 @@ export class BattleScene extends Phaser.Scene {
     this.destroyEnemyView(enemy, 'shadow');
     this.destroyEnemyView(enemy, 'arrivalRing');
     this.destroyEnemyView(enemy, 'carrierAura');
+    this.destroyEnemyHitZones(enemy);
     enemy.destroy();
     this.particles.setParticleTint(kind === 'boss' ? 0xffb640 : kind === 'warden' ? 0xf06cff : 0xff6f61);
     this.particles.explode(kind === 'boss' ? 90 : kind === 'warden' ? 58 : Math.min(28, 8 + maxHealth), x, y);
@@ -1362,7 +1672,16 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnPickup(x: number, y: number, forcedType?: PickupType): void {
-    const type = forcedType ?? chooseUtilityPickup(this.model.hull, this.model.hullMax, this.model.empCharges, this.model.empMax);
+    const type = forcedType ?? chooseUtilityPickup(
+      this.model.hull,
+      this.model.hullMax,
+      this.model.empCharges,
+      this.model.empMax,
+      Math.random,
+      this.lastUtility,
+      this.model.modifiers.utilityDurationMultiplier > 1,
+    );
+    if (isUtilityPickup(type)) this.lastUtility = type;
     const pickup = this.physics.add.sprite(x, y, `${ASSET_KEYS.pickupPrefix}${type}`).setDepth(5);
     this.pickups.add(pickup);
     pickup.setDataEnabled().setData('pickup', type).setVelocityY(92);
@@ -1371,7 +1690,17 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnArmamentOffer(x: number, y: number, carrierIndex: number): void {
-    const offer = chooseArmamentOffer(this.model.weapons, this.model.shieldBaseMax, this.model.campaignSeed, carrierIndex);
+    const previousPair = this.armamentOfferHistory.at(-1);
+    const recentOptions = this.armamentOfferHistory.flat().slice(-4);
+    const offer = chooseArmamentOffer(
+      this.model.weapons,
+      this.model.shieldBaseMax,
+      this.model.campaignSeed,
+      carrierIndex,
+      recentOptions,
+      previousPair,
+    );
+    this.armamentOfferHistory.push(offer.options);
     const pairId = ++this.offerId;
     offer.options.forEach((type, index) => {
       const pickup = this.physics.add.sprite(x + (index === 0 ? -42 : 42), y, `${ASSET_KEYS.pickupPrefix}${type}`).setDepth(6);
@@ -1455,6 +1784,7 @@ export class BattleScene extends Phaser.Scene {
     });
     enemies.forEach((enemy) => {
       const kind = enemy.getData('kind') as EnemyKind;
+      if (kind === 'bulwark') enemy.setData('armorDisabledUntil', this.time.now + 5_000);
       const base = kind === 'boss' || kind === 'warden' ? 35 : 12;
       this.damageEnemy(enemy, base * this.model.empDamageMultiplier);
     });
@@ -1481,7 +1811,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private damagePlayer(forced = false): void {
-    if (this.debugMode && !forced) return;
+    if (this.godMode && !forced) return;
     const result = this.model.takeDamage();
     if (result === 'ignored') return;
     if (result === 'shield' || result === 'reserve') {
@@ -1585,6 +1915,21 @@ export class BattleScene extends Phaser.Scene {
     if (!force) return;
     this.lastHudAt = this.time.now;
     event('aegis:state', this.model.snapshot());
+    if (this.debugMode) {
+      const enemies: Array<{ kind: EnemyKind; combatReady: boolean; reactors?: number[] }> = [];
+      this.enemies.children.each((child) => {
+        const enemy = child as Phaser.Physics.Arcade.Sprite;
+        if (enemy.active) {
+          enemies.push({
+            kind: enemy.getData('kind') as EnemyKind,
+            combatReady: enemy.getData('combatReady') !== false,
+            reactors: enemy.getData('kind') === 'bulwark' ? [...(enemy.getData('reactorHealth') as number[])] : undefined,
+          });
+        }
+        return true;
+      });
+      event('aegis:debug-combat', enemies);
+    }
   }
 
   private announce(message: string): void {
@@ -1601,6 +1946,7 @@ export class BattleScene extends Phaser.Scene {
     this.destroyEnemyView(enemy, 'shadow');
     this.destroyEnemyView(enemy, 'arrivalRing');
     this.destroyEnemyView(enemy, 'carrierAura');
+    this.destroyEnemyHitZones(enemy);
     enemy.destroy();
   }
 

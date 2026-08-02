@@ -105,6 +105,19 @@ describe('GameModel', () => {
     expect(model.fireIntervalMultiplier).toBeCloseTo(0.675);
   });
 
+  it('exposes cell, reactor, and stacked Overdrive states independently', () => {
+    const model = new GameModel();
+    model.start(startConfig(['overdrive-reactor']));
+    expect(model.snapshot().weaponOverdriveState).toBe('inactive');
+    model.collectUtility('overdrive');
+    expect(model.snapshot().weaponOverdriveState).toBe('cell');
+    for (let kill = 0; kill < 10; kill += 1) model.registerKill(0, 0);
+    expect(model.snapshot().weaponOverdriveState).toBe('stacked');
+    expect(model.snapshot().reactorOverdriveRemainingMs).toBe(6_000);
+    model.tick(6_001);
+    expect(model.snapshot().weaponOverdriveState).toBe('cell');
+  });
+
   it('provides one Phoenix save per mission', () => {
     const model = new GameModel();
     model.start(startConfig(['reinforced-frame', 'reactive-armor', 'phoenix-protocol']));

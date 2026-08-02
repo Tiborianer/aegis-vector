@@ -30,4 +30,30 @@ describe('armament and utility drops', () => {
   it('favors repair when hull is damaged', () => {
     expect(chooseUtilityPickup(1, 3, 1, 2, () => 0)).toBe('repair');
   });
+
+  it('applies the utility repeat penalty across a thousand deterministic draws', () => {
+    const counts = { repair: 0, overdrive: 0, tractor: 0, emp: 0 };
+    for (let seed = 0; seed < 1_000; seed += 1) {
+      let value = seed + 1;
+      const random = () => {
+        value = Math.imul(value ^ (value >>> 15), 1 | value);
+        return ((value >>> 0) % 10_000) / 10_000;
+      };
+      counts[chooseUtilityPickup(3, 3, 0, 2, random, 'emp')] += 1;
+    }
+    expect(counts.emp).toBeLessThan(counts.overdrive + counts.tractor);
+    expect(counts.repair).toBeGreaterThan(0);
+  });
+
+  it('varies permanent pairs across campaigns while keeping each retry stable', () => {
+    const weapons = { spread: 2, missile: 1, laser: 0, drone: 0, ion: 0 } as const;
+    const pairs = new Set<string>();
+    for (let seed = 1; seed <= 1_000; seed += 1) {
+      const offer = chooseArmamentOffer(weapons, 1, seed, 3, ['spread'], ['spread', 'missile']);
+      expect(offer.options[0]).not.toBe(offer.options[1]);
+      expect(chooseArmamentOffer(weapons, 1, seed, 3, ['spread'], ['spread', 'missile'])).toEqual(offer);
+      pairs.add([...offer.options].sort().join(':'));
+    }
+    expect(pairs.size).toBeGreaterThan(3);
+  });
 });

@@ -13,6 +13,7 @@ export type EnemyKind =
   | 'sniper'
   | 'mineLayer'
   | 'shieldCarrier'
+  | 'bulwark'
   | 'warden'
   | 'boss';
 export type GameMode = 'briefing' | 'playing' | 'paused' | 'complete' | 'gameover' | 'victory';
@@ -35,10 +36,25 @@ export type MusicTrack =
   | 'victory'
   | 'defeat';
 export type MusicPlaybackState = 'locked' | 'loading' | 'playing' | 'unavailable';
+export type WeaponOverdriveState = 'inactive' | 'cell' | 'reactor' | 'stacked';
+export type EnemyHitZoneRole = 'core' | 'wing' | 'weakpoint';
+
+export interface EnemyHitboxRect {
+  role: EnemyHitZoneRole;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type MusicLoopStrategy =
+  | { mode: 'none' }
+  | { mode: 'full'; crossfadeSeconds: number }
+  | { mode: 'tail'; tailSeconds: number; crossfadeSeconds: number };
 
 export interface MusicAssetDefinition {
   files: readonly string[];
-  loop: boolean;
+  loop: MusicLoopStrategy;
   gain: number;
   preloadNext?: MusicTrack;
 }
@@ -51,6 +67,11 @@ export interface AudioDebugState {
   source?: 'buffer' | 'debug-synth';
   musicGain: number;
   sfxGain: number;
+  positionSeconds: number;
+  logicalStartCount: number;
+  loopRegion?: { startSeconds: number; endSeconds: number };
+  queuedSources: number;
+  loopIteration: number;
   lastError?: string;
 }
 
@@ -109,6 +130,7 @@ export interface UpgradeNode {
   name: string;
   description: string;
   cost: number;
+  icon: string;
 }
 
 export interface CombatModifiers {
@@ -200,6 +222,8 @@ export interface GameSnapshot {
   empCharges: number;
   empMax: number;
   overdriveRemainingMs: number;
+  reactorOverdriveRemainingMs: number;
+  weaponOverdriveState: WeaponOverdriveState;
   tractorRemainingMs: number;
   shotsFired: number;
   shotsHit: number;
@@ -240,6 +264,12 @@ export interface ThreatPhase {
 
 export interface ThreatTuning extends ThreatPhase {
   missionScale: number;
+  pressureScale: number;
+}
+
+export interface MissionDifficultyProfile {
+  healthScale: number;
+  pressureScale: number;
 }
 
 export interface ArmamentOffer {

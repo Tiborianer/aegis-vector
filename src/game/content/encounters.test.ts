@@ -12,7 +12,21 @@ describe('EncounterDirector', () => {
     expect(first.between(8, 3, 100, 1_100)).toBe(retry.between(8, 3, 100, 1_100));
   });
 
-  it('applies only sixty-five percent escalation on Cadet', () => {
-    expect(getThreatTuning(0.99, 'cadet', 'coastal').enemyHealth).toBeCloseTo(1 + 0.28 * 0.65);
+  it('separates mission durability from projectile pressure', () => {
+    const coastal = getThreatTuning(0, 'cadet', 'coastal');
+    const fortress = getThreatTuning(0, 'pilot', 'fortress');
+    expect(coastal.enemyHealth).toBeCloseTo(0.86);
+    expect(coastal.pressureScale).toBeCloseTo(0.95);
+    expect(fortress.enemyHealth).toBeCloseTo(1.45);
+    expect(fortress.pressureScale).toBeCloseTo(1.08);
+  });
+
+  it('uses difficulty-specific escalation intervals and budgets', () => {
+    const cadet = getThreatTuning(0.99, 'cadet', 'fortress');
+    const pilot = getThreatTuning(0.99, 'pilot', 'fortress');
+    const ace = getThreatTuning(0.99, 'ace', 'fortress');
+    expect([cadet.waveIntervalMs, pilot.waveIntervalMs, ace.waveIntervalMs]).toEqual([3_800, 3_600, 3_200]);
+    expect([cadet.waveBudget, pilot.waveBudget, ace.waveBudget]).toEqual([7, 9, 11]);
+    expect(cadet.enemyHealth).toBeCloseTo((1 + 0.28 * 0.6) * 1.3);
   });
 });

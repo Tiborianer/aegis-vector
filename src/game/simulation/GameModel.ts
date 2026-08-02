@@ -13,6 +13,7 @@ import type {
   UtilityPickupType,
   WeaponLevel,
   WeaponLevels,
+  WeaponOverdriveState,
 } from './types';
 
 const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 });
@@ -284,6 +285,15 @@ export class GameModel {
     return this.modifiers.fireIntervalMultiplier * pickupBoost * reactorBoost;
   }
 
+  get weaponOverdriveState(): WeaponOverdriveState {
+    const cell = this.stageElapsedMs < this.overdriveUntil;
+    const reactor = this.stageElapsedMs < this.reactorUntil;
+    if (cell && reactor) return 'stacked';
+    if (cell) return 'cell';
+    if (reactor) return 'reactor';
+    return 'inactive';
+  }
+
   get damageMultiplier(): number {
     return this.modifiers.damageMultiplier;
   }
@@ -325,6 +335,8 @@ export class GameModel {
       empCharges: this.empCharges,
       empMax: this.empMax,
       overdriveRemainingMs: Math.max(0, this.overdriveUntil - this.stageElapsedMs),
+      reactorOverdriveRemainingMs: Math.max(0, this.reactorUntil - this.stageElapsedMs),
+      weaponOverdriveState: this.weaponOverdriveState,
       tractorRemainingMs: Math.max(0, this.tractorUntil - this.stageElapsedMs),
       shotsFired: this.shotsFired,
       shotsHit: this.shotsHit,

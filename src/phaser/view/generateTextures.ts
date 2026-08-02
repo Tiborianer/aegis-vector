@@ -31,6 +31,11 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xdfffee, 1).fillPoints(polygon([[24, 4], [32, 16], [43, 25], [31, 27], [24, 43], [17, 27], [5, 25], [16, 16]]), true);
   g.fillStyle(0x65ffb1, 1).fillCircle(24, 23, 6);
   g.generateTexture(ASSET_KEYS.drone, 48, 48).clear();
+  g.fillStyle(0xffb640, 0.2).fillCircle(24, 24, 22);
+  g.fillStyle(0x31343d, 1).fillPoints(polygon([[24, 4], [32, 16], [43, 25], [31, 27], [24, 43], [17, 27], [5, 25], [16, 16]]), true);
+  g.lineStyle(2, 0xffb640, 1).strokePoints(polygon([[24, 4], [32, 16], [43, 25], [31, 27], [24, 43], [17, 27], [5, 25], [16, 16]]), true);
+  g.fillStyle(0xfff6cf, 1).fillCircle(24, 23, 6);
+  g.generateTexture(ASSET_KEYS.droneOverdrive, 48, 48).clear();
 
   drawEnemy(g, ASSET_KEYS.scout, 64, 60, 0xff6f61, [[32, 56], [8, 13], [25, 20], [32, 3], [39, 20], [56, 13]]);
   drawEnemy(g, ASSET_KEYS.interceptor, 76, 68, 0xff9a56, [[38, 65], [4, 17], [28, 27], [38, 4], [48, 27], [72, 17]]);
@@ -40,6 +45,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawEnemy(g, ASSET_KEYS.sniper, 88, 70, 0xff72ca, [[44, 67], [5, 38], [28, 30], [36, 8], [44, 2], [52, 8], [60, 30], [83, 38]]);
   drawEnemy(g, ASSET_KEYS.mineLayer, 112, 74, 0xffa33f, [[56, 70], [8, 52], [4, 25], [38, 31], [56, 5], [74, 31], [108, 25], [104, 52]]);
   drawEnemy(g, ASSET_KEYS.shieldCarrier, 104, 84, 0x8b7dff, [[52, 80], [10, 59], [6, 24], [36, 33], [52, 4], [68, 33], [98, 24], [94, 59]]);
+  drawBulwark(g);
   drawEnemy(g, ASSET_KEYS.warden, 190, 104, 0xf06cff, [[95, 99], [12, 67], [5, 30], [66, 42], [95, 4], [124, 42], [185, 30], [178, 67]]);
 
   g.fillStyle(0xffb640, 0.14).fillCircle(28, 28, 27);
@@ -70,15 +76,26 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.fillStyle(0x35e8ff, 0.2).fillRoundedRect(0, 0, 12, 30, 6);
   g.fillStyle(0xdfffff, 1).fillRoundedRect(4, 1, 4, 26, 2);
   g.generateTexture(ASSET_KEYS.playerBullet, 12, 30).clear();
+  g.fillStyle(0xffb640, 0.32).fillRoundedRect(0, 0, 12, 30, 6);
+  g.fillStyle(0xfff6cf, 1).fillRoundedRect(4, 1, 4, 26, 2);
+  g.generateTexture(ASSET_KEYS.playerBulletOverdrive, 12, 30).clear();
 
   g.fillStyle(0xffb640, 0.2).fillCircle(10, 14, 10);
   g.fillStyle(0xffedb5, 1).fillPoints(polygon([[10, 0], [17, 17], [10, 14], [3, 17]]), true);
   g.fillStyle(0xff7b33, 1).fillTriangle(6, 16, 14, 16, 10, 29);
   g.generateTexture(ASSET_KEYS.missile, 20, 30).clear();
+  g.fillStyle(0xffb640, 0.34).fillCircle(10, 14, 10);
+  g.fillStyle(0xfff6cf, 1).fillPoints(polygon([[10, 0], [17, 17], [10, 14], [3, 17]]), true);
+  g.lineStyle(2, 0xffb640, 1).strokePoints(polygon([[10, 0], [17, 17], [10, 14], [3, 17]]), true);
+  g.fillStyle(0xffb640, 1).fillTriangle(6, 16, 14, 16, 10, 29);
+  g.generateTexture(ASSET_KEYS.missileOverdrive, 20, 30).clear();
 
   g.fillStyle(0xf06cff, 0.22).fillRoundedRect(0, 0, 18, 54, 9);
   g.fillStyle(0xffdfff, 1).fillRoundedRect(7, 0, 4, 54, 2);
   g.generateTexture(ASSET_KEYS.laser, 18, 54).clear();
+  g.fillStyle(0xffb640, 0.32).fillRoundedRect(0, 0, 18, 54, 9);
+  g.fillStyle(0xfff6cf, 1).fillRoundedRect(7, 0, 4, 54, 2);
+  g.generateTexture(ASSET_KEYS.laserOverdrive, 18, 54).clear();
 
   g.fillStyle(0xff6f61, 0.18).fillCircle(11, 11, 11);
   g.fillStyle(0xffdfad, 1).fillCircle(11, 11, 5);
@@ -103,6 +120,23 @@ export function generateTextures(scene: Phaser.Scene): void {
   (['spread', 'missile', 'laser', 'drone', 'ion', 'shield', 'repair', 'overdrive', 'tractor', 'emp'] as PickupType[])
     .forEach((type) => drawPickup(g, type));
   g.destroy();
+}
+
+function drawBulwark(g: Phaser.GameObjects.Graphics): void {
+  const width = 140;
+  const height = 96;
+  g.fillStyle(0xff9b43, 0.13).fillEllipse(width / 2, height / 2, width, height * 0.74);
+  g.fillStyle(0x351821, 1).fillPoints(polygon([[70, 3], [84, 25], [132, 35], [124, 75], [92, 67], [82, 92], [58, 92], [48, 67], [16, 75], [8, 35], [56, 25]]), true);
+  g.fillStyle(0x111a2b, 0.92).fillRoundedRect(49, 23, 42, 58, 10);
+  g.lineStyle(3, 0xff9b43, 0.95).strokePoints(polygon([[70, 3], [84, 25], [132, 35], [124, 75], [92, 67], [82, 92], [58, 92], [48, 67], [16, 75], [8, 35], [56, 25]]), true);
+  for (const x of [30, 110]) {
+    g.fillStyle(0x132825, 1).fillCircle(x, 52, 11);
+    g.lineStyle(3, 0x65ffb1, 1).strokeCircle(x, 52, 9);
+    g.fillStyle(0xf0fff5, 1).fillCircle(x, 52, 4);
+  }
+  g.fillStyle(0xffb640, 1).fillCircle(70, 45, 8);
+  g.fillStyle(0xfff6cf, 1).fillCircle(70, 45, 3);
+  g.generateTexture(ASSET_KEYS.bulwark, width, height).clear();
 }
 
 function drawEnemy(

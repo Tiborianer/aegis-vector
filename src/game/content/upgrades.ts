@@ -1,6 +1,6 @@
 import type { CombatModifiers, UpgradeBranch, UpgradeNode, UpgradeNodeId } from '../simulation/types';
 
-export const UPGRADE_NODES: UpgradeNode[] = [
+const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'rapid-cycling', branch: 'weapons', tier: 1, name: 'RAPID CYCLING', description: 'Fire every weapon 10% faster.', cost: 60 },
   { id: 'amplified-munitions', branch: 'weapons', tier: 1, name: 'AMPLIFIED MUNITIONS', description: 'All weapons deal 12% more damage.', cost: 60 },
   { id: 'split-capacitors', branch: 'weapons', tier: 2, name: 'SPLIT CAPACITORS', description: 'ARC gains one shot; LANCE is 20% wider.', cost: 100 },
@@ -26,6 +26,11 @@ export const UPGRADE_NODES: UpgradeNode[] = [
   { id: 'chrono-relay', branch: 'systems', tier: 4, name: 'CHRONO RELAY', description: 'EMP leaves a five-second time-dilation field.', cost: 160 },
   { id: 'emergency-capacitor', branch: 'systems', tier: 4, name: 'EMERGENCY CAPACITOR', description: 'The first two hull hits restore EMP and Tractor.', cost: 160 },
 ];
+
+export const UPGRADE_NODES: UpgradeNode[] = UPGRADE_NODE_DEFINITIONS.map((node) => ({
+  ...node,
+  icon: `/ui/upgrades/${node.id}.png`,
+}));
 
 export const UPGRADE_BRANCHES: UpgradeBranch[] = ['weapons', 'defense', 'systems'];
 

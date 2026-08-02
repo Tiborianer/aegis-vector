@@ -1,6 +1,7 @@
 import type {
   AudioDebugState,
   MusicAssetDefinition,
+  MusicLoopStrategy,
   MusicPlaybackState,
   MusicTrack,
 } from '../game/simulation/types';
@@ -29,7 +30,17 @@ export interface AudioSettings {
 interface ActiveMusic {
   track: MusicTrack;
   gain: GainNode;
-  sources: AudioScheduledSourceNode[];
+  voices: Array<{
+    source: AudioScheduledSourceNode;
+    gain: GainNode;
+    startAt: number;
+    endAt: number;
+    iteration: number;
+  }>;
+  startedAt: number;
+  bufferDuration: number;
+  loop: MusicLoopStrategy;
+  transitionTimer?: number;
 }
 
 interface DesiredMusic {
@@ -41,15 +52,55 @@ interface DesiredMusic {
 const AUDIO_SETTINGS_KEY = 'aegis-vector-audio-v1';
 const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7 };
 
+export interface MusicVoiceSchedule {
+  startSeconds: number;
+  offsetSeconds: number;
+  durationSeconds: number;
+  crossfadeSeconds: number;
+  iteration: number;
+}
+
+export function buildMusicVoiceSchedule(
+  bufferDuration: number,
+  loop: MusicLoopStrategy,
+  repeats = 48,
+): MusicVoiceSchedule[] {
+  const crossfade = loop.mode === 'none' ? 0 : Math.min(loop.crossfadeSeconds, bufferDuration * 0.45);
+  const schedule: MusicVoiceSchedule[] = [{
+    startSeconds: 0,
+    offsetSeconds: 0,
+    durationSeconds: bufferDuration,
+    crossfadeSeconds: crossfade,
+    iteration: 0,
+  }];
+  if (loop.mode === 'none') return schedule;
+  const tailSeconds = loop.mode === 'full' ? bufferDuration : Math.min(bufferDuration, loop.tailSeconds);
+  const tailCrossfade = Math.min(loop.crossfadeSeconds, tailSeconds * 0.45);
+  const offset = loop.mode === 'full' ? 0 : Math.max(0, bufferDuration - tailSeconds);
+  const step = Math.max(0.1, tailSeconds - tailCrossfade);
+  let startSeconds = bufferDuration - tailCrossfade;
+  for (let iteration = 1; iteration <= repeats; iteration += 1) {
+    schedule.push({
+      startSeconds,
+      offsetSeconds: offset,
+      durationSeconds: tailSeconds,
+      crossfadeSeconds: tailCrossfade,
+      iteration,
+    });
+    startSeconds += step;
+  }
+  return schedule;
+}
+
 export const MUSIC_ASSETS: Record<MusicTrack, MusicAssetDefinition> = {
-  menu: { files: ['audio/menu.mp3'], loop: true, gain: 0.88, preloadNext: 'mission-coastal' },
-  hangar: { files: ['audio/hangar.mp3'], loop: true, gain: 0.9 },
-  'mission-coastal': { files: ['audio/mission-coastal.mp3'], loop: true, gain: 0.76, preloadNext: 'hangar' },
-  'mission-minefield': { files: ['audio/mission-minefield.mp3'], loop: true, gain: 0.76, preloadNext: 'hangar' },
-  'mission-fortress': { files: ['audio/mission-fortress.mp3'], loop: true, gain: 0.73, preloadNext: 'hangar' },
+  menu: { files: ['audio/menu.mp3'], loop: { mode: 'tail', tailSeconds: 24, crossfadeSeconds: 1.5 }, gain: 0.88, preloadNext: 'mission-coastal' },
+  hangar: { files: ['audio/hangar.mp3'], loop: { mode: 'tail', tailSeconds: 24, crossfadeSeconds: 1.5 }, gain: 0.9 },
+  'mission-coastal': { files: ['audio/mission-coastal.mp3'], loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1 }, gain: 0.76, preloadNext: 'hangar' },
+  'mission-minefield': { files: ['audio/mission-minefield.mp3'], loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1 }, gain: 0.76, preloadNext: 'hangar' },
+  'mission-fortress': { files: ['audio/mission-fortress.mp3'], loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1 }, gain: 0.73, preloadNext: 'hangar' },
   boss: {
     files: ['audio/boss.mp3', 'audio/boss-mech-tyrants.mp3'],
-    loop: true,
+    loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1.2 },
     gain: 0.72,
     preloadNext: 'victory',
   },
@@ -60,10 +111,10 @@ export const MUSIC_ASSETS: Record<MusicTrack, MusicAssetDefinition> = {
       'audio/victory-fortress.mp3',
       'audio/victory-campaign.mp3',
     ],
-    loop: false,
+    loop: { mode: 'none' },
     gain: 0.88,
   },
-  defeat: { files: ['audio/defeat-signal.mp3', 'audio/defeat-debrief.mp3'], loop: false, gain: 0.84 },
+  defeat: { files: ['audio/defeat-signal.mp3', 'audio/defeat-debrief.mp3'], loop: { mode: 'none' }, gain: 0.84 },
 };
 
 export class SoundEngine {
@@ -81,12 +132,14 @@ export class SoundEngine {
   private ducked = false;
   private lastError?: string;
   private source?: AudioDebugState['source'];
+  private logicalStartCount = 0;
   private readonly debugSynth = new URLSearchParams(window.location.search).get('audioSynth') === '1';
 
   async unlock(): Promise<void> {
     try {
       if (!this.context) this.createAudioGraph();
       if (this.context?.state === 'suspended') await this.context.resume();
+      if (this.context?.state === 'running' && this.activeMusic) this.playbackState = 'playing';
       this.emitState();
       if (this.context?.state === 'running' && this.desired && this.currentTrack !== this.desired.track) {
         await this.startDesired(++this.musicRequest);
@@ -101,6 +154,13 @@ export class SoundEngine {
   }
 
   getDebugState(): AudioDebugState {
+    const now = this.context?.currentTime ?? 0;
+    const active = this.activeMusic;
+    const positionSeconds = active ? Math.max(0, now - active.startedAt) : 0;
+    const loopRegion = active ? SoundEngine.loopRegion(active.bufferDuration, active.loop) : undefined;
+    const loopIteration = active && active.loop.mode !== 'none'
+      ? Math.max(0, Math.floor(Math.max(0, positionSeconds - (active.bufferDuration - active.loop.crossfadeSeconds)) / Math.max(0.1, (loopRegion!.endSeconds - loopRegion!.startSeconds) - active.loop.crossfadeSeconds)) + (positionSeconds >= active.bufferDuration - active.loop.crossfadeSeconds ? 1 : 0))
+      : 0;
     return {
       contextState: this.context?.state ?? 'uninitialized',
       playbackState: this.playbackState,
@@ -109,6 +169,11 @@ export class SoundEngine {
       source: this.source,
       musicGain: this.settings.music,
       sfxGain: this.settings.sfx,
+      positionSeconds,
+      logicalStartCount: this.logicalStartCount,
+      loopRegion,
+      queuedSources: active?.voices.filter((voice) => voice.startAt > now).length ?? 0,
+      loopIteration,
       lastError: this.lastError,
     };
   }
@@ -221,7 +286,7 @@ export class SoundEngine {
     const buffer = await this.loadTrack(file);
     if (request !== this.musicRequest || desired !== this.desired || !this.context) return;
     if (!buffer) {
-      if (this.debugSynth && definition.loop) {
+      if (this.debugSynth && definition.loop.mode !== 'none') {
         const previous = this.activeMusic;
         this.activeMusic = this.startDebugSynth(desired.track);
         this.currentTrack = desired.track;
@@ -240,7 +305,7 @@ export class SoundEngine {
     }
 
     const previous = this.activeMusic;
-    const fadeSeconds = previous ? this.crossfadeSeconds(previous.track, desired.track) : definition.loop ? 0.8 : 0.1;
+    const fadeSeconds = previous ? this.crossfadeSeconds(previous.track, desired.track) : definition.loop.mode !== 'none' ? 0.8 : 0.1;
     this.activeMusic = this.startBufferMusic(desired, buffer, definition, request, fadeSeconds);
     this.currentTrack = desired.track;
     this.source = 'buffer';
@@ -284,31 +349,78 @@ export class SoundEngine {
     fadeSeconds: number,
   ): ActiveMusic {
     const context = this.context!;
-    const source = context.createBufferSource();
-    const gain = context.createGain();
-    source.buffer = buffer;
-    source.loop = definition.loop;
+    const trackGain = context.createGain();
     const measuredGain = SoundEngine.measuredGain(buffer);
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, definition.gain * measuredGain), context.currentTime + fadeSeconds);
-    source.connect(gain).connect(this.musicBus!);
-    source.start();
-    if (!definition.loop && desired.nextTrack) {
-      window.setTimeout(() => {
+    const startedAt = context.currentTime + 0.025;
+    trackGain.gain.setValueAtTime(0.0001, context.currentTime);
+    trackGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, definition.gain * measuredGain), context.currentTime + fadeSeconds);
+    trackGain.connect(this.musicBus!);
+    const active: ActiveMusic = {
+      track: desired.track,
+      gain: trackGain,
+      voices: [],
+      startedAt,
+      bufferDuration: buffer.duration,
+      loop: definition.loop,
+    };
+
+    buildMusicVoiceSchedule(buffer.duration, definition.loop).forEach((voice) => {
+      this.scheduleVoice(
+        active,
+        buffer,
+        startedAt + voice.startSeconds,
+        voice.offsetSeconds,
+        voice.durationSeconds,
+        voice.iteration,
+        voice.crossfadeSeconds,
+      );
+    });
+
+    if (definition.loop.mode === 'none' && desired.nextTrack) {
+      const transitionSeconds = desired.track === 'victory' && desired.nextTrack === 'hangar' ? 1.2 : 0.8;
+      active.transitionTimer = window.setTimeout(() => {
         if (this.musicRequest === request && this.currentTrack === desired.track) {
           void this.playMusic(desired.nextTrack!);
         }
-      }, Math.max(0, (buffer.duration - 0.65) * 1_000));
+      }, Math.max(0, (buffer.duration - transitionSeconds) * 1_000));
     }
-    source.addEventListener('ended', () => {
-      if (this.currentTrack === desired.track && !definition.loop) {
+    const primary = active.voices[0].source;
+    primary.addEventListener('ended', () => {
+      if (this.currentTrack === desired.track && definition.loop.mode === 'none' && !desired.nextTrack) {
         this.currentTrack = undefined;
         this.activeMusic = undefined;
-        this.playbackState = this.desired?.nextTrack ? 'loading' : 'locked';
+        this.playbackState = 'locked';
         this.emitState();
       }
     });
-    return { track: desired.track, gain, sources: [source] };
+    this.logicalStartCount += 1;
+    return active;
+  }
+
+  private scheduleVoice(
+    active: ActiveMusic,
+    buffer: AudioBuffer,
+    startAt: number,
+    offset: number,
+    duration: number,
+    iteration: number,
+    crossfade: number,
+  ): void {
+    const context = this.context!;
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    const endAt = startAt + duration;
+    const fade = Math.min(crossfade, duration * 0.45);
+    if (iteration === 0 || fade <= 0) gain.gain.setValueAtTime(1, startAt);
+    else gain.gain.setValueCurveAtTime(SoundEngine.equalPowerIn(), startAt, fade);
+    if (active.loop.mode !== 'none' && fade > 0) {
+      gain.gain.setValueAtTime(1, Math.max(startAt + fade, endAt - fade));
+      gain.gain.setValueCurveAtTime(SoundEngine.equalPowerOut(), endAt - fade, fade);
+    }
+    source.connect(gain).connect(active.gain);
+    source.start(startAt, offset, duration);
+    active.voices.push({ source, gain, startAt, endAt, iteration });
   }
 
   private startDebugSynth(track: MusicTrack): ActiveMusic {
@@ -321,22 +433,49 @@ export class SoundEngine {
     gain.gain.exponentialRampToValueAtTime(0.018, context.currentTime + 0.8);
     oscillator.connect(gain).connect(this.musicBus!);
     oscillator.start();
-    return { track, gain, sources: [oscillator] };
+    this.logicalStartCount += 1;
+    return {
+      track,
+      gain,
+      voices: [{ source: oscillator, gain, startAt: context.currentTime, endAt: Number.POSITIVE_INFINITY, iteration: 0 }],
+      startedAt: context.currentTime,
+      bufferDuration: 0,
+      loop: { mode: 'full', crossfadeSeconds: 0.8 },
+    };
   }
 
   private fadeOut(music: ActiveMusic, seconds: number): void {
     if (!this.context) return;
     const now = this.context.currentTime;
+    if (music.transitionTimer !== undefined) window.clearTimeout(music.transitionTimer);
     music.gain.gain.cancelScheduledValues(now);
     music.gain.gain.setValueAtTime(Math.max(0.0001, music.gain.gain.value), now);
     music.gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
-    music.sources.forEach((source) => {
-      try { source.stop(now + seconds + 0.03); } catch { /* already ended */ }
+    music.voices.forEach((voice) => {
+      try { voice.source.stop(now + seconds + 0.03); } catch { /* already ended */ }
     });
   }
 
   private crossfadeSeconds(from: MusicTrack, to: MusicTrack): number {
-    return from.startsWith('mission-') && to === 'boss' ? 1.2 : 0.8;
+    if (from.startsWith('mission-') && to === 'boss') return 1.2;
+    if (from === 'victory' && to === 'hangar') return 1.2;
+    return 0.8;
+  }
+
+  private static loopRegion(bufferDuration: number, loop: MusicLoopStrategy): { startSeconds: number; endSeconds: number } | undefined {
+    if (loop.mode === 'none') return undefined;
+    return {
+      startSeconds: loop.mode === 'full' ? 0 : Math.max(0, bufferDuration - loop.tailSeconds),
+      endSeconds: bufferDuration,
+    };
+  }
+
+  private static equalPowerIn(): Float32Array {
+    return Float32Array.from({ length: 48 }, (_, index) => Math.sin((index / 47) * Math.PI * 0.5));
+  }
+
+  private static equalPowerOut(): Float32Array {
+    return Float32Array.from({ length: 48 }, (_, index) => Math.cos((index / 47) * Math.PI * 0.5));
   }
 
   private trimBufferCache(activeFile: string): void {

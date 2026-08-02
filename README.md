@@ -20,7 +20,7 @@ npm test
 npm run build
 ```
 
-Add `?debug=1` to the local URL for shortened 24-second missions used during browser QA. In this mode, keys 1–5 grant ARC, NOVA, LANCE, WING, and shield capacity, I grants ION, 6 grants an EMP cell, N cycles specialist spawns, V summons the Warden, B summons the Dreadnought, H applies one test hit, and C completes the active mission with test salvage. Add `&hitboxes=1` to show collision bodies. Add `&quality=high`, `balanced`, or `low` to override adaptive graphics quality.
+Add `?debug=1` to the local URL to enable browser QA controls while preserving full mission pacing and ordinary player damage. In this mode, keys 1–5 grant ARC, NOVA, LANCE, WING, and shield capacity, I grants ION, O grants Overdrive, 6 grants an EMP cell, N cycles every specialist including the Bulwark, V summons the Warden, B summons the Dreadnought, H applies one test hit, and C completes the active mission with test salvage. Add `&quick=1` only when a shortened 24-second mission is needed, `&collisionDebug=1` to show compound collision zones, or `&god=1` for focused invulnerability testing. Add `&quality=high`, `balanced`, or `low` to override adaptive graphics quality. The debug-only `&audioTrack=mission-coastal` selector can hold a mapped soundtrack on the menu for loop diagnostics.
 
 ## Game rules
 
@@ -28,7 +28,7 @@ Add `?debug=1` to the local URL for shortened 24-second missions used during bro
 - Destroyed enemies award Aegis Credits that can be spent in the between-mission upgrade tree.
 - Five-level ARC, NOVA, LANCE, WING, and ION systems carry across the campaign. Rare gold Armament Carriers drop deterministic two-choice upgrades; normal enemies drop only tactical utilities.
 - The one-hit rechargeable shield can grow to three points and normally recharges after seven seconds without damage.
-- Every mission rises through five deterministic threat levels while attack warnings keep their full readable timing.
+- Every mission rises through five deterministic threat levels while attack warnings keep their full readable timing. Minefield Run introduces the armored Bulwark Gunship and its destructible wing reactors.
 - Failed missions restore the pre-mission checkpoint, preventing failed-attempt credit farming.
 - Campaign progress is saved locally between missions and restored after a refresh.
 

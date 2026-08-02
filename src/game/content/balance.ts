@@ -23,7 +23,7 @@ export const DIFFICULTY: Record<Difficulty, DifficultyTuning> = {
     enemyFireRate: 0.72,
     dropChance: 0.26,
     scoreScale: 0.85,
-    threatCurve: 0.65,
+    threatCurve: 0.6,
   },
   pilot: {
     enemyHealth: 1,
@@ -31,7 +31,7 @@ export const DIFFICULTY: Record<Difficulty, DifficultyTuning> = {
     enemyFireRate: 1,
     dropChance: 0.2,
     scoreScale: 1,
-    threatCurve: 1,
+    threatCurve: 0.78,
   },
   ace: {
     enemyHealth: 1.22,
@@ -60,7 +60,8 @@ export const ENEMIES: Record<EnemyKind, EnemyTuning> = {
   sniper: { health: 8, speed: 90, score: 380, credits: 5, fireMs: 3_500 },
   mineLayer: { health: 14, speed: 72, score: 520, credits: 5, fireMs: 1_700 },
   shieldCarrier: { health: 18, speed: 68, score: 620, credits: 5, fireMs: 2_300 },
-  warden: { health: 180, speed: 42, score: 5_000, credits: 35, fireMs: 850 },
+  bulwark: { health: 30, speed: 58, score: 750, credits: 6, fireMs: 2_600 },
+  warden: { health: 220, speed: 42, score: 5_000, credits: 35, fireMs: 850 },
   boss: { health: 620, speed: 46, score: 18_000, credits: 0, fireMs: 680 },
 };
 

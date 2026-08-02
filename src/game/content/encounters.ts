@@ -2,6 +2,7 @@ import { DIFFICULTY } from './balance';
 import type {
   Difficulty,
   EnemyKind,
+  MissionDifficultyProfile,
   MissionId,
   ThreatLevel,
   ThreatPhase,
@@ -16,11 +17,37 @@ export const THREAT_PHASES: readonly ThreatPhase[] = [
   { level: 5, startsAtProgress: 0.8, enemyHealth: 1.28, movementSpeed: 1.14, fireRate: 1.34, bulletSpeed: 1.11, waveIntervalMs: 3_200, waveBudget: 11 },
 ];
 
-const MISSION_SCALE: Record<MissionId, number> = {
-  coastal: 1,
-  minefield: 1.08,
-  fortress: 1.16,
-  dreadnought: 1.22,
+export const MISSION_DIFFICULTY: Record<Difficulty, Record<MissionId, MissionDifficultyProfile>> = {
+  cadet: {
+    coastal: { healthScale: 0.86, pressureScale: 0.95 },
+    minefield: { healthScale: 1.08, pressureScale: 1 },
+    fortress: { healthScale: 1.3, pressureScale: 1.05 },
+    dreadnought: { healthScale: 1.48, pressureScale: 1.1 },
+  },
+  pilot: {
+    coastal: { healthScale: 0.9, pressureScale: 0.95 },
+    minefield: { healthScale: 1.18, pressureScale: 1.03 },
+    fortress: { healthScale: 1.45, pressureScale: 1.08 },
+    dreadnought: { healthScale: 1.68, pressureScale: 1.12 },
+  },
+  ace: {
+    coastal: { healthScale: 1, pressureScale: 1 },
+    minefield: { healthScale: 1.32, pressureScale: 1.08 },
+    fortress: { healthScale: 1.65, pressureScale: 1.16 },
+    dreadnought: { healthScale: 1.92, pressureScale: 1.22 },
+  },
+};
+
+const WAVE_INTERVALS: Record<Difficulty, readonly number[]> = {
+  cadet: [5_400, 5_000, 4_600, 4_200, 3_800],
+  pilot: [5_400, 4_900, 4_400, 4_000, 3_600],
+  ace: [5_400, 4_800, 4_200, 3_700, 3_200],
+};
+
+const WAVE_BUDGETS: Record<Difficulty, readonly number[]> = {
+  cadet: [4, 4, 5, 6, 7],
+  pilot: [4, 5, 6, 8, 9],
+  ace: [4, 5, 7, 9, 11],
 };
 
 const CARRIER_MILESTONES: Record<MissionId, readonly number[]> = {
@@ -49,15 +76,19 @@ export function getThreatLevel(progress: number): ThreatLevel {
 export function getThreatTuning(progress: number, difficulty: Difficulty, missionId: MissionId): ThreatTuning {
   const phase = THREAT_PHASES[getThreatLevel(progress) - 1];
   const curve = DIFFICULTY[difficulty].threatCurve;
-  const missionScale = MISSION_SCALE[missionId];
+  const profile = MISSION_DIFFICULTY[difficulty][missionId];
   const scale = (value: number): number => 1 + (value - 1) * curve;
+  const phaseIndex = phase.level - 1;
   return {
     ...phase,
-    enemyHealth: scale(phase.enemyHealth) * missionScale,
-    movementSpeed: scale(phase.movementSpeed) * (1 + (missionScale - 1) * 0.45),
-    fireRate: scale(phase.fireRate) * missionScale,
-    bulletSpeed: scale(phase.bulletSpeed) * (1 + (missionScale - 1) * 0.35),
-    missionScale,
+    enemyHealth: scale(phase.enemyHealth) * profile.healthScale,
+    movementSpeed: scale(phase.movementSpeed) * (1 + (profile.pressureScale - 1) * 0.45),
+    fireRate: scale(phase.fireRate) * profile.pressureScale,
+    bulletSpeed: scale(phase.bulletSpeed) * (1 + (profile.pressureScale - 1) * 0.35),
+    waveIntervalMs: WAVE_INTERVALS[difficulty][phaseIndex],
+    waveBudget: WAVE_BUDGETS[difficulty][phaseIndex],
+    missionScale: profile.healthScale,
+    pressureScale: profile.pressureScale,
   };
 }
 
