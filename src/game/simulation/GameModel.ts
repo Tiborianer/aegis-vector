@@ -1,4 +1,5 @@
 import { DEFAULT_COMBAT_MODIFIERS } from '../content/upgrades';
+import { getThreatLevel } from '../content/encounters';
 import type {
   CombatModifiers,
   DamageResult,
@@ -10,10 +11,11 @@ import type {
   UpgradeResult,
   UpgradeType,
   UtilityPickupType,
+  WeaponLevel,
   WeaponLevels,
 } from './types';
 
-const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0 });
+const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 });
 
 export class GameModel {
   mode: GameMode = 'briefing';
@@ -44,6 +46,7 @@ export class GameModel {
   bossActive = false;
   bossName = '';
   bossHealthRatio = 1;
+  campaignSeed = 1;
   modifiers: CombatModifiers = { ...DEFAULT_COMBAT_MODIFIERS };
 
   private lastDamageAt = Number.NEGATIVE_INFINITY;
@@ -53,7 +56,11 @@ export class GameModel {
   private overdriveUntil = 0;
   private reactorUntil = 0;
   private tractorUntil = 0;
+  private chronoUntil = 0;
   private phoenixAvailable = false;
+  private reserveShieldAvailable = false;
+  private secondWindAvailable = false;
+  private emergencyCapacitorTriggers = 0;
 
   constructor(highScore = 0) {
     this.highScore = highScore;
@@ -68,10 +75,11 @@ export class GameModel {
       title: config.mission.title,
     };
     this.modifiers = { ...config.modifiers };
+    this.campaignSeed = config.campaignSeed;
     this.hullMax = Math.min(5, 3 + this.modifiers.hullBonus);
     this.hull = this.hullMax;
     this.shieldBaseMax = Math.max(1, Math.min(3, config.shieldBaseMax));
-    this.shieldMax = Math.min(3, this.shieldBaseMax + this.modifiers.shieldBonus);
+    this.shieldMax = this.shieldBaseMax;
     this.shield = this.shieldMax;
     this.weapons = { ...config.weapons };
     this.score = Math.max(0, config.score);
@@ -95,7 +103,11 @@ export class GameModel {
     this.overdriveUntil = 0;
     this.reactorUntil = 0;
     this.tractorUntil = 0;
+    this.chronoUntil = 0;
     this.phoenixAvailable = this.modifiers.phoenixProtocol;
+    this.reserveShieldAvailable = this.modifiers.reserveShield;
+    this.secondWindAvailable = this.modifiers.secondWind;
+    this.emergencyCapacitorTriggers = 0;
   }
 
   tick(deltaMs: number): boolean {
@@ -119,12 +131,28 @@ export class GameModel {
     this.damageTaken += 1;
     if (this.shield > 0) {
       this.shield -= 1;
-      this.invulnerableUntil = this.stageElapsedMs + 420;
+      this.invulnerableUntil = this.stageElapsedMs + (this.modifiers.kineticReversal ? 750 : 420);
+      if (this.shield === 0 && this.reserveShieldAvailable) {
+        this.reserveShieldAvailable = false;
+        this.shield = 1;
+        return 'reserve';
+      }
       return 'shield';
     }
 
     this.hull -= 1;
     this.invulnerableUntil = this.stageElapsedMs + this.modifiers.hullInvulnerabilityMs;
+    if (this.modifiers.emergencyCapacitor && this.emergencyCapacitorTriggers < 2) {
+      this.emergencyCapacitorTriggers += 1;
+      this.empCharges = Math.min(this.empMax, this.empCharges + 1);
+      this.tractorUntil = Math.max(this.tractorUntil, this.stageElapsedMs + 3_000);
+    }
+    if (this.hull === 1 && this.secondWindAvailable) {
+      this.secondWindAvailable = false;
+      this.shield = this.shieldMax;
+      this.invulnerableUntil = Math.max(this.invulnerableUntil, this.stageElapsedMs + 1_200);
+      return 'secondWind';
+    }
     if (this.hull <= 0 && this.phoenixAvailable) {
       this.phoenixAvailable = false;
       this.hull = 1;
@@ -146,16 +174,16 @@ export class GameModel {
         return { upgraded: false, level: this.shieldMax };
       }
       this.shieldBaseMax += 1;
-      this.shieldMax = Math.min(3, this.shieldBaseMax + this.modifiers.shieldBonus);
+      this.shieldMax = this.shieldBaseMax;
       this.shield = this.shieldMax;
       return { upgraded: true, level: this.shieldMax };
     }
 
-    if (this.weapons[type] >= 3) {
+    if (this.weapons[type] >= 5) {
       this.addFlatScore(750);
       return { upgraded: false, level: this.weapons[type] };
     }
-    this.weapons[type] += 1;
+    this.weapons[type] = (this.weapons[type] + 1) as WeaponLevel;
     return { upgraded: true, level: this.weapons[type] };
   }
 
@@ -193,6 +221,7 @@ export class GameModel {
   activateEmp(): boolean {
     if (this.mode !== 'playing' || this.empCharges <= 0) return false;
     this.empCharges -= 1;
+    if (this.modifiers.chronoRelay) this.chronoUntil = this.stageElapsedMs + 5_000;
     return true;
   }
 
@@ -267,6 +296,10 @@ export class GameModel {
     return this.modifiers.empDamageMultiplier;
   }
 
+  get chronoScale(): number {
+    return this.stageElapsedMs < this.chronoUntil ? 0.55 : 1;
+  }
+
   snapshot(): GameSnapshot {
     const remaining = this.shield >= this.shieldMax
       ? 0
@@ -301,6 +334,10 @@ export class GameModel {
       bossActive: this.bossActive,
       bossName: this.bossName,
       bossHealthRatio: this.bossHealthRatio,
+      threatLevel: getThreatLevel(this.stageElapsedMs / Math.max(1, this.stageDurationMs)),
+      chronoRemainingMs: Math.max(0, this.chronoUntil - this.stageElapsedMs),
+      reserveShieldAvailable: this.reserveShieldAvailable,
+      secondWindAvailable: this.secondWindAvailable,
     };
   }
 

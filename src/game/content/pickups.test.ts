@@ -1,19 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { chooseSmartPickup } from './pickups';
+import { chooseArmamentOffer, chooseUtilityPickup, shouldDropUtility } from './pickups';
 
-describe('chooseSmartPickup', () => {
-  it('chooses an available permanent upgrade within the 65 percent branch', () => {
-    const values = [0.2, 0.6];
-    const pickup = chooseSmartPickup(
-      { spread: 3, missile: 0, laser: 3, drone: 3 },
-      3,
-      () => values.shift() ?? 0,
-    );
-    expect(pickup).toBe('missile');
+describe('armament and utility drops', () => {
+  it('creates a deterministic pair for a campaign carrier', () => {
+    const weapons = { spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 } as const;
+    const first = chooseArmamentOffer(weapons, 1, 42, 0);
+    const retry = chooseArmamentOffer(weapons, 1, 42, 0);
+    expect(first).toEqual(retry);
+    expect(first.options[0]).not.toBe(first.options[1]);
+    expect(first.options.every((option) => ['missile', 'laser', 'drone', 'ion'].includes(option))).toBe(true);
   });
 
-  it('returns only utility pickups when all permanent upgrades are maxed', () => {
-    const pickup = chooseSmartPickup({ spread: 3, missile: 3, laser: 3, drone: 3 }, 3, () => 0.99);
-    expect(['repair', 'overdrive', 'tractor', 'emp']).toContain(pickup);
+  it('never offers a maximized armament', () => {
+    const offer = chooseArmamentOffer(
+      { spread: 5, missile: 5, laser: 5, drone: 4, ion: 5 },
+      3,
+      87,
+      4,
+    );
+    expect(offer.options).toContain('drone');
+    expect(offer.options).not.toContain('shield');
+  });
+
+  it('guarantees utility pity after eighteen dry kills', () => {
+    expect(shouldDropUtility('ace', 17, () => 0.99)).toBe(false);
+    expect(shouldDropUtility('ace', 18, () => 0.99)).toBe(true);
+  });
+
+  it('favors repair when hull is damaged', () => {
+    expect(chooseUtilityPickup(1, 3, 1, 2, () => 0)).toBe('repair');
   });
 });

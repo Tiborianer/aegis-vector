@@ -1,5 +1,12 @@
 export const ASSET_KEYS = {
   player: 'fighter-player',
+  playerBanks: [
+    'fighter-player-bank-hard-left',
+    'fighter-player-bank-left',
+    'fighter-player',
+    'fighter-player-bank-right',
+    'fighter-player-bank-hard-right',
+  ],
   drone: 'fighter-drone',
   scout: 'enemy-scout',
   interceptor: 'enemy-interceptor',
@@ -19,6 +26,12 @@ export const ASSET_KEYS = {
   enemyBulletHeavy: 'bullet-enemy-heavy',
   spark: 'fx-spark',
   cloud: 'fx-cloud',
+  haze: 'fx-horizon-haze',
+  foreground: 'fx-foreground-wisps',
   ocean: 'environment-ocean',
+  coastal: 'environment-coastal-detail',
+  minefield: 'environment-minefield-detail',
+  fortress: 'environment-fortress-detail',
+  dreadnought: 'environment-dreadnought-detail',
   pickupPrefix: 'pickup-',
 } as const;

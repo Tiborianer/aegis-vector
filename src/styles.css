@@ -136,10 +136,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid white; outline-of
   position: absolute;
   top: 3.5%;
   left: 50%;
-  width: 290px;
+  width: 390px;
   transform: translateX(-50%);
   display: grid;
-  grid-template-columns: minmax(86px, auto) 1fr auto;
+  grid-template-columns: minmax(86px, auto) auto 1fr auto;
   gap: 10px;
   align-items: center;
   color: #83a7ba;
@@ -148,6 +148,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid white; outline-of
   letter-spacing: 0.1em;
   white-space: nowrap;
 }
+.threat-level {
+  padding: 3px 6px;
+  color: #73d7e8;
+  border: 1px solid rgba(53, 232, 255, .2);
+  background: rgba(3, 18, 31, .66);
+  transition: color .25s ease, border-color .25s ease, box-shadow .25s ease;
+}
+.threat-level[data-level="4"] { color: var(--amber); border-color: rgba(255, 182, 64, .38); }
+.threat-level[data-level="5"] { color: var(--danger); border-color: rgba(255, 102, 124, .55); box-shadow: 0 0 12px rgba(255, 102, 124, .22); }
 .track, .boss-track { height: 3px; background: rgba(129, 190, 209, 0.18); overflow: hidden; }
 .track i, .boss-track i { display: block; width: 0; height: 100%; background: var(--cyan); box-shadow: 0 0 9px var(--cyan); transition: width 120ms linear; }
 
@@ -170,11 +179,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid white; outline-of
   padding: 8px 11px;
   gap: 4px;
 }
-.weapon-chip { min-width: 57px; padding: 4px 8px; border-left: 2px solid currentColor; color: var(--muted); }
+.weapon-chip { min-width: 52px; padding: 4px 7px; border-left: 2px solid currentColor; color: var(--muted); }
 .weapon-chip.active { color: var(--weapon); background: color-mix(in srgb, var(--weapon) 10%, transparent); }
 .weapon-chip b { display: block; font-family: "Arial Narrow", sans-serif; font-size: 10px; letter-spacing: 0.08em; }
 .weapon-chip span { display: block; margin-top: 3px; font-size: 9px; color: #86a2b1; }
-.level-dot { display: inline-block; width: 5px; height: 5px; margin-right: 3px; border: 1px solid currentColor; border-radius: 50%; }
+.level-dot { display: inline-block; width: 4px; height: 4px; margin-right: 2px; border: 1px solid currentColor; border-radius: 50%; }
 .level-dot.on { background: currentColor; box-shadow: 0 0 5px currentColor; }
 
 .ability-rack {
@@ -338,7 +347,7 @@ kbd { padding: 2px 4px; color: #b6d4df; background: rgba(103, 155, 176, 0.12); b
 .tree-legend { height: 31px; display: flex; justify-content: space-between; align-items: flex-start; color: var(--cyan); font: 900 10px "Arial Narrow", sans-serif; letter-spacing: .15em; }
 .tree-legend small { color: #647f8e; font: 8px Inter, sans-serif; letter-spacing: 0; }
 .upgrade-tree { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
-.upgrade-branch { min-width: 0; padding: 9px; background: rgba(7,21,37,.7); border: 1px solid rgba(116,202,226,.13); }
+.upgrade-branch { min-width: 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(53,232,255,.35) transparent; padding: 9px; background: rgba(7,21,37,.7); border: 1px solid rgba(116,202,226,.13); }
 .upgrade-branch h3 { margin: 0 0 7px; color: var(--branch); font: 900 12px "Arial Narrow", sans-serif; letter-spacing: .15em; }
 .upgrade-branch h3 span { display: inline-block; margin-right: 7px; text-shadow: 0 0 8px currentColor; }
 .branch-weapons { --branch: var(--amber); }
@@ -357,10 +366,14 @@ kbd { padding: 2px 4px; color: #b6d4df; background: rgba(103, 155, 176, 0.12); b
 .upgrade-node.locked { opacity: .27; filter: saturate(.45); }
 .upgrade-node:disabled:not(.owned) { cursor: default; }
 
-.audio-panel { position: absolute; right: 16px; bottom: 48px; z-index: 31; width: 205px; padding: 12px; background: rgba(3,13,26,.95); border: 1px solid var(--edge); box-shadow: 0 15px 30px rgba(0,0,0,.45); }
+.audio-panel { position: absolute; right: 16px; bottom: 48px; z-index: 31; width: 225px; padding: 12px; background: rgba(3,13,26,.95); border: 1px solid var(--edge); box-shadow: 0 15px 30px rgba(0,0,0,.45); }
 .audio-panel label { display: grid; grid-template-columns: 45px 1fr; gap: 8px; align-items: center; margin: 5px 0; color: #8da9b8; font: 800 8px "Arial Narrow", sans-serif; letter-spacing: .1em; }
 .audio-panel input { width: 100%; accent-color: var(--cyan); }
-.audio-panel small { display: block; margin-top: 8px; color: #506c7b; font-size: 7px; line-height: 1.35; }
+.audio-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(122,224,255,.12); }
+.audio-footer span { color: #7fa4b5; font: 800 7px "Arial Narrow", sans-serif; letter-spacing: .08em; }
+.audio-footer button { cursor: pointer; padding: 4px 6px; color: var(--cyan); background: rgba(53,232,255,.06); border: 1px solid rgba(53,232,255,.2); font: 800 7px "Arial Narrow", sans-serif; letter-spacing: .08em; }
+.audio-panel .audio-error { display: block; margin-top: 7px; padding: 5px 6px; color: #ffbac4; background: rgba(255,102,124,.08); border-left: 2px solid var(--danger); font: 800 7px "Arial Narrow", sans-serif; letter-spacing: .1em; }
+.sound-button.audio-warning { color: var(--danger); border-color: rgba(255,102,124,.55); opacity: 1; }
 
 @media (max-height: 620px) {
   .start-card { transform: scale(0.84); }

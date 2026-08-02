@@ -8,9 +8,10 @@ const startConfig = (purchased: UpgradeNodeId[] = []): MissionStartConfig => ({
   difficulty: 'pilot',
   mission: MISSIONS[0],
   score: 0,
-  weapons: { spread: 1, missile: 0, laser: 0, drone: 0 },
+  weapons: { spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 },
   shieldBaseMax: 1,
   modifiers: buildCombatModifiers(purchased),
+  campaignSeed: 42,
 });
 
 describe('GameModel', () => {
@@ -40,10 +41,51 @@ describe('GameModel', () => {
     model.start(startConfig());
     model.upgrade('spread');
     model.upgrade('spread');
+    model.upgrade('spread');
+    model.upgrade('spread');
     const extra = model.upgrade('spread');
-    expect(model.weapons.spread).toBe(3);
+    expect(model.weapons.spread).toBe(5);
     expect(extra.upgraded).toBe(false);
     expect(model.score).toBe(750);
+  });
+
+  it('uses the Aegis reserve when the last active shield pip is lost', () => {
+    const model = new GameModel();
+    model.start(startConfig(['aegis-bank']));
+    expect(model.takeDamage()).toBe('reserve');
+    expect(model.shield).toBe(1);
+    expect(model.snapshot().reserveShieldAvailable).toBe(false);
+  });
+
+  it('activates and expires the Chrono Relay field with an EMP', () => {
+    const model = new GameModel();
+    model.start(startConfig(['chrono-relay']));
+    expect(model.activateEmp()).toBe(true);
+    expect(model.chronoScale).toBe(0.55);
+    model.tick(5_000);
+    expect(model.chronoScale).toBe(1);
+  });
+
+  it('restores shield at one hull through Second Wind', () => {
+    const model = new GameModel();
+    model.start(startConfig(['second-wind']));
+    model.takeDamage();
+    model.tick(1_300);
+    model.takeDamage();
+    model.tick(1_300);
+    expect(model.takeDamage()).toBe('secondWind');
+    expect(model.hull).toBe(1);
+    expect(model.shield).toBe(model.shieldMax);
+  });
+
+  it('restores EMP and Tractor on an Emergency Capacitor hull hit', () => {
+    const model = new GameModel();
+    model.start(startConfig(['emergency-capacitor']));
+    model.takeDamage();
+    model.tick(1_300);
+    expect(model.takeDamage()).toBe('hull');
+    expect(model.empCharges).toBe(2);
+    expect(model.tractorRadius).toBe(220);
   });
 
   it('builds a capped kill multiplier and applies credit upgrades', () => {

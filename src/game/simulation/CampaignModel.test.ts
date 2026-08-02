@@ -11,7 +11,7 @@ const fundedCampaign = (): CampaignSnapshot => ({
   credits: 500,
   score: 1_000,
   campaignKills: 10,
-  weapons: { spread: 2, missile: 1, laser: 0, drone: 0 },
+  weapons: { spread: 2, missile: 1, laser: 0, drone: 0, ion: 0 },
   shieldBaseMax: 2,
   purchased: [],
   respecAvailable: true,
@@ -24,7 +24,7 @@ describe('CampaignModel', () => {
     expect(campaign.purchase('rapid-cycling').ok).toBe(true);
     expect(campaign.purchase('amplified-munitions')).toEqual({ ok: false, reason: 'locked' });
     expect(campaign.purchase('split-capacitors').ok).toBe(true);
-    expect(campaign.snapshot().credits).toBe(365);
+    expect(campaign.snapshot().credits).toBe(340);
   });
 
   it('refunds all nodes exactly once', () => {
@@ -69,5 +69,22 @@ describe('CampaignModel', () => {
     campaign.startNew('ace');
     campaign.beginMission();
     expect(campaign.exportSave().phase).toBe('briefing');
+  });
+
+  it('migrates version one campaigns to five-level weapons and ION', () => {
+    const legacy = fundedCampaign();
+    const campaign = new CampaignModel(legacy);
+    expect(campaign.snapshot().version).toBe(2);
+    expect(campaign.snapshot().weapons.ion).toBe(0);
+    expect(campaign.snapshot().campaignSeed).toBeTypeOf('number');
+  });
+
+  it('requires a complete branch before buying a tier-four capstone', () => {
+    const campaign = new CampaignModel(fundedCampaign());
+    expect(campaign.purchase('prismatic-core')).toEqual({ ok: false, reason: 'locked' });
+    campaign.purchase('amplified-munitions');
+    campaign.purchase('hunter-logic');
+    campaign.purchase('phase-arsenal');
+    expect(campaign.purchase('prismatic-core').ok).toBe(true);
   });
 });

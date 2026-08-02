@@ -8,6 +8,7 @@ import type {
   CampaignSnapshot,
   Difficulty,
   GameSnapshot,
+  AudioDebugState,
   MusicTrack,
   UpgradeBranch,
   UpgradeNodeId,
@@ -46,6 +47,9 @@ const ui = {
   audioPanel: required<HTMLElement>('audio-panel'),
   musicVolume: required<HTMLInputElement>('music-volume'),
   sfxVolume: required<HTMLInputElement>('sfx-volume'),
+  resetMix: required<HTMLButtonElement>('reset-mix-button'),
+  audioStatus: required<HTMLElement>('audio-status'),
+  audioError: required<HTMLElement>('audio-error'),
   hull: required<HTMLElement>('hull-pips'),
   shield: required<HTMLElement>('shield-pips'),
   shieldTimer: required<HTMLElement>('shield-timer'),
@@ -54,6 +58,7 @@ const ui = {
   multiplier: required<HTMLElement>('multiplier'),
   highScore: required<HTMLElement>('high-score'),
   missionLabel: required<HTMLElement>('mission-label'),
+  threatLevel: required<HTMLElement>('threat-level'),
   stageProgress: required<HTMLElement>('stage-progress'),
   stageTime: required<HTMLElement>('stage-time'),
   bossHud: required<HTMLElement>('boss-hud'),
@@ -87,6 +92,7 @@ let latestSnapshot: GameSnapshot | undefined;
 let ready = false;
 let announceTimer = 0;
 let resultIsVictory = false;
+let defeatStingIndex = 0;
 let savedCampaign = loadCampaign();
 let campaign = new CampaignModel(savedCampaign);
 const debugMode = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -123,7 +129,10 @@ ui.continue.addEventListener('click', () => {
 ui.hangarLaunch.addEventListener('click', () => startCurrentMission());
 ui.pauseButton.addEventListener('click', () => window.dispatchEvent(new CustomEvent('aegis:pause')));
 ui.empButton.addEventListener('click', () => window.dispatchEvent(new CustomEvent('aegis:emp')));
-ui.resume.addEventListener('click', () => window.dispatchEvent(new CustomEvent('aegis:resume')));
+ui.resume.addEventListener('click', () => {
+  void audio.unlock();
+  window.dispatchEvent(new CustomEvent('aegis:resume'));
+});
 ui.restart.addEventListener('click', () => {
   campaign.failMission();
   audio.setMusicDucked(false);
@@ -168,6 +177,27 @@ ui.audioButton.addEventListener('click', () => {
 });
 ui.musicVolume.addEventListener('input', () => audio.setMusicVolume(Number(ui.musicVolume.value) / 100));
 ui.sfxVolume.addEventListener('input', () => audio.setSfxVolume(Number(ui.sfxVolume.value) / 100));
+ui.resetMix.addEventListener('click', () => {
+  const mix = audio.resetMix();
+  ui.musicVolume.value = String(Math.round(mix.music * 100));
+  ui.sfxVolume.value = String(Math.round(mix.sfx * 100));
+});
+
+required<HTMLElement>('game-shell').addEventListener('pointerdown', () => { void audio.unlock(); }, { capture: true });
+
+window.addEventListener('aegis:audio-state', (raw) => {
+  const state = (raw as CustomEvent<AudioDebugState>).detail;
+  const label = state.playbackState === 'playing' && state.currentTrack
+    ? `PLAYING // ${state.currentTrack.replace('mission-', '').toUpperCase()}`
+    : state.playbackState === 'loading'
+      ? 'LOADING MUSIC…'
+      : state.playbackState === 'unavailable'
+        ? 'MUSIC UNAVAILABLE'
+        : 'CLICK TO ENABLE AUDIO';
+  ui.audioStatus.textContent = label;
+  ui.audioError.classList.toggle('hidden', state.playbackState !== 'unavailable');
+  ui.audioButton.classList.toggle('audio-warning', state.playbackState === 'unavailable');
+});
 
 window.addEventListener('aegis:ready', () => {
   ready = true;
@@ -192,7 +222,11 @@ window.addEventListener('aegis:announce', (raw) => {
 });
 
 window.addEventListener('aegis:sound', (raw) => audio.play((raw as CustomEvent<SoundCue>).detail));
-window.addEventListener('aegis:music', (raw) => { void audio.playMusic((raw as CustomEvent<MusicTrack>).detail); });
+window.addEventListener('aegis:music', (raw) => {
+  const track = (raw as CustomEvent<MusicTrack>).detail;
+  const variant = track === 'boss' ? campaign.snapshot().campaignSeed ?? 0 : 0;
+  void audio.playMusic(track, undefined, variant);
+});
 
 window.addEventListener('aegis:pause-state', (raw) => {
   const paused = (raw as CustomEvent<boolean>).detail;
@@ -211,7 +245,7 @@ window.addEventListener('aegis:mission-ended', (raw) => {
     if (state.phase === 'victory') showVictory(state, snapshot);
     else {
       saveCampaign();
-      openHangar();
+      openHangar(snapshot.missionNumber - 1);
     }
   } else {
     campaign.failMission();
@@ -235,7 +269,7 @@ function startCurrentMission(): void {
   window.dispatchEvent(new CustomEvent('aegis:start-mission', { detail: config }));
 }
 
-function openHangar(): void {
+function openHangar(victoryVariant?: number): void {
   resultIsVictory = false;
   ui.start.classList.add('hidden');
   ui.pause.classList.add('hidden');
@@ -243,7 +277,8 @@ function openHangar(): void {
   ui.hud.classList.add('hidden');
   ui.hangar.classList.remove('hidden');
   renderHangar();
-  void audio.playMusic('menu');
+  if (victoryVariant === undefined) void audio.playMusic('hangar');
+  else void audio.playMusic('victory', 'hangar', victoryVariant);
 }
 
 function renderHangar(): void {
@@ -278,7 +313,7 @@ function renderUpgradeTree(state: CampaignSnapshot): void {
     const heading = document.createElement('h3');
     heading.innerHTML = `<span>${branchIcon(branch)}</span>${branch.toUpperCase()}`;
     column.append(heading);
-    for (const tier of [1, 2, 3] as const) {
+    for (const tier of [1, 2, 3, 4] as const) {
       const tierElement = document.createElement('div');
       tierElement.className = 'upgrade-tier';
       tierElement.dataset.tier = String(tier);
@@ -316,7 +351,8 @@ function showFailure(snapshot: GameSnapshot): void {
   ui.resultKills.textContent = String(snapshot.kills);
   ui.resultAction.innerHTML = `RETRY ${snapshot.missionTitle} <span>→</span>`;
   ui.resultAbandon.classList.remove('hidden');
-  void audio.playMusic('defeat');
+  void audio.playMusic('defeat', undefined, defeatStingIndex);
+  defeatStingIndex = (defeatStingIndex + 1) % 2;
 }
 
 function showVictory(state: CampaignSnapshot, snapshot: GameSnapshot): void {
@@ -332,7 +368,7 @@ function showVictory(state: CampaignSnapshot, snapshot: GameSnapshot): void {
   ui.resultAction.innerHTML = 'NEW CAMPAIGN <span>→</span>';
   ui.resultAbandon.classList.add('hidden');
   latestSnapshot = snapshot;
-  void audio.playMusic('victory');
+  void audio.playMusic('victory', undefined, 3);
 }
 
 function showStart(): void {
@@ -364,6 +400,8 @@ function updateHud(snapshot: GameSnapshot): void {
   ui.multiplier.textContent = `×${snapshot.multiplier}`;
   ui.highScore.textContent = `BEST ${formatScore(snapshot.highScore)}`;
   ui.missionLabel.textContent = snapshot.missionNumber === 4 ? 'FINAL VECTOR' : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
+  ui.threatLevel.textContent = `THREAT ${snapshot.threatLevel}`;
+  ui.threatLevel.dataset.level = String(snapshot.threatLevel);
 
   const progress = Math.min(1, snapshot.stageElapsedMs / snapshot.stageDurationMs);
   ui.stageProgress.style.width = `${progress * 100}%`;
@@ -379,6 +417,8 @@ function updateHud(snapshot: GameSnapshot): void {
   const effects: string[] = [];
   if (snapshot.overdriveRemainingMs > 0) effects.push(`OVERDRIVE ${(snapshot.overdriveRemainingMs / 1_000).toFixed(1)}s`);
   if (snapshot.tractorRemainingMs > 0) effects.push(`TRACTOR ${(snapshot.tractorRemainingMs / 1_000).toFixed(1)}s`);
+  if (snapshot.chronoRemainingMs > 0) effects.push(`CHRONO ${(snapshot.chronoRemainingMs / 1_000).toFixed(1)}s`);
+  if (snapshot.reserveShieldAvailable) effects.push('RESERVE SHIELD');
   ui.effectReadout.replaceChildren(...effects.map((effect) => {
     const span = document.createElement('span');
     span.textContent = effect;
@@ -409,7 +449,7 @@ function renderWeapons(snapshot: GameSnapshot): void {
     const chip = document.createElement('div');
     chip.className = `weapon-chip${level > 0 ? ' active' : ''}`;
     chip.style.setProperty('--weapon', data.css);
-    chip.innerHTML = `<b>${data.short}</b><span>${[1, 2, 3].map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>`;
+    chip.innerHTML = `<b>${data.short}</b><span>${[1, 2, 3, 4, 5].map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>`;
     return chip;
   }));
 }
@@ -501,3 +541,9 @@ Object.defineProperty(window, '__AEGIS_CAMPAIGN__', {
   get: () => campaign.snapshot(),
   configurable: true,
 });
+Object.defineProperty(window, '__AEGIS_AUDIO__', {
+  get: () => audio.getDebugState(),
+  configurable: true,
+});
+
+void audio.playMusic('menu');

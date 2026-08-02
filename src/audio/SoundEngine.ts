@@ -1,4 +1,9 @@
-import type { MusicTrack } from '../game/simulation/types';
+import type {
+  AudioDebugState,
+  MusicAssetDefinition,
+  MusicPlaybackState,
+  MusicTrack,
+} from '../game/simulation/types';
 
 export type SoundCue =
   | 'fire'
@@ -22,17 +27,43 @@ export interface AudioSettings {
 }
 
 interface ActiveMusic {
+  track: MusicTrack;
   gain: GainNode;
   sources: AudioScheduledSourceNode[];
 }
 
+interface DesiredMusic {
+  track: MusicTrack;
+  nextTrack?: MusicTrack;
+  variantIndex: number;
+}
+
 const AUDIO_SETTINGS_KEY = 'aegis-vector-audio-v1';
-const MUSIC_FILES: Record<MusicTrack, string> = {
-  menu: 'audio/menu.mp3',
-  mission: 'audio/mission.mp3',
-  boss: 'audio/boss.mp3',
-  victory: 'audio/victory.mp3',
-  defeat: 'audio/defeat.mp3',
+const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7 };
+
+export const MUSIC_ASSETS: Record<MusicTrack, MusicAssetDefinition> = {
+  menu: { files: ['audio/menu.mp3'], loop: true, gain: 0.88, preloadNext: 'mission-coastal' },
+  hangar: { files: ['audio/hangar.mp3'], loop: true, gain: 0.9 },
+  'mission-coastal': { files: ['audio/mission-coastal.mp3'], loop: true, gain: 0.76, preloadNext: 'hangar' },
+  'mission-minefield': { files: ['audio/mission-minefield.mp3'], loop: true, gain: 0.76, preloadNext: 'hangar' },
+  'mission-fortress': { files: ['audio/mission-fortress.mp3'], loop: true, gain: 0.73, preloadNext: 'hangar' },
+  boss: {
+    files: ['audio/boss.mp3', 'audio/boss-mech-tyrants.mp3'],
+    loop: true,
+    gain: 0.72,
+    preloadNext: 'victory',
+  },
+  victory: {
+    files: [
+      'audio/victory-coastal.mp3',
+      'audio/victory-minefield.mp3',
+      'audio/victory-fortress.mp3',
+      'audio/victory-campaign.mp3',
+    ],
+    loop: false,
+    gain: 0.88,
+  },
+  defeat: { files: ['audio/defeat-signal.mp3', 'audio/defeat-debrief.mp3'], loop: false, gain: 0.84 },
 };
 
 export class SoundEngine {
@@ -41,42 +72,68 @@ export class SoundEngine {
   private sfxBus?: GainNode;
   private musicBus?: GainNode;
   private settings: AudioSettings = SoundEngine.loadSettings();
-  private buffers = new Map<MusicTrack, AudioBuffer | null>();
+  private buffers = new Map<string, AudioBuffer | null>();
   private activeMusic?: ActiveMusic;
+  private desired?: DesiredMusic;
   private currentTrack?: MusicTrack;
+  private playbackState: MusicPlaybackState = 'locked';
   private musicRequest = 0;
   private ducked = false;
+  private lastError?: string;
+  private source?: AudioDebugState['source'];
+  private readonly debugSynth = new URLSearchParams(window.location.search).get('audioSynth') === '1';
 
   async unlock(): Promise<void> {
-    if (!this.context) {
-      this.context = new AudioContext();
-      this.master = this.context.createGain();
-      this.sfxBus = this.context.createGain();
-      this.musicBus = this.context.createGain();
-      this.master.gain.value = 1;
-      this.sfxBus.gain.value = this.settings.sfx;
-      this.musicBus.gain.value = this.settings.music;
-      this.sfxBus.connect(this.master);
-      this.musicBus.connect(this.master);
-      this.master.connect(this.context.destination);
+    try {
+      if (!this.context) this.createAudioGraph();
+      if (this.context?.state === 'suspended') await this.context.resume();
+      this.emitState();
+      if (this.context?.state === 'running' && this.desired && this.currentTrack !== this.desired.track) {
+        await this.startDesired(++this.musicRequest);
+      }
+    } catch (error) {
+      this.fail(error);
     }
-    if (this.context.state === 'suspended') await this.context.resume();
   }
 
   getSettings(): AudioSettings {
     return { ...this.settings };
   }
 
+  getDebugState(): AudioDebugState {
+    return {
+      contextState: this.context?.state ?? 'uninitialized',
+      playbackState: this.playbackState,
+      desiredTrack: this.desired?.track,
+      currentTrack: this.currentTrack,
+      source: this.source,
+      musicGain: this.settings.music,
+      sfxGain: this.settings.sfx,
+      lastError: this.lastError,
+    };
+  }
+
+  resetMix(): AudioSettings {
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.applyMusicVolume();
+    if (this.sfxBus && this.context) this.sfxBus.gain.setTargetAtTime(this.settings.sfx, this.context.currentTime, 0.03);
+    this.saveSettings();
+    this.emitState();
+    return this.getSettings();
+  }
+
   setMusicVolume(value: number): void {
     this.settings.music = SoundEngine.clampVolume(value);
     this.applyMusicVolume();
     this.saveSettings();
+    this.emitState();
   }
 
   setSfxVolume(value: number): void {
     this.settings.sfx = SoundEngine.clampVolume(value);
     if (this.sfxBus && this.context) this.sfxBus.gain.setTargetAtTime(this.settings.sfx, this.context.currentTime, 0.03);
     this.saveSettings();
+    this.emitState();
   }
 
   setMusicDucked(ducked: boolean): void {
@@ -84,159 +141,230 @@ export class SoundEngine {
     this.applyMusicVolume();
   }
 
-  async playMusic(track: MusicTrack): Promise<void> {
-    await this.unlock();
-    if (!this.context || !this.musicBus) return;
-    if (this.currentTrack === track && this.activeMusic) return;
+  async playMusic(track: MusicTrack, nextTrack?: MusicTrack, variantIndex = 0): Promise<void> {
+    this.desired = { track, nextTrack, variantIndex };
+    this.lastError = undefined;
     const request = ++this.musicRequest;
-    const buffer = await this.loadTrack(track);
-    if (request !== this.musicRequest || !this.context) return;
-    this.fadeOutActiveMusic();
-    this.currentTrack = track;
-
-    if (buffer) this.activeMusic = this.startBufferMusic(track, buffer);
-    else if (track === 'menu' || track === 'mission' || track === 'boss') this.activeMusic = this.startSynthMusic(track);
-    else {
-      this.currentTrack = undefined;
-      this.play(track === 'victory' ? 'victory' : 'defeat');
+    if (!this.context || this.context.state !== 'running') {
+      this.playbackState = 'locked';
+      this.emitState();
+      return;
     }
+    if (this.currentTrack === track && this.activeMusic) return;
+    await this.startDesired(request);
   }
 
   stopMusic(): void {
     this.musicRequest += 1;
+    this.desired = undefined;
     this.currentTrack = undefined;
-    this.fadeOutActiveMusic();
+    this.playbackState = this.context?.state === 'running' ? 'loading' : 'locked';
+    if (this.activeMusic) this.fadeOut(this.activeMusic, 0.65);
+    this.activeMusic = undefined;
+    this.emitState();
   }
 
   play(cue: SoundCue): void {
-    if (!this.context || !this.sfxBus || this.settings.sfx <= 0) return;
+    if (!this.context || this.context.state !== 'running' || !this.sfxBus || this.settings.sfx <= 0) return;
     switch (cue) {
-      case 'fire':
-        this.tone(235, 120, 0.045, 'square', 0.025);
-        break;
-      case 'laser':
-        this.tone(650, 180, 0.13, 'sawtooth', 0.055);
-        break;
-      case 'missile':
-        this.tone(150, 65, 0.16, 'sawtooth', 0.05);
-        break;
-      case 'enemy-fire':
-        this.tone(180, 110, 0.08, 'triangle', 0.025);
-        break;
+      case 'fire': this.tone(235, 120, 0.045, 'square', 0.025); break;
+      case 'laser': this.tone(650, 180, 0.13, 'sawtooth', 0.055); break;
+      case 'missile': this.tone(150, 65, 0.16, 'sawtooth', 0.05); break;
+      case 'enemy-fire': this.tone(180, 110, 0.08, 'triangle', 0.025); break;
       case 'explode':
         this.noise(0.18, 0.09);
         this.tone(92, 36, 0.2, 'sawtooth', 0.05);
         break;
-      case 'pickup':
-        this.sequence([440, 660, 880], 0.055, 'sine', 0.08);
-        break;
-      case 'shield-hit':
-        this.tone(520, 210, 0.2, 'sine', 0.09);
-        break;
-      case 'shield-ready':
-        this.sequence([330, 495, 742], 0.08, 'sine', 0.065);
-        break;
+      case 'pickup': this.sequence([440, 660, 880], 0.055, 'sine', 0.08); break;
+      case 'shield-hit': this.tone(520, 210, 0.2, 'sine', 0.09); break;
+      case 'shield-ready': this.sequence([330, 495, 742], 0.08, 'sine', 0.065); break;
       case 'hull-hit':
         this.noise(0.26, 0.13);
         this.tone(110, 42, 0.24, 'square', 0.075);
         break;
-      case 'warning':
-        this.sequence([170, 110, 170], 0.14, 'square', 0.08);
-        break;
+      case 'warning': this.sequence([170, 110, 170], 0.14, 'square', 0.08); break;
       case 'emp':
         this.tone(92, 920, 0.38, 'sawtooth', 0.09);
         this.noise(0.28, 0.045);
         break;
-      case 'purchase':
-        this.sequence([330, 494, 659], 0.07, 'triangle', 0.07);
-        break;
-      case 'victory':
-        this.sequence([330, 440, 554, 660], 0.16, 'triangle', 0.09);
-        break;
-      case 'defeat':
-        this.sequence([220, 165, 110], 0.18, 'triangle', 0.07);
-        break;
-      default:
-        break;
+      case 'purchase': this.sequence([330, 494, 659], 0.07, 'triangle', 0.07); break;
+      case 'victory': this.sequence([330, 440, 554, 660], 0.16, 'triangle', 0.09); break;
+      case 'defeat': this.sequence([220, 165, 110], 0.18, 'triangle', 0.07); break;
+      default: break;
     }
   }
 
-  private async loadTrack(track: MusicTrack): Promise<AudioBuffer | null> {
-    if (this.buffers.has(track)) return this.buffers.get(track) ?? null;
+  private createAudioGraph(): void {
+    this.context = new AudioContext();
+    this.master = this.context.createGain();
+    this.sfxBus = this.context.createGain();
+    this.musicBus = this.context.createGain();
+    this.master.gain.value = 1;
+    this.sfxBus.gain.value = this.settings.sfx;
+    this.musicBus.gain.value = this.settings.music;
+    this.sfxBus.connect(this.master);
+    this.musicBus.connect(this.master);
+    this.master.connect(this.context.destination);
+    this.context.addEventListener('statechange', () => {
+      if (this.context?.state === 'suspended' && this.currentTrack) this.playbackState = 'locked';
+      this.emitState();
+    });
+  }
+
+  private async startDesired(request: number): Promise<void> {
+    const desired = this.desired;
+    if (!desired || !this.context || !this.musicBus) return;
+    this.playbackState = 'loading';
+    this.emitState();
+    const definition = MUSIC_ASSETS[desired.track];
+    const file = SoundEngine.musicFile(desired.track, desired.variantIndex);
+    const buffer = await this.loadTrack(file);
+    if (request !== this.musicRequest || desired !== this.desired || !this.context) return;
+    if (!buffer) {
+      if (this.debugSynth && definition.loop) {
+        const previous = this.activeMusic;
+        this.activeMusic = this.startDebugSynth(desired.track);
+        this.currentTrack = desired.track;
+        this.source = 'debug-synth';
+        this.playbackState = 'playing';
+        if (previous) this.fadeOut(previous, this.crossfadeSeconds(previous.track, desired.track));
+        this.emitState();
+        return;
+      }
+      this.currentTrack = undefined;
+      this.source = undefined;
+      this.playbackState = 'unavailable';
+      this.lastError ??= `Unable to load ${file}`;
+      this.emitState();
+      return;
+    }
+
+    const previous = this.activeMusic;
+    const fadeSeconds = previous ? this.crossfadeSeconds(previous.track, desired.track) : definition.loop ? 0.8 : 0.1;
+    this.activeMusic = this.startBufferMusic(desired, buffer, definition, request, fadeSeconds);
+    this.currentTrack = desired.track;
+    this.source = 'buffer';
+    this.playbackState = 'playing';
+    if (previous) this.fadeOut(previous, fadeSeconds);
+    this.emitState();
+
+    const preload = desired.nextTrack ?? definition.preloadNext;
+    if (preload) void this.preload(preload);
+  }
+
+  private async loadTrack(file: string): Promise<AudioBuffer | null> {
+    if (this.buffers.has(file)) return this.buffers.get(file) ?? null;
     if (!this.context) return null;
     try {
-      const url = new URL(MUSIC_FILES[track], document.baseURI);
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Missing optional music asset: ${track}`);
-      const buffer = await this.context.decodeAudioData(await response.arrayBuffer());
-      this.buffers.set(track, buffer);
+      const response = await fetch(new URL(file, document.baseURI));
+      if (!response.ok) throw new Error(`${file} returned HTTP ${response.status}`);
+      const data = await response.arrayBuffer();
+      if (data.byteLength === 0) throw new Error(`${file} is empty`);
+      const buffer = await this.context.decodeAudioData(data);
+      this.buffers.set(file, buffer);
+      this.trimBufferCache(file);
       return buffer;
-    } catch {
-      this.buffers.set(track, null);
+    } catch (error) {
+      this.buffers.set(file, null);
+      this.lastError = error instanceof Error ? error.message : String(error);
       return null;
     }
   }
 
-  private startBufferMusic(track: MusicTrack, buffer: AudioBuffer): ActiveMusic {
+  private async preload(track: MusicTrack): Promise<void> {
+    if (!this.context) return;
+    await this.loadTrack(SoundEngine.musicFile(track, 0));
+  }
+
+  private startBufferMusic(
+    desired: DesiredMusic,
+    buffer: AudioBuffer,
+    definition: MusicAssetDefinition,
+    request: number,
+    fadeSeconds: number,
+  ): ActiveMusic {
     const context = this.context!;
     const source = context.createBufferSource();
     const gain = context.createGain();
     source.buffer = buffer;
-    source.loop = track === 'menu' || track === 'mission' || track === 'boss';
+    source.loop = definition.loop;
+    const measuredGain = SoundEngine.measuredGain(buffer);
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(1, context.currentTime + 0.8);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, definition.gain * measuredGain), context.currentTime + fadeSeconds);
     source.connect(gain).connect(this.musicBus!);
     source.start();
+    if (!definition.loop && desired.nextTrack) {
+      window.setTimeout(() => {
+        if (this.musicRequest === request && this.currentTrack === desired.track) {
+          void this.playMusic(desired.nextTrack!);
+        }
+      }, Math.max(0, (buffer.duration - 0.65) * 1_000));
+    }
     source.addEventListener('ended', () => {
-      if (this.currentTrack === track && !source.loop) this.currentTrack = undefined;
-    });
-    return { gain, sources: [source] };
-  }
-
-  private startSynthMusic(track: 'menu' | 'mission' | 'boss'): ActiveMusic {
-    const context = this.context!;
-    const gain = context.createGain();
-    const filter = context.createBiquadFilter();
-    const bass = context.createOscillator();
-    const fifth = context.createOscillator();
-    const base = track === 'boss' ? 46.25 : track === 'mission' ? 55 : 65.41;
-    bass.type = track === 'menu' ? 'triangle' : 'sawtooth';
-    fifth.type = 'triangle';
-    bass.frequency.value = base;
-    fifth.frequency.value = base * 1.5;
-    filter.type = 'lowpass';
-    filter.frequency.value = track === 'boss' ? 330 : track === 'mission' ? 260 : 210;
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(track === 'menu' ? 0.025 : 0.035, context.currentTime + 0.8);
-    bass.connect(filter);
-    fifth.connect(filter);
-    filter.connect(gain).connect(this.musicBus!);
-    bass.start();
-    fifth.start();
-    return { gain, sources: [bass, fifth] };
-  }
-
-  private fadeOutActiveMusic(): void {
-    if (!this.activeMusic || !this.context) return;
-    const previous = this.activeMusic;
-    this.activeMusic = undefined;
-    const now = this.context.currentTime;
-    previous.gain.gain.cancelScheduledValues(now);
-    previous.gain.gain.setValueAtTime(Math.max(0.0001, previous.gain.gain.value), now);
-    previous.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
-    previous.sources.forEach((source) => {
-      try {
-        source.stop(now + 0.7);
-      } catch {
-        // The source may already have ended.
+      if (this.currentTrack === desired.track && !definition.loop) {
+        this.currentTrack = undefined;
+        this.activeMusic = undefined;
+        this.playbackState = this.desired?.nextTrack ? 'loading' : 'locked';
+        this.emitState();
       }
     });
+    return { track: desired.track, gain, sources: [source] };
+  }
+
+  private startDebugSynth(track: MusicTrack): ActiveMusic {
+    const context = this.context!;
+    const gain = context.createGain();
+    const oscillator = context.createOscillator();
+    oscillator.type = 'triangle';
+    oscillator.frequency.value = track === 'boss' ? 46.25 : 65.41;
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.018, context.currentTime + 0.8);
+    oscillator.connect(gain).connect(this.musicBus!);
+    oscillator.start();
+    return { track, gain, sources: [oscillator] };
+  }
+
+  private fadeOut(music: ActiveMusic, seconds: number): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    music.gain.gain.cancelScheduledValues(now);
+    music.gain.gain.setValueAtTime(Math.max(0.0001, music.gain.gain.value), now);
+    music.gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+    music.sources.forEach((source) => {
+      try { source.stop(now + seconds + 0.03); } catch { /* already ended */ }
+    });
+  }
+
+  private crossfadeSeconds(from: MusicTrack, to: MusicTrack): number {
+    return from.startsWith('mission-') && to === 'boss' ? 1.2 : 0.8;
+  }
+
+  private trimBufferCache(activeFile: string): void {
+    while (this.buffers.size > 3) {
+      const oldest = this.buffers.keys().next().value as string | undefined;
+      if (!oldest) return;
+      if (oldest === activeFile) {
+        const buffer = this.buffers.get(oldest);
+        this.buffers.delete(oldest);
+        this.buffers.set(oldest, buffer ?? null);
+      } else this.buffers.delete(oldest);
+    }
   }
 
   private applyMusicVolume(): void {
     if (!this.musicBus || !this.context) return;
     const target = this.settings.music * (this.ducked ? 0.45 : 1);
     this.musicBus.gain.setTargetAtTime(target, this.context.currentTime, 0.08);
+  }
+
+  private emitState(): void {
+    window.dispatchEvent(new CustomEvent<AudioDebugState>('aegis:audio-state', { detail: this.getDebugState() }));
+  }
+
+  private fail(error: unknown): void {
+    this.playbackState = 'unavailable';
+    this.lastError = error instanceof Error ? error.message : String(error);
+    this.emitState();
   }
 
   private tone(startHz: number, endHz: number, duration: number, type: OscillatorType, volume: number): void {
@@ -290,23 +418,39 @@ export class SoundEngine {
   }
 
   private saveSettings(): void {
-    try {
-      localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify(this.settings));
-    } catch {
-      // Storage is optional.
-    }
+    try { localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify(this.settings)); } catch { /* optional */ }
   }
 
   private static loadSettings(): AudioSettings {
     try {
       const parsed = JSON.parse(localStorage.getItem(AUDIO_SETTINGS_KEY) ?? '{}') as Partial<AudioSettings>;
       return {
-        music: SoundEngine.clampVolume(parsed.music ?? 0.32),
-        sfx: SoundEngine.clampVolume(parsed.sfx ?? 0.8),
+        music: SoundEngine.clampVolume(parsed.music ?? DEFAULT_SETTINGS.music),
+        sfx: SoundEngine.clampVolume(parsed.sfx ?? DEFAULT_SETTINGS.sfx),
       };
     } catch {
-      return { music: 0.32, sfx: 0.8 };
+      return { ...DEFAULT_SETTINGS };
     }
+  }
+
+  private static musicFile(track: MusicTrack, variantIndex: number): string {
+    const files = MUSIC_ASSETS[track].files;
+    return files[Math.abs(Math.trunc(variantIndex)) % files.length];
+  }
+
+  private static measuredGain(buffer: AudioBuffer): number {
+    let sum = 0;
+    let samples = 0;
+    const stride = Math.max(1, Math.floor(buffer.length / 120_000));
+    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+      const data = buffer.getChannelData(channel);
+      for (let index = 0; index < data.length; index += stride) {
+        sum += data[index] * data[index];
+        samples += 1;
+      }
+    }
+    const rms = Math.sqrt(sum / Math.max(1, samples));
+    return Math.max(0.68, Math.min(1.18, 0.13 / Math.max(0.001, rms)));
   }
 
   private static clampVolume(value: number): number {

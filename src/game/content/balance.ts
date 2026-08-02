@@ -13,6 +13,7 @@ export interface DifficultyTuning {
   enemyFireRate: number;
   dropChance: number;
   scoreScale: number;
+  threatCurve: number;
 }
 
 export const DIFFICULTY: Record<Difficulty, DifficultyTuning> = {
@@ -22,6 +23,7 @@ export const DIFFICULTY: Record<Difficulty, DifficultyTuning> = {
     enemyFireRate: 0.72,
     dropChance: 0.26,
     scoreScale: 0.85,
+    threatCurve: 0.65,
   },
   pilot: {
     enemyHealth: 1,
@@ -29,6 +31,7 @@ export const DIFFICULTY: Record<Difficulty, DifficultyTuning> = {
     enemyFireRate: 1,
     dropChance: 0.2,
     scoreScale: 1,
+    threatCurve: 1,
   },
   ace: {
     enemyHealth: 1.22,
@@ -36,6 +39,7 @@ export const DIFFICULTY: Record<Difficulty, DifficultyTuning> = {
     enemyFireRate: 1.25,
     dropChance: 0.16,
     scoreScale: 1.25,
+    threatCurve: 1.2,
   },
 };
 
@@ -65,4 +69,5 @@ export const WEAPON_LABELS: Record<WeaponType, { short: string; name: string; co
   missile: { short: 'NOVA', name: 'Nova Missiles', color: 0xffb640, css: '#ffb640' },
   laser: { short: 'LANCE', name: 'Lance Laser', color: 0xf06cff, css: '#f06cff' },
   drone: { short: 'WING', name: 'Wing Drones', color: 0x65ffb1, css: '#65ffb1' },
+  ion: { short: 'ION', name: 'Ion Conductor', color: 0xb79cff, css: '#b79cff' },
 };

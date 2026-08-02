@@ -4,6 +4,7 @@ export const MISSIONS: MissionDefinition[] = [
   {
     id: 'coastal',
     number: 1,
+    music: 'mission-coastal',
     sector: 'SECTOR 01',
     title: 'COASTAL INTERCEPT',
     durationMs: 195_000,
@@ -11,10 +12,12 @@ export const MISSIONS: MissionDefinition[] = [
     newThreats: ['CHARGER // TELEGRAPHED DIVE', 'SNIPER // LOCK-ON BEAM'],
     completionCredits: 25,
     finale: false,
+    visualProfile: 'coastal',
   },
   {
     id: 'minefield',
     number: 2,
+    music: 'mission-minefield',
     sector: 'SECTOR 02',
     title: 'MINEFIELD RUN',
     durationMs: 210_000,
@@ -22,10 +25,12 @@ export const MISSIONS: MissionDefinition[] = [
     newThreats: ['MINE LAYER // AREA DENIAL', 'SHIELD CARRIER // PROTECTION FIELD', 'WARDEN // COMMAND CRAFT'],
     completionCredits: 35,
     finale: false,
+    visualProfile: 'minefield',
   },
   {
     id: 'fortress',
     number: 3,
+    music: 'mission-fortress',
     sector: 'SECTOR 03',
     title: 'FORTRESS APPROACH',
     durationMs: 225_000,
@@ -33,10 +38,12 @@ export const MISSIONS: MissionDefinition[] = [
     newThreats: ['MIXED SPECIALIST WINGS', 'COMMAND-ELITE GAUNTLET'],
     completionCredits: 45,
     finale: false,
+    visualProfile: 'fortress',
   },
   {
     id: 'dreadnought',
     number: 4,
+    music: 'boss',
     sector: 'FINAL VECTOR',
     title: 'DREADNOUGHT',
     durationMs: 120_000,
@@ -44,6 +51,7 @@ export const MISSIONS: MissionDefinition[] = [
     newThreats: ['THREE-PHASE FORTRESS ASSAULT'],
     completionCredits: 0,
     finale: true,
+    visualProfile: 'dreadnought',
   },
 ];
 

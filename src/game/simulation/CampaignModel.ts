@@ -7,10 +7,11 @@ import type {
   MissionDefinition,
   MissionStartConfig,
   UpgradeNodeId,
+  WeaponLevel,
   WeaponLevels,
 } from './types';
 
-const INITIAL_WEAPONS: WeaponLevels = { spread: 1, missile: 0, laser: 0, drone: 0 };
+const INITIAL_WEAPONS: WeaponLevels = { spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 };
 
 export interface PurchaseResult {
   ok: boolean;
@@ -26,7 +27,7 @@ export class CampaignModel {
 
   static fresh(difficulty: Difficulty): CampaignSnapshot {
     return {
-      version: 1,
+      version: 2,
       phase: 'briefing',
       difficulty,
       missionIndex: 0,
@@ -37,6 +38,7 @@ export class CampaignModel {
       shieldBaseMax: 1,
       purchased: [],
       respecAvailable: true,
+      campaignSeed: CampaignModel.makeSeed(),
     };
   }
 
@@ -58,6 +60,7 @@ export class CampaignModel {
       weapons: { ...this.state.weapons },
       shieldBaseMax: this.state.shieldBaseMax,
       modifiers: buildCombatModifiers(this.state.purchased),
+      campaignSeed: this.state.campaignSeed ?? CampaignModel.makeSeed(),
       debugDurationMs,
     };
   }
@@ -163,7 +166,7 @@ export class CampaignModel {
         ? 'hangar'
         : 'briefing';
     return {
-      version: 1,
+      version: 2,
       phase,
       difficulty: validDifficulty,
       missionIndex,
@@ -175,15 +178,23 @@ export class CampaignModel {
         missile: CampaignModel.weaponLevel(candidate.weapons?.missile, 0),
         laser: CampaignModel.weaponLevel(candidate.weapons?.laser, 0),
         drone: CampaignModel.weaponLevel(candidate.weapons?.drone, 0),
+        ion: CampaignModel.weaponLevel(candidate.weapons?.ion, 0),
       },
       shieldBaseMax: Math.max(1, Math.min(3, Math.floor(candidate.shieldBaseMax ?? 1))),
       purchased,
       respecAvailable: candidate.respecAvailable !== false,
+      campaignSeed: Number.isFinite(candidate.campaignSeed)
+        ? Math.max(1, Math.floor(candidate.campaignSeed!))
+        : CampaignModel.makeSeed(),
       lastReport: candidate.lastReport,
     };
   }
 
-  private static weaponLevel(value: number | undefined, fallback: number): number {
-    return Number.isFinite(value) ? Math.max(0, Math.min(3, Math.floor(value!))) : fallback;
+  private static weaponLevel(value: number | undefined, fallback: WeaponLevel): WeaponLevel {
+    return (Number.isFinite(value) ? Math.max(0, Math.min(5, Math.floor(value!))) : fallback) as WeaponLevel;
+  }
+
+  private static makeSeed(): number {
+    return Math.max(1, Math.floor(Math.random() * 0x7fffffff));
   }
 }

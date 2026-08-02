@@ -34,6 +34,7 @@
 
           <div class="mission-track" aria-label="Mission progress">
             <span id="mission-label">SECTOR 01</span>
+            <span id="threat-level" class="threat-level" data-level="1">THREAT 1</span>
             <div class="track"><i id="stage-progress"></i></div>
             <span id="stage-time">03:15</span>
           </div>
@@ -145,7 +146,8 @@
         <section id="audio-panel" class="audio-panel hidden" aria-label="Audio settings">
           <label><span>MUSIC</span><input id="music-volume" type="range" min="0" max="100" step="1" /></label>
           <label><span>SFX</span><input id="sfx-volume" type="range" min="0" max="100" step="1" /></label>
-          <small>Drop ElevenLabs files into <b>public/audio</b>.</small>
+          <div class="audio-footer"><span id="audio-status">AUDIO LOCKED</span><button id="reset-mix-button" type="button">RESET MIX</button></div>
+          <small id="audio-error" class="audio-error hidden">MUSIC UNAVAILABLE</small>
         </section>
       </div>
     </main>

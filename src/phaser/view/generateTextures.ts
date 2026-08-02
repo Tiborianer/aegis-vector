@@ -15,10 +15,16 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.fillStyle(0x18d8ff, 0.12).fillCircle(44, 54, 40);
   g.fillStyle(0x35e8ff, 0.24).fillTriangle(44, 1, 10, 91, 78, 91);
   g.fillStyle(0xd9f8ff, 1).fillPoints(polygon([[44, 5], [54, 42], [81, 73], [58, 69], [54, 96], [44, 83], [34, 96], [30, 69], [7, 73], [34, 42]]), true);
+  g.fillStyle(0x7195a9, 0.75).fillPoints(polygon([[44, 8], [54, 43], [71, 67], [51, 55], [44, 79], [44, 23]]), true);
+  g.fillStyle(0xffffff, 0.72).fillPoints(polygon([[43, 7], [43, 63], [35, 51], [35, 40]]), true);
   g.fillStyle(0x18354f, 1).fillPoints(polygon([[44, 18], [51, 47], [44, 63], [37, 47]]), true);
   g.fillStyle(0x35e8ff, 1).fillTriangle(44, 64, 51, 83, 37, 83);
   g.lineStyle(2, 0x35e8ff, 0.95).strokePoints(polygon([[12, 71], [34, 57], [44, 9], [54, 57], [76, 71]]));
   g.generateTexture(ASSET_KEYS.player, 88, 104).clear();
+  drawPlayerBank(g, ASSET_KEYS.playerBanks[0], -2);
+  drawPlayerBank(g, ASSET_KEYS.playerBanks[1], -1);
+  drawPlayerBank(g, ASSET_KEYS.playerBanks[3], 1);
+  drawPlayerBank(g, ASSET_KEYS.playerBanks[4], 2);
 
   // Support drone.
   g.fillStyle(0x65ffb1, 0.18).fillCircle(24, 24, 22);
@@ -88,8 +94,13 @@ export function generateTextures(scene: Phaser.Scene): void {
 
   drawOceanTexture(g);
   drawCloudTexture(g);
+  drawAtmosphereTextures(g);
+  drawMissionEnvironment(g, ASSET_KEYS.coastal, 'coastal');
+  drawMissionEnvironment(g, ASSET_KEYS.minefield, 'minefield');
+  drawMissionEnvironment(g, ASSET_KEYS.fortress, 'fortress');
+  drawMissionEnvironment(g, ASSET_KEYS.dreadnought, 'dreadnought');
 
-  (['spread', 'missile', 'laser', 'drone', 'shield', 'repair', 'overdrive', 'tractor', 'emp'] as PickupType[])
+  (['spread', 'missile', 'laser', 'drone', 'ion', 'shield', 'repair', 'overdrive', 'tractor', 'emp'] as PickupType[])
     .forEach((type) => drawPickup(g, type));
   g.destroy();
 }
@@ -102,12 +113,49 @@ function drawEnemy(
   color: number,
   points: Array<[number, number]>,
 ): void {
+  drawEnemyFrame(g, key, width, height, color, points);
+  const banked = (direction: -1 | 1): Array<[number, number]> => points.map(([x, y]) => [
+    width / 2 + (x - width / 2) * 0.84 + direction * (y / height - 0.46) * 8,
+    y,
+  ]);
+  drawEnemyFrame(g, `${key}-bank-left`, width, height, color, banked(-1));
+  drawEnemyFrame(g, `${key}-bank-right`, width, height, color, banked(1));
+}
+
+function drawEnemyFrame(
+  g: Phaser.GameObjects.Graphics,
+  key: string,
+  width: number,
+  height: number,
+  color: number,
+  points: Array<[number, number]>,
+): void {
   g.fillStyle(color, 0.13).fillEllipse(width / 2, height / 2, width, height * 0.7);
   g.fillStyle(0x351528, 1).fillPoints(polygon(points), true);
+  const rightSide = points.map(([x, y]) => [Math.max(width / 2, x), y] as [number, number]);
+  g.fillStyle(0x0c1528, 0.6).fillPoints(polygon(rightSide), true);
   g.lineStyle(3, color, 1).strokePoints(polygon(points), true);
   g.fillStyle(color, 1).fillCircle(width / 2, height * 0.48, 7);
   g.fillStyle(0xffddbb, 1).fillCircle(width / 2, height * 0.48, 3);
   g.generateTexture(key, width, height).clear();
+}
+
+function drawPlayerBank(g: Phaser.GameObjects.Graphics, key: string, bank: -2 | -1 | 1 | 2): void {
+  const strength = Math.abs(bank) / 2;
+  const direction = Math.sign(bank);
+  const transform = ([x, y]: [number, number]): [number, number] => [
+    44 + (x - 44) * (1 - strength * 0.24) + direction * (y / 104 - 0.45) * 7 * strength,
+    y,
+  ];
+  const body = ([[44, 5], [54, 42], [81, 73], [58, 69], [54, 96], [44, 83], [34, 96], [30, 69], [7, 73], [34, 42]] as Array<[number, number]>).map(transform);
+  g.fillStyle(0x18d8ff, 0.12).fillEllipse(44, 54, 72 - strength * 12, 82);
+  g.fillStyle(0xd9f8ff, 1).fillPoints(polygon(body), true);
+  g.fillStyle(direction < 0 ? 0xffffff : 0x5b7b91, 0.72).fillTriangle(44, 8, transform([13, 72])[0], 72, 44, 79);
+  g.fillStyle(direction > 0 ? 0xffffff : 0x5b7b91, 0.72).fillTriangle(44, 8, transform([75, 72])[0], 72, 44, 79);
+  g.fillStyle(0x18354f, 1).fillPoints(polygon(([[44, 18], [51, 47], [44, 63], [37, 47]] as Array<[number, number]>).map(transform)), true);
+  g.fillStyle(0x35e8ff, 1).fillTriangle(transform([44, 64])[0], 64, transform([51, 83])[0], 83, transform([37, 83])[0], 83);
+  g.lineStyle(2, 0x35e8ff, 0.95).strokePoints(polygon(([[12, 71], [34, 57], [44, 9], [54, 57], [76, 71]] as Array<[number, number]>).map(transform)));
+  g.generateTexture(key, 88, 104).clear();
 }
 
 function drawOceanTexture(g: Phaser.GameObjects.Graphics): void {
@@ -132,6 +180,63 @@ function drawCloudTexture(g: Phaser.GameObjects.Graphics): void {
   g.fillStyle(0x6eafc8, 0.025).fillEllipse(525, 233, 390, 66);
   g.fillStyle(0xb9e8f0, 0.02).fillEllipse(140, 276, 310, 48);
   g.generateTexture(ASSET_KEYS.cloud, 768, 320).clear();
+}
+
+function drawAtmosphereTextures(g: Phaser.GameObjects.Graphics): void {
+  const gradientBands = [0.015, 0.025, 0.045, 0.065, 0.045, 0.025];
+  gradientBands.forEach((alpha, index) => {
+    g.fillStyle(0x66dcf2, alpha).fillRect(0, index * 54, 768, 55);
+  });
+  g.lineStyle(2, 0x8eefff, 0.05).lineBetween(0, 225, 768, 225);
+  for (let x = 20; x < 768; x += 69) g.fillStyle(0xa7f5ff, 0.12).fillCircle(x, 220 + (x % 4) * 6, 2);
+  g.generateTexture(ASSET_KEYS.haze, 768, 320).clear();
+
+  g.fillStyle(0xcdf9ff, 0.05).fillEllipse(70, 80, 190, 48);
+  g.fillStyle(0x9edce8, 0.04).fillEllipse(710, 190, 230, 62);
+  g.fillStyle(0xdafcff, 0.035).fillEllipse(35, 275, 160, 42);
+  g.lineStyle(2, 0xb9f5ff, 0.1);
+  for (let x = 36; x < 760; x += 155) g.lineBetween(x, 30, x - 55, 180);
+  g.generateTexture(ASSET_KEYS.foreground, 768, 320).clear();
+}
+
+function drawMissionEnvironment(
+  g: Phaser.GameObjects.Graphics,
+  key: string,
+  profile: 'coastal' | 'minefield' | 'fortress' | 'dreadnought',
+): void {
+  if (profile === 'coastal') {
+    g.fillStyle(0x07191e, 0.72).fillEllipse(115, 150, 220, 76).fillEllipse(505, 440, 300, 92);
+    g.lineStyle(2, 0x33d9cc, 0.3).strokeEllipse(115, 150, 235, 85).strokeEllipse(505, 440, 318, 102);
+    g.fillStyle(0x8defff, 0.13).fillTriangle(625, 40, 560, 310, 690, 310);
+    g.fillStyle(0xeaffff, 0.7).fillCircle(625, 58, 4);
+  } else if (profile === 'minefield') {
+    g.lineStyle(1, 0x55ff9c, 0.13);
+    for (let x = 25; x < 768; x += 72) g.lineBetween(x, 0, x, 720);
+    for (let y = 10; y < 720; y += 72) g.lineBetween(0, y, 768, y);
+    for (let index = 0; index < 8; index += 1) {
+      const x = 54 + (index * 137) % 680;
+      const y = 55 + index * 79;
+      g.fillStyle(0xffb640, 0.35).fillCircle(x, y, 5);
+      g.lineStyle(2, 0xffb640, 0.18).strokeCircle(x, y, 14);
+    }
+    g.fillStyle(0x203c3e, 0.65).fillTriangle(220, 260, 330, 310, 180, 335).fillTriangle(610, 510, 735, 565, 570, 610);
+  } else if (profile === 'fortress') {
+    for (let y = 80; y < 720; y += 220) {
+      g.fillStyle(0x17152e, 0.8).fillRoundedRect(45, y, 235, 78, 12).fillRoundedRect(470, y + 70, 250, 86, 12);
+      g.lineStyle(2, 0x9c76ff, 0.3).strokeRoundedRect(45, y, 235, 78, 12).strokeRoundedRect(470, y + 70, 250, 86, 12);
+      g.lineStyle(4, 0xff536d, 0.24).lineBetween(78, y + 20, 245, y + 20).lineBetween(500, y + 94, 690, y + 94);
+    }
+    g.fillStyle(0xf4eeff, 0.09).fillTriangle(145, 20, 40, 360, 250, 360).fillTriangle(620, 280, 500, 680, 740, 680);
+  } else {
+    g.fillStyle(0x170914, 0.82).fillRect(0, 0, 768, 720);
+    for (let x = 20; x < 768; x += 128) {
+      g.fillStyle(0x321326, 0.9).fillRoundedRect(x, 0, 80, 720, 8);
+      g.lineStyle(3, 0xff3f56, 0.28).lineBetween(x + 18, 0, x + 18, 720);
+      g.lineStyle(1, 0xffb15e, 0.2).lineBetween(x + 27, 0, x + 27, 720);
+    }
+    for (let y = 70; y < 720; y += 155) g.fillStyle(0xff536d, 0.15).fillRect(0, y, 768, 8);
+  }
+  g.generateTexture(key, 768, 720).clear();
 }
 
 function drawPickup(g: Phaser.GameObjects.Graphics, type: PickupType): void {
@@ -159,6 +264,9 @@ function drawPickup(g: Phaser.GameObjects.Graphics, type: PickupType): void {
   } else if (type === 'drone') {
     g.strokeCircle(30, 30, 8).strokeCircle(15, 30, 4).strokeCircle(45, 30, 4);
     g.lineBetween(19, 30, 22, 30).lineBetween(38, 30, 41, 30);
+  } else if (type === 'ion') {
+    g.strokePoints(polygon([[19, 15], [34, 24], [25, 31], [42, 44]]));
+    g.strokeCircle(18, 15, 4).strokeCircle(43, 45, 4);
   } else if (type === 'shield') {
     g.strokePoints(polygon([[30, 9], [47, 18], [43, 40], [30, 51], [17, 40], [13, 18]]), true);
     g.lineBetween(30, 18, 30, 41);
