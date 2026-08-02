@@ -1,0 +1,18 @@
+export const ASSET_KEYS = {
+  player: 'fighter-player',
+  drone: 'fighter-drone',
+  scout: 'enemy-scout',
+  interceptor: 'enemy-interceptor',
+  bomber: 'enemy-bomber',
+  elite: 'enemy-elite',
+  boss: 'enemy-dreadnought',
+  playerBullet: 'bullet-player',
+  missile: 'bullet-missile',
+  laser: 'bullet-laser',
+  enemyBullet: 'bullet-enemy',
+  enemyBulletHeavy: 'bullet-enemy-heavy',
+  spark: 'fx-spark',
+  cloud: 'fx-cloud',
+  ocean: 'environment-ocean',
+  pickupPrefix: 'pickup-',
+} as const;

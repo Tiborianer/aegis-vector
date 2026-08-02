@@ -1,0 +1,141 @@
+import Phaser from 'phaser';
+import { ASSET_KEYS } from '../../game/assets/manifest';
+import { WEAPON_LABELS } from '../../game/content/balance';
+import type { UpgradeType, WeaponType } from '../../game/simulation/types';
+
+const polygon = (points: Array<[number, number]>): Phaser.Geom.Point[] =>
+  points.map(([x, y]) => new Phaser.Geom.Point(x, y));
+
+export function generateTextures(scene: Phaser.Scene): void {
+  if (scene.textures.exists(ASSET_KEYS.player)) return;
+
+  const g = new Phaser.GameObjects.Graphics(scene);
+
+  // Player AV-7: a strong white/cyan silhouette with a deliberately compact fuselage.
+  g.fillStyle(0x18d8ff, 0.12).fillCircle(44, 54, 40);
+  g.fillStyle(0x35e8ff, 0.24).fillTriangle(44, 1, 10, 91, 78, 91);
+  g.fillStyle(0xd9f8ff, 1).fillPoints(polygon([[44, 5], [54, 42], [81, 73], [58, 69], [54, 96], [44, 83], [34, 96], [30, 69], [7, 73], [34, 42]]), true);
+  g.fillStyle(0x18354f, 1).fillPoints(polygon([[44, 18], [51, 47], [44, 63], [37, 47]]), true);
+  g.fillStyle(0x35e8ff, 1).fillTriangle(44, 64, 51, 83, 37, 83);
+  g.lineStyle(2, 0x35e8ff, 0.95).strokePoints(polygon([[12, 71], [34, 57], [44, 9], [54, 57], [76, 71]]));
+  g.generateTexture(ASSET_KEYS.player, 88, 104).clear();
+
+  // Support drone.
+  g.fillStyle(0x65ffb1, 0.18).fillCircle(24, 24, 22);
+  g.fillStyle(0xdfffee, 1).fillPoints(polygon([[24, 4], [32, 16], [43, 25], [31, 27], [24, 43], [17, 27], [5, 25], [16, 16]]), true);
+  g.fillStyle(0x65ffb1, 1).fillCircle(24, 23, 6);
+  g.generateTexture(ASSET_KEYS.drone, 48, 48).clear();
+
+  drawEnemy(g, ASSET_KEYS.scout, 64, 60, 0xff6f61, [[32, 56], [8, 13], [25, 20], [32, 3], [39, 20], [56, 13]]);
+  drawEnemy(g, ASSET_KEYS.interceptor, 76, 68, 0xff9a56, [[38, 65], [4, 17], [28, 27], [38, 4], [48, 27], [72, 17]]);
+  drawEnemy(g, ASSET_KEYS.bomber, 104, 78, 0xff5e73, [[52, 74], [7, 42], [5, 20], [38, 27], [52, 4], [66, 27], [99, 20], [97, 42]]);
+  drawEnemy(g, ASSET_KEYS.elite, 112, 86, 0xc66cff, [[56, 82], [10, 62], [3, 27], [40, 36], [56, 4], [72, 36], [109, 27], [102, 62]]);
+
+  // The aerial fortress is wide, layered, and easy to read at a glance.
+  g.fillStyle(0xff576f, 0.1).fillEllipse(150, 74, 280, 112);
+  g.fillStyle(0x502239, 1).fillRoundedRect(20, 42, 260, 66, 18);
+  g.fillStyle(0xd44f63, 1).fillPoints(polygon([[15, 57], [98, 32], [121, 7], [150, 31], [179, 7], [202, 32], [285, 57], [247, 92], [53, 92]]), true);
+  g.fillStyle(0x140f25, 1).fillRoundedRect(87, 40, 126, 55, 14);
+  g.fillStyle(0xffb35f, 1).fillCircle(150, 60, 15);
+  g.fillStyle(0xffe7ae, 1).fillCircle(150, 60, 7);
+  for (const x of [48, 75, 225, 252]) {
+    g.fillStyle(0x20152b, 1).fillCircle(x, 65, 13);
+    g.lineStyle(3, 0xff6f61, 1).strokeCircle(x, 65, 10);
+  }
+  g.lineStyle(3, 0xff7d8f, 0.9).strokeRoundedRect(22, 43, 256, 62, 16);
+  g.generateTexture(ASSET_KEYS.boss, 300, 120).clear();
+
+  // Projectiles.
+  g.fillStyle(0x35e8ff, 0.2).fillRoundedRect(0, 0, 12, 30, 6);
+  g.fillStyle(0xdfffff, 1).fillRoundedRect(4, 1, 4, 26, 2);
+  g.generateTexture(ASSET_KEYS.playerBullet, 12, 30).clear();
+
+  g.fillStyle(0xffb640, 0.2).fillCircle(10, 14, 10);
+  g.fillStyle(0xffedb5, 1).fillPoints(polygon([[10, 0], [17, 17], [10, 14], [3, 17]]), true);
+  g.fillStyle(0xff7b33, 1).fillTriangle(6, 16, 14, 16, 10, 29);
+  g.generateTexture(ASSET_KEYS.missile, 20, 30).clear();
+
+  g.fillStyle(0xf06cff, 0.22).fillRoundedRect(0, 0, 18, 54, 9);
+  g.fillStyle(0xffdfff, 1).fillRoundedRect(7, 0, 4, 54, 2);
+  g.generateTexture(ASSET_KEYS.laser, 18, 54).clear();
+
+  g.fillStyle(0xff6f61, 0.18).fillCircle(11, 11, 11);
+  g.fillStyle(0xffdfad, 1).fillCircle(11, 11, 5);
+  g.generateTexture(ASSET_KEYS.enemyBullet, 22, 22).clear();
+
+  g.fillStyle(0xf06cff, 0.2).fillCircle(16, 16, 16);
+  g.lineStyle(3, 0xf06cff, 0.9).strokeCircle(16, 16, 11);
+  g.fillStyle(0xffffff, 1).fillCircle(16, 16, 5);
+  g.generateTexture(ASSET_KEYS.enemyBulletHeavy, 32, 32).clear();
+
+  g.fillStyle(0xffffff, 1).fillCircle(4, 4, 4);
+  g.generateTexture(ASSET_KEYS.spark, 8, 8).clear();
+
+  drawOceanTexture(g);
+  drawCloudTexture(g);
+
+  (['spread', 'missile', 'laser', 'drone', 'shield'] as UpgradeType[]).forEach((type) => drawPickup(g, type));
+  g.destroy();
+}
+
+function drawEnemy(
+  g: Phaser.GameObjects.Graphics,
+  key: string,
+  width: number,
+  height: number,
+  color: number,
+  points: Array<[number, number]>,
+): void {
+  g.fillStyle(color, 0.13).fillEllipse(width / 2, height / 2, width, height * 0.7);
+  g.fillStyle(0x351528, 1).fillPoints(polygon(points), true);
+  g.lineStyle(3, color, 1).strokePoints(polygon(points), true);
+  g.fillStyle(color, 1).fillCircle(width / 2, height * 0.48, 7);
+  g.fillStyle(0xffddbb, 1).fillCircle(width / 2, height * 0.48, 3);
+  g.generateTexture(key, width, height).clear();
+}
+
+function drawOceanTexture(g: Phaser.GameObjects.Graphics): void {
+  const colors = [0x050c1b, 0x071426, 0x09192d, 0x061221];
+  for (let y = 0; y < 512; y += 32) {
+    g.fillStyle(colors[(y / 32) % colors.length], 1).fillRect(0, y, 512, 32);
+  }
+  g.lineStyle(1, 0x1c7090, 0.2);
+  for (let y = 12; y < 512; y += 38) {
+    g.lineBetween(0, y, 512, y + 26);
+  }
+  g.lineStyle(1, 0x47c5df, 0.08);
+  for (let x = 0; x < 512; x += 64) g.lineBetween(x, 0, x + 86, 512);
+  g.generateTexture(ASSET_KEYS.ocean, 512, 512).clear();
+}
+
+function drawCloudTexture(g: Phaser.GameObjects.Graphics): void {
+  g.fillStyle(0x9bd8e6, 0.035).fillEllipse(120, 72, 250, 48);
+  g.fillStyle(0xc5f1f5, 0.025).fillEllipse(235, 62, 340, 68);
+  g.fillStyle(0x74b2cb, 0.03).fillEllipse(410, 86, 310, 54);
+  g.fillStyle(0xb5edf2, 0.025).fillEllipse(665, 204, 280, 45);
+  g.fillStyle(0x6eafc8, 0.025).fillEllipse(525, 233, 390, 66);
+  g.fillStyle(0xb9e8f0, 0.02).fillEllipse(140, 276, 310, 48);
+  g.generateTexture(ASSET_KEYS.cloud, 768, 320).clear();
+}
+
+function drawPickup(g: Phaser.GameObjects.Graphics, type: UpgradeType): void {
+  const color = type === 'shield' ? 0x63a8ff : WEAPON_LABELS[type as WeaponType].color;
+  g.fillStyle(color, 0.16).fillCircle(30, 30, 29);
+  g.lineStyle(3, color, 1).strokeCircle(30, 30, 22);
+  g.lineStyle(2, 0xffffff, 0.85);
+
+  if (type === 'spread') {
+    g.lineBetween(30, 42, 18, 18).lineBetween(30, 42, 30, 13).lineBetween(30, 42, 42, 18);
+  } else if (type === 'missile') {
+    g.strokeTriangle(30, 10, 18, 42, 30, 35).strokeTriangle(30, 10, 42, 42, 30, 35);
+  } else if (type === 'laser') {
+    g.strokeRoundedRect(25, 10, 10, 40, 4);
+  } else if (type === 'drone') {
+    g.strokeCircle(30, 30, 8).strokeCircle(15, 30, 4).strokeCircle(45, 30, 4);
+    g.lineBetween(19, 30, 22, 30).lineBetween(38, 30, 41, 30);
+  } else {
+    g.strokePoints(polygon([[30, 9], [47, 18], [43, 40], [30, 51], [17, 40], [13, 18]]), true);
+    g.lineBetween(30, 18, 30, 41);
+  }
+  g.generateTexture(`${ASSET_KEYS.pickupPrefix}${type}`, 60, 60).clear();
+}

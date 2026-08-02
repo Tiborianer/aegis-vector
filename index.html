@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#050b19" />
+    <meta name="description" content="Aegis Vector — a futuristic browser arcade shooter." />
+    <title>Aegis Vector</title>
+  </head>
+  <body>
+    <main id="app" aria-label="Aegis Vector game">
+      <div id="game-shell">
+        <div id="game-canvas" aria-label="Game playfield"></div>
+
+        <section id="hud" class="hidden" aria-label="Game status">
+          <div class="hud-cluster hud-status glass-panel">
+            <div class="hud-kicker">AV-7 // AEGIS</div>
+            <div class="survival-row">
+              <span class="hud-label">HULL</span>
+              <div id="hull-pips" class="pip-row"></div>
+            </div>
+            <div class="survival-row">
+              <span class="hud-label">SHIELD</span>
+              <div id="shield-pips" class="pip-row"></div>
+              <span id="shield-timer" class="shield-timer"></span>
+            </div>
+          </div>
+
+          <div class="hud-cluster hud-score glass-panel">
+            <div class="score-label">SCORE</div>
+            <div id="score-value" class="score-value">000000</div>
+            <div class="score-meta"><span id="multiplier">×1</span><span id="high-score">BEST 000000</span></div>
+          </div>
+
+          <div class="mission-track" aria-label="Stage progress">
+            <span>SECTOR 01</span>
+            <div class="track"><i id="stage-progress"></i></div>
+            <span id="stage-time">06:00</span>
+          </div>
+
+          <div id="boss-hud" class="boss-hud hidden">
+            <div class="boss-label"><span>DREADNOUGHT</span><span id="boss-percent">100%</span></div>
+            <div class="boss-track"><i id="boss-progress"></i></div>
+          </div>
+
+          <div id="weapon-rack" class="weapon-rack glass-panel" aria-label="Weapon levels"></div>
+          <button id="pause-button" class="icon-button" aria-label="Pause game">Ⅱ</button>
+          <div id="announcement" class="announcement" aria-live="polite"></div>
+        </section>
+
+        <section id="start-screen" class="overlay active" aria-labelledby="game-title">
+          <div class="menu-card">
+            <div class="eyebrow">NIGHT OCEAN DEFENCE // 01</div>
+            <h1 id="game-title"><span>AEGIS</span><strong>VECTOR</strong></h1>
+            <p class="tagline">Hold the line. Break the sky.</p>
+            <div class="fighter-mark" aria-hidden="true"><i></i><b></b><i></i></div>
+            <p class="briefing">Enemy squadrons are converging on the Pelagos Array. Launch the AV-7 and intercept the aerial fortress.</p>
+
+            <div class="difficulty" role="group" aria-label="Difficulty">
+              <button data-difficulty="cadet">CADET<small>Relaxed</small></button>
+              <button class="selected" data-difficulty="pilot">PILOT<small>Recommended</small></button>
+              <button data-difficulty="ace">ACE<small>Intense</small></button>
+            </div>
+
+            <button id="launch-button" class="primary-button">LAUNCH MISSION <span>→</span></button>
+            <div class="controls"><span><kbd>WASD</kbd> / <kbd>ARROWS</kbd> Move</span><span><kbd>SPACE</kbd> / <kbd>Z</kbd> Fire</span><span><kbd>ESC</kbd> Pause</span></div>
+          </div>
+        </section>
+
+        <section id="pause-screen" class="overlay hidden" aria-labelledby="pause-title">
+          <div class="menu-card compact">
+            <div class="eyebrow">FLIGHT SUSPENDED</div>
+            <h2 id="pause-title">PAUSED</h2>
+            <button id="resume-button" class="primary-button">RESUME <span>→</span></button>
+            <button id="restart-button" class="secondary-button">RESTART MISSION</button>
+          </div>
+        </section>
+
+        <section id="result-screen" class="overlay hidden" aria-labelledby="result-title">
+          <div class="menu-card compact">
+            <div id="result-kicker" class="eyebrow">MISSION REPORT</div>
+            <h2 id="result-title">SECTOR SECURED</h2>
+            <div class="result-grid">
+              <div><small>FINAL SCORE</small><strong id="result-score">000000</strong></div>
+              <div><small>HOSTILES</small><strong id="result-kills">0</strong></div>
+            </div>
+            <button id="replay-button" class="primary-button">FLY AGAIN <span>→</span></button>
+          </div>
+        </section>
+
+        <button id="sound-button" class="sound-button" aria-label="Toggle sound">SOUND ON</button>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
