@@ -14,6 +14,7 @@ import type {
   WeaponLevel,
   WeaponLevels,
   WeaponOverdriveState,
+  FinalePhase,
 } from './types';
 
 const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 });
@@ -47,6 +48,7 @@ export class GameModel {
   bossActive = false;
   bossName = '';
   bossHealthRatio = 1;
+  finalePhase?: FinalePhase;
   campaignSeed = 1;
   sortieModule: MissionStartConfig['sortieModule'];
   modifiers: CombatModifiers = { ...DEFAULT_COMBAT_MODIFIERS };
@@ -103,6 +105,7 @@ export class GameModel {
     this.bossActive = false;
     this.bossName = '';
     this.bossHealthRatio = 1;
+    this.finalePhase = config.mission.id === 'dreadnought' ? 'approach' : undefined;
     this.invulnerableUntil = 0;
     this.comboUntil = 0;
     this.comboKills = 0;
@@ -309,6 +312,10 @@ export class GameModel {
     this.bossHealthRatio = Math.max(0, Math.min(1, healthRatio));
   }
 
+  setFinalePhase(phase: FinalePhase): void {
+    if (this.mission.id === 'dreadnought') this.finalePhase = phase;
+  }
+
   restoreShield(): void {
     this.shield = this.shieldMax;
   }
@@ -317,6 +324,7 @@ export class GameModel {
     this.mode = finalVictory ? 'victory' : 'complete';
     this.bossActive = false;
     this.bossHealthRatio = 0;
+    if (finalVictory) this.finalePhase = 'cleared';
   }
 
   get fireIntervalMultiplier(): number {
@@ -384,6 +392,7 @@ export class GameModel {
       bossActive: this.bossActive,
       bossName: this.bossName,
       bossHealthRatio: this.bossHealthRatio,
+      finalePhase: this.finalePhase,
       threatLevel: getThreatLevel(this.stageElapsedMs / Math.max(1, this.stageDurationMs)),
       chronoRemainingMs: Math.max(0, this.chronoUntil - this.stageElapsedMs),
       reserveShieldAvailable: this.reserveShieldAvailable,

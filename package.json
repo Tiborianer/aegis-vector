@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "node scripts/verify-audio.mjs public && node scripts/verify-upgrade-icons.mjs public && node scripts/verify-cinematics.mjs public && tsc -b && vite build && node scripts/verify-audio.mjs dist && node scripts/verify-upgrade-icons.mjs dist && node scripts/verify-cinematics.mjs dist",
+    "build": "node scripts/verify-audio.mjs public && node scripts/verify-upgrade-icons.mjs public && node scripts/verify-cinematics.mjs public && node scripts/verify-brand.mjs public && tsc -b && vite build && node scripts/verify-audio.mjs dist && node scripts/verify-upgrade-icons.mjs dist && node scripts/verify-cinematics.mjs dist && node scripts/verify-brand.mjs dist",
     "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1"
   },

@@ -36,6 +36,17 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.lineStyle(2, 0xffb640, 1).strokePoints(polygon([[24, 4], [32, 16], [43, 25], [31, 27], [24, 43], [17, 27], [5, 25], [16, 16]]), true);
   g.fillStyle(0xfff6cf, 1).fillCircle(24, 23, 6);
   g.generateTexture(ASSET_KEYS.droneOverdrive, 48, 48).clear();
+  g.fillStyle(0x65ffb1, 0.2).fillCircle(24, 24, 22);
+  g.fillStyle(0xdfffee, 1).fillPoints(polygon([[24, 3], [34, 15], [45, 23], [33, 29], [28, 43], [24, 36], [20, 43], [15, 29], [3, 23], [14, 15]]), true);
+  g.fillStyle(0x183d35, 1).fillCircle(19, 23, 5).fillCircle(29, 23, 5);
+  g.fillStyle(0x65ffb1, 1).fillCircle(19, 23, 2).fillCircle(29, 23, 2);
+  g.lineStyle(2, 0x65ffb1, 0.9).lineBetween(17, 34, 13, 45).lineBetween(31, 34, 35, 45);
+  g.generateTexture(ASSET_KEYS.droneMk2, 48, 48).clear();
+  g.fillStyle(0xffb640, 0.22).fillCircle(24, 24, 22);
+  g.fillStyle(0x31343d, 1).fillPoints(polygon([[24, 3], [34, 15], [45, 23], [33, 29], [28, 43], [24, 36], [20, 43], [15, 29], [3, 23], [14, 15]]), true);
+  g.lineStyle(2, 0xffb640, 1).strokePoints(polygon([[24, 3], [34, 15], [45, 23], [33, 29], [28, 43], [24, 36], [20, 43], [15, 29], [3, 23], [14, 15]]), true);
+  g.fillStyle(0xfff6cf, 1).fillCircle(19, 23, 3).fillCircle(29, 23, 3);
+  g.generateTexture(ASSET_KEYS.droneMk2Overdrive, 48, 48).clear();
 
   drawEnemy(g, ASSET_KEYS.scout, 64, 60, 0xff6f61, [[32, 56], [8, 13], [25, 20], [32, 3], [39, 20], [56, 13]]);
   drawEnemy(g, ASSET_KEYS.interceptor, 76, 68, 0xff9a56, [[38, 65], [4, 17], [28, 27], [38, 4], [48, 27], [72, 17]]);
@@ -49,6 +60,9 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawEnemy(g, ASSET_KEYS.phantom, 82, 68, 0x67ecff, [[41, 3], [51, 24], [77, 34], [55, 41], [49, 65], [41, 54], [33, 65], [27, 41], [5, 34], [31, 24]]);
   drawEnemy(g, ASSET_KEYS.artillery, 126, 82, 0xffc04d, [[63, 4], [76, 25], [119, 31], [110, 69], [80, 61], [63, 78], [46, 61], [16, 69], [7, 31], [50, 25]]);
   drawEnemy(g, ASSET_KEYS.reclaimer, 86, 76, 0x65ffb1, [[43, 6], [54, 25], [80, 30], [69, 56], [52, 51], [43, 70], [34, 51], [17, 56], [6, 30], [32, 25]]);
+  drawEnemy(g, ASSET_KEYS.razorwing, 112, 82, 0xff557a, [[56, 3], [68, 24], [106, 18], [88, 48], [70, 54], [62, 78], [50, 78], [42, 54], [24, 48], [6, 18], [44, 24]]);
+  drawEnemy(g, ASSET_KEYS.gatekeeper, 184, 104, 0xffb640, [[92, 4], [111, 27], [176, 34], [164, 81], [120, 72], [105, 100], [79, 100], [64, 72], [20, 81], [8, 34], [73, 27]]);
+  drawEnemy(g, ASSET_KEYS.pursuer, 158, 96, 0xc66cff, [[79, 4], [98, 24], [151, 32], [137, 72], [103, 65], [91, 92], [67, 92], [55, 65], [21, 72], [7, 32], [60, 24]]);
   drawCarrierBoss(g);
   drawEnemy(g, ASSET_KEYS.warden, 190, 104, 0xf06cff, [[95, 99], [12, 67], [5, 30], [66, 42], [95, 4], [124, 42], [185, 30], [178, 67]]);
 
@@ -77,12 +91,23 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.generateTexture(ASSET_KEYS.boss, 300, 120).clear();
 
   // Projectiles.
-  g.fillStyle(0x35e8ff, 0.2).fillRoundedRect(0, 0, 12, 30, 6);
-  g.fillStyle(0xdfffff, 1).fillRoundedRect(4, 1, 4, 26, 2);
-  g.generateTexture(ASSET_KEYS.playerBullet, 12, 30).clear();
-  g.fillStyle(0xffb640, 0.32).fillRoundedRect(0, 0, 12, 30, 6);
-  g.fillStyle(0xfff6cf, 1).fillRoundedRect(4, 1, 4, 26, 2);
-  g.generateTexture(ASSET_KEYS.playerBulletOverdrive, 12, 30).clear();
+  g.fillStyle(0x35e8ff, 0.2).fillCircle(8, 11, 8);
+  g.fillStyle(0xdfffff, 1).fillPoints(polygon([[8, 0], [13, 10], [8, 22], [3, 10]]), true);
+  g.lineStyle(2, 0x35e8ff, 0.95).lineBetween(1, 11, 15, 11);
+  g.generateTexture(ASSET_KEYS.playerBullet, 16, 22).clear();
+  g.fillStyle(0xffb640, 0.34).fillCircle(8, 11, 8);
+  g.fillStyle(0xfff6cf, 1).fillPoints(polygon([[8, 0], [13, 10], [8, 22], [3, 10]]), true);
+  g.lineStyle(2, 0x35e8ff, 0.9).lineBetween(1, 11, 15, 11);
+  g.generateTexture(ASSET_KEYS.playerBulletOverdrive, 16, 22).clear();
+
+  g.fillStyle(0x65ffb1, 0.18).fillRoundedRect(0, 0, 12, 20, 5);
+  g.fillStyle(0xe8fff3, 1).fillPoints(polygon([[6, 0], [10, 8], [8, 18], [6, 15], [4, 18], [2, 8]]), true);
+  g.lineStyle(2, 0x65ffb1, 0.92).lineBetween(1, 8, 11, 8);
+  g.generateTexture(ASSET_KEYS.wingBullet, 12, 20).clear();
+  g.fillStyle(0xffb640, 0.28).fillRoundedRect(0, 0, 12, 20, 5);
+  g.fillStyle(0xfff6cf, 1).fillPoints(polygon([[6, 0], [10, 8], [8, 18], [6, 15], [4, 18], [2, 8]]), true);
+  g.lineStyle(2, 0x65ffb1, 0.96).lineBetween(1, 8, 11, 8);
+  g.generateTexture(ASSET_KEYS.wingBulletOverdrive, 12, 20).clear();
 
   g.fillStyle(0xffb640, 0.2).fillCircle(10, 14, 10);
   g.fillStyle(0xffedb5, 1).fillPoints(polygon([[10, 0], [17, 17], [10, 14], [3, 17]]), true);
@@ -94,12 +119,14 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xffb640, 1).fillTriangle(6, 16, 14, 16, 10, 29);
   g.generateTexture(ASSET_KEYS.missileOverdrive, 20, 30).clear();
 
-  g.fillStyle(0xf06cff, 0.22).fillRoundedRect(0, 0, 18, 54, 9);
-  g.fillStyle(0xffdfff, 1).fillRoundedRect(7, 0, 4, 54, 2);
-  g.generateTexture(ASSET_KEYS.laser, 18, 54).clear();
-  g.fillStyle(0xffb640, 0.32).fillRoundedRect(0, 0, 18, 54, 9);
-  g.fillStyle(0xfff6cf, 1).fillRoundedRect(7, 0, 4, 54, 2);
-  g.generateTexture(ASSET_KEYS.laserOverdrive, 18, 54).clear();
+  g.fillStyle(0xf06cff, 0.18).fillRoundedRect(0, 0, 18, 86, 9);
+  g.fillStyle(0xf06cff, 0.9).fillRoundedRect(4, 0, 2, 86, 1).fillRoundedRect(12, 0, 2, 86, 1);
+  g.fillStyle(0xffe8ff, 1).fillRoundedRect(7, 0, 4, 86, 2);
+  g.generateTexture(ASSET_KEYS.laser, 18, 86).clear();
+  g.fillStyle(0xffb640, 0.28).fillRoundedRect(0, 0, 18, 86, 9);
+  g.fillStyle(0xf06cff, 0.92).fillRoundedRect(3, 0, 2, 86, 1).fillRoundedRect(13, 0, 2, 86, 1);
+  g.fillStyle(0xfff6cf, 1).fillRoundedRect(7, 0, 4, 86, 2);
+  g.generateTexture(ASSET_KEYS.laserOverdrive, 18, 86).clear();
 
   g.fillStyle(0xff6f61, 0.18).fillCircle(11, 11, 11);
   g.fillStyle(0xffdfad, 1).fillCircle(11, 11, 5);

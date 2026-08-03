@@ -21,4 +21,8 @@ describe('campaign durability profiles', () => {
     expect(ENEMIES.bulwark.health).toBe(30);
     expect(ENEMIES.warden.health).toBe(220);
   });
+
+  it('keeps the new miniboss base durability distinct', () => {
+    expect([ENEMIES.razorwing.health, ENEMIES.gatekeeper.health, ENEMIES.pursuer.health]).toEqual([72, 160, 190]);
+  });
 });

@@ -4,6 +4,7 @@ import type {
   MusicLoopStrategy,
   MusicPlaybackState,
   MusicTrack,
+  VoicePlaybackState,
 } from '../game/simulation/types';
 
 export type SoundCue =
@@ -101,7 +102,7 @@ interface DesiredMusic {
 }
 
 const AUDIO_SETTINGS_KEY = 'aegis-vector-audio-v1';
-const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7, voice: 0.8, radioSubtitles: true };
+const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7, voice: 0.9, radioSubtitles: true };
 const RADIO_PRIORITY = { upgrade: 1, tactical: 2, critical: 3 } as const;
 const CUE_INTERVALS: Partial<Record<SoundCue, number>> = {
   'arc-fire': 64, 'arc-impact': 80, 'wing-fire': 130, 'wing-impact': 95,
@@ -186,10 +187,13 @@ export class SoundEngine {
   private desired?: DesiredMusic;
   private currentTrack?: MusicTrack;
   private playbackState: MusicPlaybackState = 'locked';
+  private voicePlaybackState: VoicePlaybackState = 'idle';
   private musicRequest = 0;
   private pauseDucked = false;
-  private radioDucked = false;
   private lastError?: string;
+  private lastVoiceError?: string;
+  private voiceDurationSeconds?: number;
+  private voiceGainCorrection?: number;
   private source?: AudioDebugState['source'];
   private logicalStartCount = 0;
   private activeRadio?: { cue: RadioCue; source?: AudioBufferSourceNode; timer?: number };
@@ -235,6 +239,10 @@ export class SoundEngine {
       sfxGain: this.settings.sfx,
       voiceGain: this.settings.voice,
       activeRadioCue: this.activeRadio?.cue,
+      voicePlaybackState: this.voicePlaybackState,
+      voiceDurationSeconds: this.voiceDurationSeconds,
+      voiceGainCorrection: this.voiceGainCorrection,
+      lastVoiceError: this.lastVoiceError,
       positionSeconds,
       logicalStartCount: this.logicalStartCount,
       loopRegion,
@@ -403,7 +411,22 @@ export class SoundEngine {
     this.voiceBus.gain.value = this.settings.voice;
     this.sfxBus.connect(this.master);
     this.musicBus.connect(this.master);
-    this.voiceBus.connect(this.master);
+    const voiceHighPass = this.context.createBiquadFilter();
+    voiceHighPass.type = 'highpass';
+    voiceHighPass.frequency.value = 140;
+    voiceHighPass.Q.value = 0.7;
+    const voicePresence = this.context.createBiquadFilter();
+    voicePresence.type = 'peaking';
+    voicePresence.frequency.value = 2_750;
+    voicePresence.Q.value = 0.85;
+    voicePresence.gain.value = 3.2;
+    const voiceCompressor = this.context.createDynamicsCompressor();
+    voiceCompressor.threshold.value = -24;
+    voiceCompressor.knee.value = 9;
+    voiceCompressor.ratio.value = 3.5;
+    voiceCompressor.attack.value = 0.008;
+    voiceCompressor.release.value = 0.16;
+    this.voiceBus.connect(voiceHighPass).connect(voicePresence).connect(voiceCompressor).connect(this.master);
     this.master.connect(limiter).connect(this.context.destination);
     this.context.addEventListener('statechange', () => {
       if (this.context?.state === 'suspended' && this.currentTrack) this.playbackState = 'locked';
@@ -419,8 +442,9 @@ export class SoundEngine {
   private async startRadio(cue: RadioCue): Promise<void> {
     const definition = VOICE_ASSETS[cue];
     this.activeRadio = { cue };
-    this.radioDucked = true;
-    this.applyMusicVolume();
+    this.voiceDurationSeconds = undefined;
+    this.voiceGainCorrection = undefined;
+    this.voicePlaybackState = this.context && this.settings.voice > 0 ? 'loading' : 'subtitle-only';
     window.dispatchEvent(new CustomEvent('aegis:radio-state', {
       detail: { active: true, cue, speaker: definition.speaker, subtitle: definition.subtitle, subtitles: this.settings.radioSubtitles },
     }));
@@ -431,24 +455,30 @@ export class SoundEngine {
     if (buffer && this.context && this.voiceBus) {
       const source = this.context.createBufferSource();
       const gain = this.context.createGain();
+      const correction = SoundEngine.measuredVoiceGain(buffer);
       source.buffer = buffer;
-      gain.gain.value = definition.gain;
+      gain.gain.value = definition.gain * correction;
       source.connect(gain).connect(this.voiceBus);
       source.addEventListener('ended', () => this.finishRadio(cue));
       this.activeRadio.source = source;
+      this.voicePlaybackState = 'playing';
+      this.voiceDurationSeconds = buffer.duration;
+      this.voiceGainCorrection = correction;
+      this.lastVoiceError = undefined;
       source.start();
       this.activeRadio.timer = window.setTimeout(() => this.finishRadio(cue), Math.max(2_200, buffer.duration * 1_000 + 100));
     } else {
+      this.voicePlaybackState = 'subtitle-only';
       this.activeRadio.timer = window.setTimeout(() => this.finishRadio(cue), 2_200);
     }
+    this.emitState();
   }
 
   private finishRadio(cue: RadioCue): void {
     if (!this.activeRadio || this.activeRadio.cue !== cue) return;
     if (this.activeRadio.timer !== undefined) window.clearTimeout(this.activeRadio.timer);
     this.activeRadio = undefined;
-    this.radioDucked = false;
-    this.applyMusicVolume();
+    this.voicePlaybackState = 'idle';
     window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue } }));
     this.emitState();
     const pending = this.pendingRadio;
@@ -462,8 +492,9 @@ export class SoundEngine {
     if (this.activeRadio.timer !== undefined) window.clearTimeout(this.activeRadio.timer);
     try { this.activeRadio.source?.stop(); } catch { /* already ended */ }
     this.activeRadio = undefined;
-    this.radioDucked = false;
+    this.voicePlaybackState = 'idle';
     window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue } }));
+    this.emitState();
   }
 
   private async loadVoice(file: string): Promise<AudioBuffer | null> {
@@ -477,8 +508,9 @@ export class SoundEngine {
       const buffer = await this.context.decodeAudioData(data);
       this.voiceBuffers.set(file, buffer);
       return buffer;
-    } catch {
+    } catch (error) {
       this.voiceBuffers.set(file, null);
+      this.lastVoiceError = error instanceof Error ? error.message : String(error);
       return null;
     }
   }
@@ -699,9 +731,9 @@ export class SoundEngine {
 
   private applyMusicVolume(): void {
     if (!this.musicBus || !this.context) return;
-    const duckScale = this.pauseDucked ? 0.45 : this.radioDucked ? 0.63 : 1;
+    const duckScale = this.pauseDucked ? 0.45 : 1;
     const target = this.settings.music * duckScale;
-    this.musicBus.gain.setTargetAtTime(target, this.context.currentTime, this.radioDucked ? 0.05 : 0.25);
+    this.musicBus.gain.setTargetAtTime(target, this.context.currentTime, 0.25);
   }
 
   private emitState(): void {
@@ -810,6 +842,27 @@ export class SoundEngine {
     }
     const rms = Math.sqrt(sum / Math.max(1, samples));
     return Math.max(0.68, Math.min(1.18, 0.13 / Math.max(0.001, rms)));
+  }
+
+  private static measuredVoiceGain(buffer: AudioBuffer): number {
+    let sum = 0;
+    let peak = 0;
+    let samples = 0;
+    const stride = Math.max(1, Math.floor(buffer.length / 120_000));
+    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+      const data = buffer.getChannelData(channel);
+      for (let index = 0; index < data.length; index += stride) {
+        const sample = Math.abs(data[index]);
+        sum += sample * sample;
+        peak = Math.max(peak, sample);
+        samples += 1;
+      }
+    }
+    const rms = Math.sqrt(sum / Math.max(1, samples));
+    const rmsTarget = 10 ** (-18 / 20);
+    const peakLimit = 10 ** (-3 / 20);
+    const correction = Math.min(rmsTarget / Math.max(0.001, rms), peakLimit / Math.max(0.001, peak));
+    return Math.max(0.5, Math.min(2.8, correction));
   }
 
   private static clampVolume(value: number): number {

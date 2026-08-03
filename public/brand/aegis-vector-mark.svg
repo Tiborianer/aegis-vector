@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Aegis Vector</title>
+  <desc id="desc">A white delta fighter, cyan ECHO-7 glyph, and amber engines on a dark navy diamond.</desc>
+  <defs>
+    <linearGradient id="field" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b2340"/>
+      <stop offset="1" stop-color="#030814"/>
+    </linearGradient>
+    <filter id="cyanGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="74" y="74" width="364" height="364" rx="74" fill="url(#field)" stroke="#174766" stroke-width="6" transform="rotate(45 256 256)"/>
+  <path d="M256 103 286 197 409 337 292 306 274 409 256 435 238 409 220 306 103 337 226 197Z" fill="#eef9ff" stroke="#b7e7f5" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M256 125 268 225 256 381 244 225Z" fill="#d0e9f1" opacity=".75"/>
+  <path d="m158 320 72-43-10 29-62 23Zm196 0-72-43 10 29 62 23Z" fill="#8baeba" opacity=".72"/>
+  <path d="m233 391 14 0-7 31-16 14Zm46 0-14 0 7 31 16 14Z" fill="#ffb640"/>
+  <path d="M363 128 374 151 397 162 374 173 363 196 352 173 329 162 352 151Z" fill="#35e8ff" filter="url(#cyanGlow)"/>
+  <circle cx="363" cy="162" r="5" fill="#fff"/>
+</svg>

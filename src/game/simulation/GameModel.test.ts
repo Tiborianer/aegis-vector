@@ -190,4 +190,14 @@ describe('GameModel', () => {
     expect(model.takeDamage('ram')).toBe('fortress');
     expect(model.hull).toBe(model.hullMax);
   });
+
+  it('tracks the Dreadnought approach, boss, and cleared phases', () => {
+    const model = new GameModel();
+    model.start({ ...startConfig(), mission: MISSIONS.find(({ id }) => id === 'dreadnought')! });
+    expect(model.snapshot().finalePhase).toBe('approach');
+    model.setFinalePhase('boss');
+    expect(model.snapshot().finalePhase).toBe('boss');
+    model.complete(true);
+    expect(model.snapshot().finalePhase).toBe('cleared');
+  });
 });

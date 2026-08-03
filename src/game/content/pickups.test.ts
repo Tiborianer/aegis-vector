@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseArmamentOffer, chooseUtilityPickup, shouldDropUtility } from './pickups';
+import { canTractorPickup, chooseArmamentOffer, chooseUtilityPickup, shouldDropUtility } from './pickups';
 
 describe('armament and utility drops', () => {
   it('creates a deterministic pair for a campaign carrier', () => {
@@ -55,5 +55,10 @@ describe('armament and utility drops', () => {
       pairs.add([...offer.options].sort().join(':'));
     }
     expect(pairs.size).toBeGreaterThan(3);
+  });
+
+  it('keeps paired Armament choices outside Tractor control', () => {
+    expect(canTractorPickup(undefined)).toBe(true);
+    expect(canTractorPickup(7)).toBe(false);
   });
 });

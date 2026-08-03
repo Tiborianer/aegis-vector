@@ -8,6 +8,7 @@ import { chooseArmamentOffer } from './game/content/pickups';
 import { globalCarrierIndex } from './game/content/encounters';
 import { CampaignModel } from './game/simulation/CampaignModel';
 import { getStoryChapter, STORY_CHAPTERS } from './game/content/story';
+import { droneStatus } from './game/content/drones';
 import type {
   CampaignSnapshot,
   Difficulty,
@@ -84,6 +85,10 @@ const ui = {
   empCount: required<HTMLElement>('emp-count'),
   effectReadout: required<HTMLElement>('effect-readout'),
   announcement: required<HTMLElement>('announcement'),
+  missionClear: required<HTMLElement>('mission-clear'),
+  missionClearKicker: required<HTMLElement>('mission-clear-kicker'),
+  missionClearTitle: required<HTMLElement>('mission-clear-title'),
+  missionClearSector: required<HTMLElement>('mission-clear-sector'),
   radioSubtitle: required<HTMLElement>('radio-subtitle'),
   radioSpeaker: required<HTMLElement>('radio-speaker'),
   radioText: required<HTMLElement>('radio-text'),
@@ -147,6 +152,12 @@ let introSequenceToken = 0;
 let introCompletion: (() => void) | undefined;
 let introVideoSourcePromise: Promise<string | undefined> | undefined;
 let replayReturnScreen: HTMLElement = ui.start;
+const GAMEPLAY_KEY_CODES = new Set([
+  'Space', 'KeyZ', 'KeyW', 'KeyA', 'KeyS', 'KeyD',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyX', 'KeyP', 'Escape',
+]);
+const heldGameplayKeys = new Set<string>();
+let transitionInputLatched = false;
 let savedCampaign = loadCampaign();
 let campaign = new CampaignModel(savedCampaign);
 const debugMode = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -300,22 +311,48 @@ ui.storySkip.addEventListener('click', finishStory);
 ui.introSkip.addEventListener('click', finishIntro);
 
 document.addEventListener('keydown', (event) => {
+  if (GAMEPLAY_KEY_CODES.has(event.code)) heldGameplayKeys.add(event.code);
   if (!ui.intro.classList.contains('hidden') && event.key === 'Escape') {
+    if (event.repeat || transitionInputLatched) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     event.preventDefault();
+    event.stopImmediatePropagation();
     finishIntro();
     return;
   }
+  if (!ui.missionClear.classList.contains('hidden') && GAMEPLAY_KEY_CODES.has(event.code)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   if (ui.story.classList.contains('hidden')) return;
+  if (transitionInputLatched || event.repeat || (GAMEPLAY_KEY_CODES.has(event.code) && event.code !== 'Escape')) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   if (event.key === 'Escape') {
     event.preventDefault();
+    event.stopImmediatePropagation();
     finishStory();
-  } else if (event.key === 'ArrowLeft') {
+  } else if (event.key === 'Enter') {
     event.preventDefault();
-    setStoryPanel(storyPanelIndex - 1);
-  } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowRight') {
-    event.preventDefault();
+    event.stopImmediatePropagation();
     ui.storyNext.click();
   }
+}, { capture: true });
+
+document.addEventListener('keyup', (event) => {
+  heldGameplayKeys.delete(event.code);
+  if (heldGameplayKeys.size === 0) transitionInputLatched = false;
+}, { capture: true });
+
+window.addEventListener('blur', () => {
+  heldGameplayKeys.clear();
+  transitionInputLatched = false;
 });
 
 ui.hangarAbandon.addEventListener('click', abandonCampaign);
@@ -423,11 +460,26 @@ window.addEventListener('aegis:pause-state', (raw) => {
   audio.setMusicDucked(paused);
 });
 
+window.addEventListener('aegis:mission-clear', (raw) => {
+  const detail = (raw as CustomEvent<{ missionTitle: string; finalVictory: boolean; durationMs: number }>).detail;
+  transitionInputLatched = heldGameplayKeys.size > 0;
+  ui.missionClear.classList.remove('hidden', 'finale');
+  ui.missionClear.classList.toggle('finale', detail.finalVictory);
+  ui.missionClearKicker.textContent = detail.finalVictory ? 'FINAL VECTOR COMPLETE' : 'VECTOR COMPLETE';
+  ui.missionClearTitle.textContent = detail.finalVictory ? 'PELAGOS ARRAY SECURED' : 'MISSION CLEARED';
+  ui.missionClearSector.textContent = detail.missionTitle;
+  ui.missionClear.style.setProperty('--clear-duration', `${detail.durationMs}ms`);
+  void ui.missionClear.offsetWidth;
+  ui.missionClear.classList.add('show');
+});
+
 window.addEventListener('aegis:mission-ended', (raw) => {
   const snapshot = (raw as CustomEvent<GameSnapshot>).detail;
   latestSnapshot = snapshot;
   audio.setMusicDucked(false);
   ui.pause.classList.add('hidden');
+  ui.missionClear.classList.add('hidden');
+  ui.missionClear.classList.remove('show', 'finale');
   ui.hud.classList.add('hidden');
   if (snapshot.mode === 'complete' || snapshot.mode === 'victory') {
     const state = campaign.completeMission(snapshot);
@@ -559,6 +611,7 @@ function openStory(id: StoryChapterId, replay = false): void {
   ui.hud.classList.add('hidden');
   ui.manual.classList.add('hidden');
   ui.story.classList.remove('hidden');
+  transitionInputLatched = transitionInputLatched || heldGameplayKeys.size > 0;
   ui.storyTitle.textContent = storyChapter.title;
   ui.storyKicker.textContent = `PELAGOS ARCHIVE // ${storyChapter.afterMission.toUpperCase()}`;
   if (!replay) {
@@ -566,6 +619,7 @@ function openStory(id: StoryChapterId, replay = false): void {
     void audio.playMusic('victory', undefined, variant);
   }
   setStoryPanel(0);
+  ui.story.focus({ preventScroll: true });
 }
 
 function setStoryPanel(index: number): void {
@@ -629,6 +683,8 @@ function markIntroSeen(): void {
 
 function startCurrentMission(): void {
   if (!ready) return;
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  transitionInputLatched = false;
   void audio.unlock();
   const debugDurationMs = quickDebugMode ? 24_000 : undefined;
   const config = campaign.beginMission(debugDurationMs);
@@ -640,6 +696,8 @@ function startCurrentMission(): void {
   ui.result.classList.add('hidden');
   ui.story.classList.add('hidden');
   ui.intro.classList.add('hidden');
+  ui.missionClear.classList.add('hidden');
+  ui.missionClear.classList.remove('show', 'finale');
   ui.hud.classList.remove('hidden');
   window.dispatchEvent(new CustomEvent('aegis:start-mission', { detail: config }));
 }
@@ -814,13 +872,21 @@ function updateHud(snapshot: GameSnapshot): void {
   ui.credits.textContent = String(campaign.snapshot().credits + snapshot.creditsEarned);
   ui.multiplier.textContent = `×${snapshot.multiplier}`;
   ui.highScore.textContent = `BEST ${formatScore(snapshot.highScore)}`;
-  ui.missionLabel.textContent = snapshot.missionId === 'dreadnought' ? 'FINAL VECTOR' : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
-  ui.threatLevel.textContent = `THREAT ${snapshot.threatLevel}`;
+  const finaleApproach = snapshot.missionId === 'dreadnought' && snapshot.finalePhase === 'approach';
+  const finaleBoss = snapshot.missionId === 'dreadnought' && snapshot.finalePhase === 'boss';
+  ui.missionLabel.textContent = finaleApproach
+    ? 'FINAL VECTOR // APPROACH'
+    : finaleBoss
+      ? 'FINAL VECTOR // DREADNOUGHT'
+      : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
+  ui.threatLevel.textContent = finaleApproach ? 'ESCORT' : finaleBoss ? 'CORE' : `THREAT ${snapshot.threatLevel}`;
   ui.threatLevel.dataset.level = String(snapshot.threatLevel);
 
-  const progress = Math.min(1, snapshot.stageElapsedMs / snapshot.stageDurationMs);
+  const timedDuration = finaleApproach ? 30_000 : snapshot.stageDurationMs;
+  const timedElapsed = finaleBoss ? Math.max(0, snapshot.stageElapsedMs - 30_000) : snapshot.stageElapsedMs;
+  const progress = finaleApproach ? Math.min(1, timedElapsed / timedDuration) : Math.min(1, snapshot.stageElapsedMs / snapshot.stageDurationMs);
   ui.stageProgress.style.width = `${progress * 100}%`;
-  const remainingSeconds = Math.max(0, Math.ceil((snapshot.stageDurationMs - snapshot.stageElapsedMs) / 1_000));
+  const remainingSeconds = Math.max(0, Math.ceil(((finaleApproach ? 30_000 : snapshot.stageDurationMs) - (finaleApproach ? timedElapsed : snapshot.stageElapsedMs)) / 1_000));
   ui.stageTime.textContent = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`;
 
   ui.bossHud.classList.toggle('hidden', !snapshot.bossActive);
@@ -872,7 +938,9 @@ function renderWeapons(snapshot: GameSnapshot): void {
     const chip = document.createElement('div');
     chip.className = `weapon-chip${level > 0 ? ' active' : ''}${level > 0 && snapshot.weaponOverdriveState !== 'inactive' ? ' overdrive' : ''}`;
     chip.style.setProperty('--weapon', data.css);
-    chip.innerHTML = `<b>${data.short}</b><span>${[1, 2, 3, 4, 5].map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>`;
+    const status = type === 'drone' && level > 0 ? droneStatus(level) : '';
+    chip.title = status || `${data.name} level ${level}`;
+    chip.innerHTML = `<b>${data.short}</b><span>${[1, 2, 3, 4, 5].map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>${status ? `<em>${status}</em>` : ''}`;
     return chip;
   }));
 }
@@ -892,7 +960,7 @@ const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; descr
     { name: 'ARC CANNON', tag: 'SPREAD', description: 'Your rapid primary gun. Higher levels add bolts, tighten the fan, and raise damage. Best against close formations.' },
     { name: 'NOVA MISSILES', tag: 'HOMING', description: 'Tracks priority targets and weak points. Advanced warheads add extra missiles and blast damage.' },
     { name: 'LANCE LASER', tag: 'PRECISION', description: 'Straight, high-speed pulses that reward lining up enemies. Later levels add wider triple beams.' },
-    { name: 'WING DRONES', tag: 'SUPPORT', description: 'Autonomous escorts that fire with you. Upgrades add drones and improve their volley rate.' },
+    { name: 'WING DRONES', tag: 'SUPPORT', description: 'L1: one escort. L2: two escorts. L3: two Mk II drones with rapid volleys. L4: three-drone triangle. L5: four-drone chevron.' },
     { name: 'ION CONDUCTOR', tag: 'CHAIN', description: 'Electrical discharge jumps to different nearby enemies. Against bosses it concentrates into one fair damage strike.' },
   ],
   enemies: [
@@ -905,6 +973,9 @@ const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; descr
     { name: 'ARTILLERY', tag: 'BARRAGE', description: 'Paints two blast circles on your position. Escape the circles or hit its bright targeting sensor to interrupt the strike.' },
     { name: 'RECLAIMER', tag: 'SALVAGER', description: 'Steals unattended utility pickups. Destroy it to recover the stolen item.' },
     { name: 'BASTION CARRIER', tag: 'COMMAND', description: 'A carrier miniboss with two destructible turrets. Removing them greatly reduces its aimed volleys.' },
+    { name: 'RAZORWING ACE', tag: 'COMMAND ACE', description: 'Telegraphs lateral passes and angled bursts, then adds a two-step dive below half health.' },
+    { name: 'GATEKEEPER FRIGATE', tag: 'COMMAND FRIGATE', description: 'Its destructible wing turrets fire mirrored curtains. Hold the central escape lane and break each turret.' },
+    { name: 'CROWN PURSUER', tag: 'ROUTE COMMAND', description: 'Adapts to the chosen fourth vector with marked storm passes or warned debris and mine volleys.' },
   ],
   systems: [
     { name: 'AEGIS SHIELD', tag: 'DEFENSE', description: 'Absorbs hits before hull and recharges after avoiding damage. Battlefield shield cores increase capacity up to three.' },
@@ -913,6 +984,7 @@ const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; descr
     { name: 'ARMAMENT CARRIER', tag: 'CHOICE', description: 'Gold-marked targets drop two permanent campaign upgrades. Collect one before the offer expires.' },
     { name: 'SORTIE MODULE', tag: 'CONSUMABLE', description: 'A hangar purchase used for the next mission only. Failed attempts restore it with the mission checkpoint.' },
     { name: 'THREAT LEVEL', tag: 'ESCALATION', description: 'Each mission climbs through five deterministic pressure bands. Warning times never become shorter.' },
+    { name: 'PAUSE', tag: 'P / ESC', description: 'Press P or Escape during active combat to pause or resume. Pause is disabled during cinematics, story chapters, extraction, and menus.' },
   ],
   archive: [],
 };
@@ -1075,6 +1147,10 @@ if (debugMode) {
     ui.audioPanel.dataset.logicalStarts = String(state.logicalStartCount);
     ui.audioPanel.dataset.queuedSources = String(state.queuedSources);
     ui.audioPanel.dataset.loopIteration = String(state.loopIteration);
+    ui.audioPanel.dataset.musicGain = state.musicGain.toFixed(3);
+    ui.audioPanel.dataset.voicePlaybackState = state.voicePlaybackState;
+    ui.audioPanel.dataset.activeRadioCue = state.activeRadioCue ?? '';
+    ui.audioPanel.dataset.lastVoiceError = state.lastVoiceError ?? '';
     ui.audioPanel.dataset.loopRegion = state.loopRegion
       ? `${state.loopRegion.startSeconds.toFixed(3)}-${state.loopRegion.endSeconds.toFixed(3)}`
       : '';

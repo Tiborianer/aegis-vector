@@ -17,6 +17,9 @@ export type EnemyKind =
   | 'phantom'
   | 'artillery'
   | 'reclaimer'
+  | 'razorwing'
+  | 'gatekeeper'
+  | 'pursuer'
   | 'carrierBoss'
   | 'warden'
   | 'boss';
@@ -52,8 +55,10 @@ export type MusicTrack =
   | 'victory'
   | 'defeat';
 export type MusicPlaybackState = 'locked' | 'loading' | 'playing' | 'unavailable';
+export type VoicePlaybackState = 'idle' | 'loading' | 'playing' | 'subtitle-only' | 'unavailable';
 export type WeaponOverdriveState = 'inactive' | 'cell' | 'reactor' | 'stacked';
 export type EnemyHitZoneRole = 'core' | 'wing' | 'weakpoint';
+export type FinalePhase = 'approach' | 'boss' | 'cleared';
 
 export interface EnemyHitboxRect {
   role: EnemyHitZoneRole;
@@ -85,6 +90,10 @@ export interface AudioDebugState {
   sfxGain: number;
   voiceGain: number;
   activeRadioCue?: string;
+  voicePlaybackState: VoicePlaybackState;
+  voiceDurationSeconds?: number;
+  voiceGainCorrection?: number;
+  lastVoiceError?: string;
   positionSeconds: number;
   logicalStartCount: number;
   loopRegion?: { startSeconds: number; endSeconds: number };
@@ -164,6 +173,7 @@ export interface MissionDefinition {
   sector: string;
   title: string;
   durationMs: number;
+  approachDurationMs?: number;
   briefing: string;
   newThreats: string[];
   completionCredits: number;
@@ -308,10 +318,27 @@ export interface GameSnapshot {
   bossActive: boolean;
   bossName: string;
   bossHealthRatio: number;
+  finalePhase?: FinalePhase;
   threatLevel: ThreatLevel;
   chronoRemainingMs: number;
   reserveShieldAvailable: boolean;
   secondWindAvailable: boolean;
+}
+
+export interface MiniBossDefinition {
+  kind: Extract<EnemyKind, 'razorwing' | 'gatekeeper' | 'pursuer'>;
+  name: string;
+  missions: readonly MissionId[];
+  progress: number;
+  baseHealth: number;
+  score: number;
+  credits: number;
+}
+
+export interface DroneFormationSlot {
+  x: number;
+  y: number;
+  variant: 'standard' | 'mk2' | 'beacon';
 }
 
 export interface KillResult {

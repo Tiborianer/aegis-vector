@@ -94,6 +94,10 @@ export function isUtilityPickup(type: UpgradeType | UtilityPickupType): type is 
   return UTILITY_TYPES.includes(type as UtilityPickupType);
 }
 
+export function canTractorPickup(pairId: number | undefined): boolean {
+  return pairId === undefined;
+}
+
 function isPermanentEligible(type: UpgradeType, weapons: WeaponLevels, shieldBaseMax: number): boolean {
   return type === 'shield' ? shieldBaseMax < 3 : weapons[type] < 5;
 }
