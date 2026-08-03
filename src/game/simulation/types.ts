@@ -94,6 +94,9 @@ export interface AudioDebugState {
   voiceDurationSeconds?: number;
   voiceGainCorrection?: number;
   lastVoiceError?: string;
+  voiceAssetCheckComplete: boolean;
+  voiceAssetsReady: number;
+  voiceAssetsMissing: number;
   positionSeconds: number;
   logicalStartCount: number;
   loopRegion?: { startSeconds: number; endSeconds: number };

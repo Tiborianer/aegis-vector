@@ -384,6 +384,7 @@ required<HTMLElement>('game-shell').addEventListener('pointerdown', () => { void
 
 window.addEventListener('aegis:audio-state', (raw) => {
   const state = (raw as CustomEvent<AudioDebugState>).detail;
+  const voiceFilesMissing = state.voiceAssetCheckComplete && state.voiceAssetsMissing > 0;
   const label = state.playbackState === 'playing' && state.currentTrack
     ? `PLAYING // ${state.currentTrack.replace('mission-', '').toUpperCase()}`
     : state.playbackState === 'loading'
@@ -392,8 +393,15 @@ window.addEventListener('aegis:audio-state', (raw) => {
         ? 'MUSIC UNAVAILABLE'
         : 'CLICK TO ENABLE AUDIO';
   ui.audioStatus.textContent = label;
-  ui.audioError.classList.toggle('hidden', state.playbackState !== 'unavailable');
+  if (state.playbackState === 'unavailable') {
+    ui.audioError.textContent = 'MUSIC UNAVAILABLE';
+  } else if (voiceFilesMissing) {
+    ui.audioError.textContent = `RADIO VOICES MISSING ${state.voiceAssetsMissing}/${state.voiceAssetsReady + state.voiceAssetsMissing} // SUBTITLES ONLY`;
+  }
+  ui.audioError.classList.toggle('hidden', state.playbackState !== 'unavailable' && !voiceFilesMissing);
+  ui.audioError.classList.toggle('voice-notice', state.playbackState !== 'unavailable' && voiceFilesMissing);
   ui.audioButton.classList.toggle('audio-warning', state.playbackState === 'unavailable');
+  ui.audioButton.classList.toggle('voice-warning', state.playbackState !== 'unavailable' && voiceFilesMissing);
 });
 
 window.addEventListener('aegis:ready', () => {
@@ -1151,6 +1159,8 @@ if (debugMode) {
     ui.audioPanel.dataset.loopIteration = String(state.loopIteration);
     ui.audioPanel.dataset.musicGain = state.musicGain.toFixed(3);
     ui.audioPanel.dataset.voicePlaybackState = state.voicePlaybackState;
+    ui.audioPanel.dataset.voiceAssetsReady = String(state.voiceAssetsReady);
+    ui.audioPanel.dataset.voiceAssetsMissing = String(state.voiceAssetsMissing);
     ui.audioPanel.dataset.activeRadioCue = state.activeRadioCue ?? '';
     ui.audioPanel.dataset.lastVoiceError = state.lastVoiceError ?? '';
     ui.audioPanel.dataset.loopRegion = state.loopRegion

@@ -511,7 +511,9 @@ kbd { padding: 2px 4px; color: #b6d4df; background: rgba(103, 155, 176, 0.12); b
 .audio-footer span { color: #7fa4b5; font: 800 7px "Arial Narrow", sans-serif; letter-spacing: .08em; }
 .audio-footer button { cursor: pointer; padding: 4px 6px; color: var(--cyan); background: rgba(53,232,255,.06); border: 1px solid rgba(53,232,255,.2); font: 800 7px "Arial Narrow", sans-serif; letter-spacing: .08em; }
 .audio-panel .audio-error { display: block; margin-top: 7px; padding: 5px 6px; color: #ffbac4; background: rgba(255,102,124,.08); border-left: 2px solid var(--danger); font: 800 7px "Arial Narrow", sans-serif; letter-spacing: .1em; }
+.audio-panel .audio-error.voice-notice { color: #ffe3a0; background: rgba(255,182,64,.08); border-left-color: #ffb640; }
 .sound-button.audio-warning { color: var(--danger); border-color: rgba(255,102,124,.55); opacity: 1; }
+.sound-button.voice-warning { color: #ffce73; border-color: rgba(255,182,64,.55); opacity: 1; }
 
 /* Flight manual */
 .manual-overlay { z-index: 34; }

@@ -194,6 +194,9 @@ export class SoundEngine {
   private lastVoiceError?: string;
   private voiceDurationSeconds?: number;
   private voiceGainCorrection?: number;
+  private voiceAssetCheckComplete = false;
+  private voiceAssetsReady = 0;
+  private voiceAssetsMissing = 0;
   private source?: AudioDebugState['source'];
   private logicalStartCount = 0;
   private activeRadio?: { cue: RadioCue; source?: AudioBufferSourceNode; timer?: number };
@@ -243,6 +246,9 @@ export class SoundEngine {
       voiceDurationSeconds: this.voiceDurationSeconds,
       voiceGainCorrection: this.voiceGainCorrection,
       lastVoiceError: this.lastVoiceError,
+      voiceAssetCheckComplete: this.voiceAssetCheckComplete,
+      voiceAssetsReady: this.voiceAssetsReady,
+      voiceAssetsMissing: this.voiceAssetsMissing,
       positionSeconds,
       logicalStartCount: this.logicalStartCount,
       loopRegion,
@@ -436,7 +442,13 @@ export class SoundEngine {
   }
 
   private async preloadVoiceAssets(): Promise<void> {
-    await Promise.all(Object.values(VOICE_ASSETS).map((definition) => this.loadVoice(definition.file)));
+    this.voiceAssetCheckComplete = false;
+    const buffers = await Promise.all(Object.values(VOICE_ASSETS).map((definition) => this.loadVoice(definition.file)));
+    this.voiceAssetsReady = buffers.filter((buffer) => buffer !== null).length;
+    this.voiceAssetsMissing = buffers.length - this.voiceAssetsReady;
+    this.voiceAssetCheckComplete = true;
+    if (this.voiceAssetsMissing === 0) this.lastVoiceError = undefined;
+    this.emitState();
   }
 
   private async startRadio(cue: RadioCue): Promise<void> {
