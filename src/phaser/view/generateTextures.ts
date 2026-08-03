@@ -46,6 +46,10 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawEnemy(g, ASSET_KEYS.mineLayer, 112, 74, 0xffa33f, [[56, 70], [8, 52], [4, 25], [38, 31], [56, 5], [74, 31], [108, 25], [104, 52]]);
   drawEnemy(g, ASSET_KEYS.shieldCarrier, 104, 84, 0x8b7dff, [[52, 80], [10, 59], [6, 24], [36, 33], [52, 4], [68, 33], [98, 24], [94, 59]]);
   drawBulwark(g);
+  drawEnemy(g, ASSET_KEYS.phantom, 82, 68, 0x67ecff, [[41, 3], [51, 24], [77, 34], [55, 41], [49, 65], [41, 54], [33, 65], [27, 41], [5, 34], [31, 24]]);
+  drawEnemy(g, ASSET_KEYS.artillery, 126, 82, 0xffc04d, [[63, 4], [76, 25], [119, 31], [110, 69], [80, 61], [63, 78], [46, 61], [16, 69], [7, 31], [50, 25]]);
+  drawEnemy(g, ASSET_KEYS.reclaimer, 86, 76, 0x65ffb1, [[43, 6], [54, 25], [80, 30], [69, 56], [52, 51], [43, 70], [34, 51], [17, 56], [6, 30], [32, 25]]);
+  drawCarrierBoss(g);
   drawEnemy(g, ASSET_KEYS.warden, 190, 104, 0xf06cff, [[95, 99], [12, 67], [5, 30], [66, 42], [95, 4], [124, 42], [185, 30], [178, 67]]);
 
   g.fillStyle(0xffb640, 0.14).fillCircle(28, 28, 27);
@@ -115,6 +119,9 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawMissionEnvironment(g, ASSET_KEYS.coastal, 'coastal');
   drawMissionEnvironment(g, ASSET_KEYS.minefield, 'minefield');
   drawMissionEnvironment(g, ASSET_KEYS.fortress, 'fortress');
+  drawMissionEnvironment(g, ASSET_KEYS.stormbreak, 'stormbreak');
+  drawMissionEnvironment(g, ASSET_KEYS.graveyard, 'graveyard');
+  drawMissionEnvironment(g, ASSET_KEYS.carrierSiege, 'carrierSiege');
   drawMissionEnvironment(g, ASSET_KEYS.dreadnought, 'dreadnought');
 
   (['spread', 'missile', 'laser', 'drone', 'ion', 'shield', 'repair', 'overdrive', 'tractor', 'emp'] as PickupType[])
@@ -137,6 +144,23 @@ function drawBulwark(g: Phaser.GameObjects.Graphics): void {
   g.fillStyle(0xffb640, 1).fillCircle(70, 45, 8);
   g.fillStyle(0xfff6cf, 1).fillCircle(70, 45, 3);
   g.generateTexture(ASSET_KEYS.bulwark, width, height).clear();
+}
+
+function drawCarrierBoss(g: Phaser.GameObjects.Graphics): void {
+  const width = 244;
+  const height = 116;
+  g.fillStyle(0xffb640, 0.12).fillEllipse(width / 2, 62, 238, 98);
+  g.fillStyle(0x301a25, 1).fillPoints(polygon([[122, 5], [154, 31], [233, 43], [218, 94], [156, 83], [122, 111], [88, 83], [26, 94], [11, 43], [90, 31]]), true);
+  g.fillStyle(0x101a2b, 1).fillRoundedRect(82, 28, 80, 64, 15);
+  g.lineStyle(3, 0xffb640, 0.95).strokePoints(polygon([[122, 5], [154, 31], [233, 43], [218, 94], [156, 83], [122, 111], [88, 83], [26, 94], [11, 43], [90, 31]]), true);
+  for (const x of [49, 195]) {
+    g.fillStyle(0x201126, 1).fillCircle(x, 62, 16);
+    g.lineStyle(4, 0xf06cff, 1).strokeCircle(x, 62, 12);
+    g.fillStyle(0xffffff, 1).fillCircle(x, 62, 5);
+  }
+  g.fillStyle(0xff8f4b, 1).fillCircle(122, 58, 15);
+  g.fillStyle(0xfff6cf, 1).fillCircle(122, 58, 6);
+  g.generateTexture(ASSET_KEYS.carrierBoss, width, height).clear();
 }
 
 function drawEnemy(
@@ -236,7 +260,7 @@ function drawAtmosphereTextures(g: Phaser.GameObjects.Graphics): void {
 function drawMissionEnvironment(
   g: Phaser.GameObjects.Graphics,
   key: string,
-  profile: 'coastal' | 'minefield' | 'fortress' | 'dreadnought',
+  profile: 'coastal' | 'minefield' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought',
 ): void {
   if (profile === 'coastal') {
     g.fillStyle(0x07191e, 0.72).fillEllipse(115, 150, 220, 76).fillEllipse(505, 440, 300, 92);
@@ -261,6 +285,28 @@ function drawMissionEnvironment(
       g.lineStyle(4, 0xff536d, 0.24).lineBetween(78, y + 20, 245, y + 20).lineBetween(500, y + 94, 690, y + 94);
     }
     g.fillStyle(0xf4eeff, 0.09).fillTriangle(145, 20, 40, 360, 250, 360).fillTriangle(620, 280, 500, 680, 740, 680);
+  } else if (profile === 'stormbreak') {
+    g.fillStyle(0x081326, 0.7).fillRect(0, 0, 768, 720);
+    for (let y = 35; y < 720; y += 105) {
+      g.fillStyle(0x4a3b76, 0.12).fillEllipse(170 + (y % 260), y, 430, 70);
+      g.lineStyle(2, 0x80eaff, 0.09).lineBetween(0, y + 35, 768, y - 10);
+    }
+    g.lineStyle(3, 0xb9f8ff, 0.18).strokePoints(polygon([[620, 0], [560, 115], [605, 108], [535, 245]]));
+  } else if (profile === 'graveyard') {
+    g.fillStyle(0x071916, 0.72).fillRect(0, 0, 768, 720);
+    for (let index = 0; index < 9; index += 1) {
+      const x = 45 + (index * 173) % 690;
+      const y = 48 + index * 76;
+      g.fillStyle(0x263b3c, 0.72).fillPoints(polygon([[x, y], [x + 82, y + 18], [x + 54, y + 52], [x - 24, y + 39]]), true);
+      g.lineStyle(2, 0x65ffb1, 0.14).strokeCircle(x + 28, y + 28, 17);
+    }
+  } else if (profile === 'carrierSiege') {
+    g.fillStyle(0x100c20, 0.76).fillRect(0, 0, 768, 720);
+    for (let y = 50; y < 720; y += 150) {
+      g.fillStyle(0x25213c, 0.9).fillRoundedRect(35, y, 698, 78, 12);
+      g.lineStyle(2, 0xffb640, 0.22).strokeRoundedRect(35, y, 698, 78, 12);
+      g.lineStyle(5, 0xf06cff, 0.15).lineBetween(100, y + 25, 668, y + 25);
+    }
   } else {
     g.fillStyle(0x170914, 0.82).fillRect(0, 0, 768, 720);
     for (let x = 20; x < 768; x += 128) {

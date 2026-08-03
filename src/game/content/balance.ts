@@ -61,6 +61,10 @@ export const ENEMIES: Record<EnemyKind, EnemyTuning> = {
   mineLayer: { health: 14, speed: 72, score: 520, credits: 5, fireMs: 1_700 },
   shieldCarrier: { health: 18, speed: 68, score: 620, credits: 5, fireMs: 2_300 },
   bulwark: { health: 30, speed: 58, score: 750, credits: 6, fireMs: 2_600 },
+  phantom: { health: 9, speed: 175, score: 480, credits: 6, fireMs: 2_500 },
+  artillery: { health: 18, speed: 62, score: 720, credits: 7, fireMs: 3_400 },
+  reclaimer: { health: 10, speed: 135, score: 560, credits: 6, fireMs: 9_999 },
+  carrierBoss: { health: 310, speed: 38, score: 8_000, credits: 40, fireMs: 900 },
   warden: { health: 220, speed: 42, score: 5_000, credits: 35, fireMs: 850 },
   boss: { health: 620, speed: 46, score: 18_000, credits: 0, fireMs: 680 },
 };

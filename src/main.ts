@@ -2,14 +2,20 @@ import Phaser from 'phaser';
 import './styles.css';
 import { SoundEngine, type SoundCue } from './audio/SoundEngine';
 import { UPGRADE_BRANCHES, UPGRADE_NODES } from './game/content/upgrades';
+import { SORTIE_MODULES } from './game/content/sortieModules';
 import { WEAPON_LABELS, WORLD_HEIGHT, WORLD_WIDTH } from './game/content/balance';
+import { chooseArmamentOffer } from './game/content/pickups';
+import { globalCarrierIndex } from './game/content/encounters';
 import { CampaignModel } from './game/simulation/CampaignModel';
 import type {
   CampaignSnapshot,
   Difficulty,
   GameSnapshot,
   AudioDebugState,
+  CampaignRoute,
+  EnemyKind,
   MusicTrack,
+  SortieModuleId,
   UpgradeBranch,
   UpgradeNodeId,
   WeaponType,
@@ -80,6 +86,12 @@ const ui = {
   nextMissionBriefing: required<HTMLElement>('next-mission-briefing'),
   nextThreats: required<HTMLElement>('next-threats'),
   upgradeTree: required<HTMLElement>('upgrade-tree'),
+  sortieModules: required<HTMLElement>('sortie-modules'),
+  routePanel: required<HTMLElement>('route-panel'),
+  nextVectorPanel: required<HTMLElement>('next-vector-panel'),
+  manual: required<HTMLElement>('manual-screen'),
+  manualContent: required<HTMLElement>('manual-content'),
+  manualClose: required<HTMLButtonElement>('manual-close-button'),
   resultKicker: required<HTMLElement>('result-kicker'),
   resultTitle: required<HTMLElement>('result-title'),
   resultScoreLabel: required<HTMLElement>('result-score-label'),
@@ -175,6 +187,38 @@ ui.upgradeTree.addEventListener('click', (raw) => {
   }
 });
 
+ui.sortieModules.addEventListener('click', (raw) => {
+  const button = (raw.target as HTMLElement).closest<HTMLButtonElement>('[data-sortie-module]');
+  if (!button) return;
+  if (campaign.purchaseSortieModule(button.dataset.sortieModule as SortieModuleId).ok) {
+    audio.play('purchase');
+    saveCampaign();
+    renderHangar();
+  }
+});
+
+ui.routePanel.addEventListener('click', (raw) => {
+  const button = (raw.target as HTMLElement).closest<HTMLButtonElement>('[data-route]');
+  if (!button) return;
+  if (campaign.selectRoute(button.dataset.route as CampaignRoute)) {
+    audio.play('purchase');
+    saveCampaign();
+    renderHangar();
+  }
+});
+
+const openManual = (): void => {
+  renderManual('weapons');
+  ui.manual.classList.remove('hidden');
+};
+['manual-button', 'hangar-manual-button', 'pause-manual-button'].forEach((id) => {
+  required<HTMLButtonElement>(id).addEventListener('click', openManual);
+});
+ui.manualClose.addEventListener('click', () => ui.manual.classList.add('hidden'));
+document.querySelectorAll<HTMLButtonElement>('[data-manual-tab]').forEach((button) => {
+  button.addEventListener('click', () => renderManual(button.dataset.manualTab as ManualTab));
+});
+
 ui.hangarAbandon.addEventListener('click', abandonCampaign);
 ui.pauseAbandon.addEventListener('click', abandonCampaign);
 ui.resultAbandon.addEventListener('click', abandonCampaign);
@@ -219,6 +263,13 @@ window.addEventListener('aegis:ready', () => {
 window.addEventListener('aegis:state', (raw) => {
   latestSnapshot = (raw as CustomEvent<GameSnapshot>).detail;
   updateHud(latestSnapshot);
+});
+
+window.addEventListener('aegis:enemy-seen', (raw) => {
+  const kind = (raw as CustomEvent<EnemyKind>).detail;
+  const before = campaign.snapshot().discoveredEnemies?.length ?? 0;
+  campaign.discoverEnemy(kind);
+  if ((campaign.snapshot().discoveredEnemies?.length ?? 0) !== before) saveCampaign();
 });
 
 window.addEventListener('aegis:announce', (raw) => {
@@ -302,6 +353,10 @@ function renderHangar(): void {
   const mission = campaign.currentMission();
   ui.hangarKicker.textContent = state.lastReport ? 'AEGIS HANGAR // MISSION REPORT' : 'AEGIS HANGAR // CAMPAIGN CHECKPOINT';
   ui.hangarCredits.textContent = String(state.credits);
+  const choosingRoute = state.phase === 'route';
+  ui.routePanel.classList.toggle('hidden', !choosingRoute);
+  ui.nextVectorPanel.classList.toggle('hidden', choosingRoute);
+  ui.hangarLaunch.classList.toggle('hidden', choosingRoute);
   ui.nextMissionTitle.textContent = `${mission.sector} // ${mission.title}`;
   ui.nextMissionBriefing.textContent = mission.briefing;
   ui.nextThreats.replaceChildren(...mission.newThreats.map((threat) => {
@@ -319,7 +374,25 @@ function renderHangar(): void {
   ui.reportCredits.textContent = report ? `+${report.creditsEarned}` : '—';
   ui.reportAccuracy.textContent = report ? `${report.accuracy}%` : '—';
   ui.reportDamage.textContent = report ? String(report.damageTaken) : '—';
+  renderSortieModules(state);
   renderUpgradeTree(state);
+}
+
+function renderSortieModules(state: CampaignSnapshot): void {
+  const mission = campaign.currentMission();
+  ui.sortieModules.replaceChildren(...SORTIE_MODULES.map((module) => {
+    const equipped = state.sortieModule === module.id;
+    const occupied = Boolean(state.sortieModule && !equipped);
+    const button = document.createElement('button');
+    button.dataset.sortieModule = module.id;
+    button.disabled = equipped || occupied || state.phase === 'route' || state.credits < module.cost;
+    button.className = `sortie-module${equipped ? ' equipped' : ''}`;
+    const scannerOffer = equipped && module.id === 'armament-scanner'
+      ? chooseArmamentOffer(state.weapons, state.shieldBaseMax, state.campaignSeed ?? 1, globalCarrierIndex(mission.id, 0), [], undefined).options
+      : undefined;
+    button.innerHTML = `<img src="${module.icon}" alt="" aria-hidden="true"><span><b>${module.name}</b><small>${scannerOffer ? `FIRST OFFER: ${scannerOffer.map(upgradeName).join(' / ')}` : module.description}</small></span><em>${equipped ? 'EQUIPPED' : `${module.cost} C`}</em>`;
+    return button;
+  }));
 }
 
 function renderUpgradeTree(state: CampaignSnapshot): void {
@@ -329,7 +402,7 @@ function renderUpgradeTree(state: CampaignSnapshot): void {
     const heading = document.createElement('h3');
     heading.innerHTML = `<span>${branchIcon(branch)}</span>${branch.toUpperCase()}`;
     column.append(heading);
-    for (const tier of [1, 2, 3, 4] as const) {
+    for (const tier of [1, 2, 3, 4, 5, 6] as const) {
       const tierElement = document.createElement('div');
       tierElement.className = 'upgrade-tier';
       tierElement.dataset.tier = String(tier);
@@ -431,7 +504,7 @@ function updateHud(snapshot: GameSnapshot): void {
   ui.credits.textContent = String(campaign.snapshot().credits + snapshot.creditsEarned);
   ui.multiplier.textContent = `×${snapshot.multiplier}`;
   ui.highScore.textContent = `BEST ${formatScore(snapshot.highScore)}`;
-  ui.missionLabel.textContent = snapshot.missionNumber === 4 ? 'FINAL VECTOR' : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
+  ui.missionLabel.textContent = snapshot.missionId === 'dreadnought' ? 'FINAL VECTOR' : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
   ui.threatLevel.textContent = `THREAT ${snapshot.threatLevel}`;
   ui.threatLevel.dataset.level = String(snapshot.threatLevel);
 
@@ -495,11 +568,56 @@ function renderWeapons(snapshot: GameSnapshot): void {
 }
 
 function preloadUpgradeIcons(): void {
-  UPGRADE_NODES.forEach((node) => {
+  [...UPGRADE_NODES, ...SORTIE_MODULES].forEach((node) => {
     const image = new Image();
     image.decoding = 'async';
     image.src = node.icon;
   });
+}
+
+type ManualTab = 'weapons' | 'enemies' | 'systems';
+
+const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; description: string }>> = {
+  weapons: [
+    { name: 'ARC CANNON', tag: 'SPREAD', description: 'Your rapid primary gun. Higher levels add bolts, tighten the fan, and raise damage. Best against close formations.' },
+    { name: 'NOVA MISSILES', tag: 'HOMING', description: 'Tracks priority targets and weak points. Advanced warheads add extra missiles and blast damage.' },
+    { name: 'LANCE LASER', tag: 'PRECISION', description: 'Straight, high-speed pulses that reward lining up enemies. Later levels add wider triple beams.' },
+    { name: 'WING DRONES', tag: 'SUPPORT', description: 'Autonomous escorts that fire with you. Upgrades add drones and improve their volley rate.' },
+    { name: 'ION CONDUCTOR', tag: 'CHAIN', description: 'Electrical discharge jumps to different nearby enemies. Against bosses it concentrates into one fair damage strike.' },
+  ],
+  enemies: [
+    { name: 'CHARGER', tag: 'RAMMER', description: 'Marks a narrow lane, then dives. Leave the warning lane before it commits.' },
+    { name: 'SNIPER', tag: 'BEAM', description: 'Tracks briefly, freezes its aim line, then fires. The locked line no longer follows you—sidestep during the final warning.' },
+    { name: 'MINE LAYER', tag: 'AREA DENIAL', description: 'Drops destructible mines. They flash as they arm and disappear after six seconds.' },
+    { name: 'SHIELD CARRIER', tag: 'SUPPORT', description: 'Reduces damage to nearby enemies. Break the carrier first or lure its escorts outside the visible field.' },
+    { name: 'BULWARK', tag: 'ARMORED', description: 'Its core resists damage while wing reactors survive. Target either glowing reactor to break the armor.' },
+    { name: 'PHANTOM', tag: 'PHASE STRIKER', description: 'Drifts in and out of visibility before firing crossing volleys. Stay in the center gap, then counterattack.' },
+    { name: 'ARTILLERY', tag: 'BARRAGE', description: 'Paints two blast circles on your position. Escape the circles or hit its bright targeting sensor to interrupt the strike.' },
+    { name: 'RECLAIMER', tag: 'SALVAGER', description: 'Steals unattended utility pickups. Destroy it to recover the stolen item.' },
+    { name: 'BASTION CARRIER', tag: 'COMMAND', description: 'A carrier miniboss with two destructible turrets. Removing them greatly reduces its aimed volleys.' },
+  ],
+  systems: [
+    { name: 'AEGIS SHIELD', tag: 'DEFENSE', description: 'Absorbs hits before hull and recharges after avoiding damage. Battlefield shield cores increase capacity up to three.' },
+    { name: 'EMP', tag: 'X KEY', description: 'Clears nearby bullets and mines, damages enemies, and temporarily disrupts Bulwark armor.' },
+    { name: 'OVERDRIVE', tag: 'UTILITY', description: 'Fires every weapon faster. White-hot gold projectiles show when Overdrive is active.' },
+    { name: 'ARMAMENT CARRIER', tag: 'CHOICE', description: 'Gold-marked targets drop two permanent campaign upgrades. Collect one before the offer expires.' },
+    { name: 'SORTIE MODULE', tag: 'CONSUMABLE', description: 'A hangar purchase used for the next mission only. Failed attempts restore it with the mission checkpoint.' },
+    { name: 'THREAT LEVEL', tag: 'ESCALATION', description: 'Each mission climbs through five deterministic pressure bands. Warning times never become shorter.' },
+  ],
+};
+
+function renderManual(tab: ManualTab): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-manual-tab]').forEach((button) => button.classList.toggle('selected', button.dataset.manualTab === tab));
+  ui.manualContent.replaceChildren(...MANUAL_ENTRIES[tab].map((entry) => {
+    const article = document.createElement('article');
+    article.innerHTML = `<div><span>${entry.tag}</span><h3>${entry.name}</h3></div><p>${entry.description}</p>`;
+    return article;
+  }));
+}
+
+function upgradeName(type: string): string {
+  if (type === 'shield') return 'AEGIS';
+  return WEAPON_LABELS[type as WeaponType]?.name.toUpperCase() ?? type.toUpperCase();
 }
 
 function branchIcon(branch: UpgradeBranch): string {

@@ -14,12 +14,18 @@ export type EnemyKind =
   | 'mineLayer'
   | 'shieldCarrier'
   | 'bulwark'
+  | 'phantom'
+  | 'artillery'
+  | 'reclaimer'
+  | 'carrierBoss'
   | 'warden'
   | 'boss';
 export type GameMode = 'briefing' | 'playing' | 'paused' | 'complete' | 'gameover' | 'victory';
-export type DamageResult = 'ignored' | 'shield' | 'reserve' | 'hull' | 'secondWind' | 'phoenix' | 'destroyed';
-export type MissionId = 'coastal' | 'minefield' | 'fortress' | 'dreadnought';
-export type CampaignPhase = 'briefing' | 'mission' | 'hangar' | 'victory';
+export type DamageResult = 'ignored' | 'shield' | 'reserve' | 'hull' | 'secondWind' | 'nanites' | 'fortress' | 'phoenix' | 'destroyed';
+export type MissionId = 'coastal' | 'minefield' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought';
+export type CampaignPhase = 'briefing' | 'mission' | 'hangar' | 'route' | 'victory';
+export type CampaignRoute = 'storm' | 'salvage';
+export type SortieModuleId = 'reserve-emp' | 'armament-scanner' | 'emergency-nanites' | 'wingman-beacon';
 export type UpgradeBranch = 'weapons' | 'defense' | 'systems';
 export type ThreatLevel = 1 | 2 | 3 | 4 | 5;
 export type EnemyRank = 'standard' | 'veteran' | 'elite' | 'carrier';
@@ -99,7 +105,19 @@ export type UpgradeNodeId =
   | 'second-wind'
   | 'kinetic-reversal'
   | 'chrono-relay'
-  | 'emergency-capacitor';
+  | 'emergency-capacitor'
+  | 'swarm-doctrine'
+  | 'resonance-matrix'
+  | 'helios-battery'
+  | 'gravity-payload'
+  | 'nanite-lattice'
+  | 'aegis-harmonics'
+  | 'guardian-pulse'
+  | 'fortress-frame'
+  | 'threat-analyzer'
+  | 'salvage-router'
+  | 'temporal-echo'
+  | 'fabrication-matrix';
 
 export interface WeaponLevels {
   spread: WeaponLevel;
@@ -126,7 +144,7 @@ export interface MissionDefinition {
 export interface UpgradeNode {
   id: UpgradeNodeId;
   branch: UpgradeBranch;
-  tier: 1 | 2 | 3 | 4;
+  tier: 1 | 2 | 3 | 4 | 5 | 6;
   name: string;
   description: string;
   cost: number;
@@ -160,6 +178,18 @@ export interface CombatModifiers {
   kineticReversal: boolean;
   chronoRelay: boolean;
   emergencyCapacitor: boolean;
+  swarmDoctrine: boolean;
+  resonanceMatrix: boolean;
+  heliosBattery: boolean;
+  gravityPayload: boolean;
+  naniteLattice: boolean;
+  aegisHarmonics: boolean;
+  guardianPulse: boolean;
+  fortressFrame: boolean;
+  threatAnalyzer: boolean;
+  salvageRouter: boolean;
+  temporalEcho: boolean;
+  fabricationMatrix: boolean;
 }
 
 export interface MissionStartConfig {
@@ -170,6 +200,7 @@ export interface MissionStartConfig {
   shieldBaseMax: number;
   modifiers: CombatModifiers;
   campaignSeed: number;
+  sortieModule?: SortieModuleId;
   debugDurationMs?: number;
 }
 
@@ -186,10 +217,14 @@ export interface MissionReport {
 }
 
 export interface CampaignSnapshot {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   phase: CampaignPhase;
   difficulty: Difficulty;
   missionIndex: number;
+  currentMissionId?: MissionId;
+  route?: CampaignRoute;
+  sortieModule?: SortieModuleId;
+  discoveredEnemies?: EnemyKind[];
   credits: number;
   score: number;
   campaignKills: number;
@@ -199,6 +234,14 @@ export interface CampaignSnapshot {
   respecAvailable: boolean;
   campaignSeed?: number;
   lastReport?: MissionReport;
+}
+
+export interface SortieModuleDefinition {
+  id: SortieModuleId;
+  name: string;
+  description: string;
+  cost: number;
+  icon: string;
 }
 
 export interface GameSnapshot {

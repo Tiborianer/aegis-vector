@@ -1,21 +1,27 @@
-import { getMission, MISSIONS } from '../content/missions';
+import { getMissionById, MISSIONS, nextMissionId, routeMissionId } from '../content/missions';
+import { getSortieModule } from '../content/sortieModules';
 import { buildCombatModifiers, getSibling, getUpgradeNode, UPGRADE_NODES } from '../content/upgrades';
 import type {
+  CampaignRoute,
   CampaignSnapshot,
   Difficulty,
+  EnemyKind,
   GameSnapshot,
   MissionDefinition,
+  MissionId,
   MissionStartConfig,
+  SortieModuleId,
   UpgradeNodeId,
   WeaponLevel,
   WeaponLevels,
 } from './types';
 
 const INITIAL_WEAPONS: WeaponLevels = { spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 };
+const LEGACY_MISSIONS: MissionId[] = ['coastal', 'minefield', 'fortress', 'dreadnought'];
 
 export interface PurchaseResult {
   ok: boolean;
-  reason?: 'owned' | 'locked' | 'insufficient' | 'unavailable';
+  reason?: 'owned' | 'locked' | 'insufficient' | 'unavailable' | 'equipped';
 }
 
 export class CampaignModel {
@@ -27,10 +33,11 @@ export class CampaignModel {
 
   static fresh(difficulty: Difficulty): CampaignSnapshot {
     return {
-      version: 2,
+      version: 3,
       phase: 'briefing',
       difficulty,
       missionIndex: 0,
+      currentMissionId: 'coastal',
       credits: 0,
       score: 0,
       campaignKills: 0,
@@ -39,6 +46,7 @@ export class CampaignModel {
       purchased: [],
       respecAvailable: true,
       campaignSeed: CampaignModel.makeSeed(),
+      discoveredEnemies: [],
     };
   }
 
@@ -47,11 +55,35 @@ export class CampaignModel {
   }
 
   currentMission(): MissionDefinition {
-    return getMission(this.state.missionIndex);
+    return getMissionById(this.state.currentMissionId ?? 'coastal');
+  }
+
+  selectRoute(route: CampaignRoute): boolean {
+    if (this.state.phase !== 'route') return false;
+    this.state.route = route;
+    this.state.currentMissionId = routeMissionId(route);
+    this.state.missionIndex = MISSIONS.findIndex((mission) => mission.id === this.state.currentMissionId);
+    this.state.phase = 'hangar';
+    return true;
+  }
+
+  purchaseSortieModule(id: SortieModuleId): PurchaseResult {
+    if (this.state.phase === 'mission' || this.state.phase === 'victory' || this.state.phase === 'route') return { ok: false, reason: 'unavailable' };
+    if (this.state.sortieModule) return { ok: false, reason: 'equipped' };
+    const module = getSortieModule(id);
+    if (this.state.credits < module.cost) return { ok: false, reason: 'insufficient' };
+    this.state.credits -= module.cost;
+    this.state.sortieModule = id;
+    return { ok: true };
+  }
+
+  discoverEnemy(kind: EnemyKind): void {
+    const discovered = this.state.discoveredEnemies ?? [];
+    if (!discovered.includes(kind)) this.state.discoveredEnemies = [...discovered, kind];
   }
 
   beginMission(debugDurationMs?: number): MissionStartConfig {
-    if (this.state.phase === 'victory') throw new Error('A completed campaign cannot start another mission.');
+    if (this.state.phase === 'victory' || this.state.phase === 'route') throw new Error('The campaign cannot start this mission yet.');
     this.state.phase = 'mission';
     return {
       difficulty: this.state.difficulty,
@@ -61,12 +93,13 @@ export class CampaignModel {
       shieldBaseMax: this.state.shieldBaseMax,
       modifiers: buildCombatModifiers(this.state.purchased),
       campaignSeed: this.state.campaignSeed ?? CampaignModel.makeSeed(),
+      sortieModule: this.state.sortieModule,
       debugDurationMs,
     };
   }
 
   failMission(): void {
-    this.state.phase = this.state.missionIndex === 0 ? 'briefing' : 'hangar';
+    this.state.phase = this.currentMission().id === 'coastal' ? 'briefing' : 'hangar';
   }
 
   completeMission(result: GameSnapshot): CampaignSnapshot {
@@ -82,6 +115,7 @@ export class CampaignModel {
     this.state.campaignKills += result.kills;
     this.state.weapons = { ...result.weapons };
     this.state.shieldBaseMax = result.shieldBaseMax;
+    this.state.sortieModule = undefined;
     this.state.lastReport = {
       missionId: mission.id,
       title: mission.title,
@@ -94,10 +128,14 @@ export class CampaignModel {
       accuracy: shotsFired === 0 ? 0 : Math.min(100, Math.round((result.shotsHit / shotsFired) * 100)),
     };
 
-    if (mission.finale) {
+    const next = nextMissionId(mission.id, this.state.route);
+    if (next === 'victory') {
       this.state.phase = 'victory';
+    } else if (next === 'route') {
+      this.state.phase = 'route';
     } else {
-      this.state.missionIndex += 1;
+      this.state.currentMissionId = next;
+      this.state.missionIndex = MISSIONS.findIndex((candidate) => candidate.id === next);
       this.state.phase = 'hangar';
     }
     return this.snapshot();
@@ -110,9 +148,7 @@ export class CampaignModel {
     if (this.state.purchased.includes(getSibling(node).id)) return { ok: false, reason: 'locked' };
     if (node.tier > 1) {
       const previousTierOwned = UPGRADE_NODES.some((candidate) =>
-        candidate.branch === node.branch
-        && candidate.tier === node.tier - 1
-        && this.state.purchased.includes(candidate.id),
+        candidate.branch === node.branch && candidate.tier === node.tier - 1 && this.state.purchased.includes(candidate.id),
       );
       if (!previousTierOwned) return { ok: false, reason: 'locked' };
     }
@@ -143,33 +179,37 @@ export class CampaignModel {
       ...this.state,
       weapons: { ...this.state.weapons },
       purchased: [...this.state.purchased],
+      discoveredEnemies: [...(this.state.discoveredEnemies ?? [])],
       lastReport: this.state.lastReport ? { ...this.state.lastReport } : undefined,
     };
   }
 
   exportSave(): CampaignSnapshot {
     const snapshot = this.snapshot();
-    if (snapshot.phase === 'mission') snapshot.phase = snapshot.missionIndex === 0 ? 'briefing' : 'hangar';
+    if (snapshot.phase === 'mission') snapshot.phase = snapshot.currentMissionId === 'coastal' ? 'briefing' : 'hangar';
     return snapshot;
   }
 
   private static sanitize(candidate: CampaignSnapshot): CampaignSnapshot {
     const validDifficulty: Difficulty = ['cadet', 'pilot', 'ace'].includes(candidate.difficulty) ? candidate.difficulty : 'pilot';
     const validNodes = new Set(UPGRADE_NODES.map((node) => node.id));
-    const purchased = Array.isArray(candidate.purchased)
-      ? candidate.purchased.filter((id): id is UpgradeNodeId => validNodes.has(id))
-      : [];
-    const missionIndex = Math.max(0, Math.min(MISSIONS.length - 1, Math.floor(candidate.missionIndex ?? 0)));
-    const phase = candidate.phase === 'victory'
-      ? 'victory'
-      : candidate.phase === 'hangar' || missionIndex > 0
-        ? 'hangar'
-        : 'briefing';
+    const purchased = Array.isArray(candidate.purchased) ? candidate.purchased.filter((id): id is UpgradeNodeId => validNodes.has(id)) : [];
+    const legacyIndex = Math.max(0, Math.min(LEGACY_MISSIONS.length - 1, Math.floor(candidate.missionIndex ?? 0)));
+    const candidateMission = candidate.version === 3 ? candidate.currentMissionId : LEGACY_MISSIONS[legacyIndex];
+    const currentMissionId = MISSIONS.some((mission) => mission.id === candidateMission) ? candidateMission! : 'coastal';
+    const missionIndex = MISSIONS.findIndex((mission) => mission.id === currentMissionId);
+    const phase = candidate.phase === 'victory' ? 'victory'
+      : candidate.phase === 'route' ? 'route'
+        : candidate.phase === 'hangar' || currentMissionId !== 'coastal' ? 'hangar' : 'briefing';
     return {
-      version: 2,
+      version: 3,
       phase,
       difficulty: validDifficulty,
       missionIndex,
+      currentMissionId,
+      route: candidate.route,
+      sortieModule: candidate.sortieModule,
+      discoveredEnemies: Array.isArray(candidate.discoveredEnemies) ? [...new Set(candidate.discoveredEnemies)] : [],
       credits: Math.max(0, Math.floor(candidate.credits ?? 0)),
       score: Math.max(0, Math.floor(candidate.score ?? 0)),
       campaignKills: Math.max(0, Math.floor(candidate.campaignKills ?? 0)),
@@ -183,9 +223,7 @@ export class CampaignModel {
       shieldBaseMax: Math.max(1, Math.min(3, Math.floor(candidate.shieldBaseMax ?? 1))),
       purchased,
       respecAvailable: candidate.respecAvailable !== false,
-      campaignSeed: Number.isFinite(candidate.campaignSeed)
-        ? Math.max(1, Math.floor(candidate.campaignSeed!))
-        : CampaignModel.makeSeed(),
+      campaignSeed: Number.isFinite(candidate.campaignSeed) ? Math.max(1, Math.floor(candidate.campaignSeed!)) : CampaignModel.makeSeed(),
       lastReport: candidate.lastReport,
     };
   }

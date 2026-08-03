@@ -9,6 +9,10 @@ const ids = [
   'phoenix-protocol', 'repulsor-shield', 'second-wind', 'kinetic-reversal',
   'salvage-protocol', 'tractor-array', 'emp-overcharger', 'combat-computer',
   'field-fabricator', 'flux-capacitor', 'chrono-relay', 'emergency-capacitor',
+  'swarm-doctrine', 'resonance-matrix', 'helios-battery', 'gravity-payload',
+  'nanite-lattice', 'aegis-harmonics', 'guardian-pulse', 'fortress-frame',
+  'threat-analyzer', 'salvage-router', 'temporal-echo', 'fabrication-matrix',
+  'reserve-emp', 'armament-scanner', 'emergency-nanites', 'wingman-beacon',
 ];
 
 let totalBytes = 0;
@@ -26,5 +30,5 @@ for (const id of ids) {
   totalBytes += info.size;
 }
 
-if (totalBytes > 2.5 * 1024 * 1024) throw new Error(`Upgrade icon set exceeds 2.5MB (${totalBytes} bytes)`);
+if (totalBytes > 4 * 1024 * 1024) throw new Error(`Upgrade icon set exceeds 4MB (${totalBytes} bytes)`);
 console.log(`Verified ${ids.length} upgrade icons in ${root}/ui/upgrades (${Math.round(totalBytes / 1024)}KB).`);

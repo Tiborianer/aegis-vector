@@ -1,4 +1,5 @@
 import type { CombatModifiers, UpgradeBranch, UpgradeNode, UpgradeNodeId } from '../simulation/types';
+import { publicAssetUrl } from '../assets/publicAsset';
 
 const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'rapid-cycling', branch: 'weapons', tier: 1, name: 'RAPID CYCLING', description: 'Fire every weapon 10% faster.', cost: 60 },
@@ -9,6 +10,10 @@ const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'phase-arsenal', branch: 'weapons', tier: 3, name: 'PHASE ARSENAL', description: 'Shots pierce once; missiles gain a 90px blast.', cost: 140 },
   { id: 'ordnance-cascade', branch: 'weapons', tier: 4, name: 'ORDNANCE CASCADE', description: 'NOVA gains a missile; WING launches micro-missiles.', cost: 160 },
   { id: 'prismatic-core', branch: 'weapons', tier: 4, name: 'PRISMATIC CORE', description: 'Empower ARC/LANCE centers and add two ION chains.', cost: 160 },
+  { id: 'swarm-doctrine', branch: 'weapons', tier: 5, name: 'SWARM DOCTRINE', description: 'NOVA and WING prioritize specialists and strike them harder first.', cost: 210 },
+  { id: 'resonance-matrix', branch: 'weapons', tier: 5, name: 'RESONANCE MATRIX', description: 'Energy-weapon hits charge an additional chain discharge.', cost: 210 },
+  { id: 'helios-battery', branch: 'weapons', tier: 6, name: 'HELIOS BATTERY', description: 'Every eighth ARC volley becomes a powerful white-gold salvo.', cost: 280 },
+  { id: 'gravity-payload', branch: 'weapons', tier: 6, name: 'GRAVITY PAYLOAD', description: 'NOVA blasts and final ION discharges pull regular enemies inward.', cost: 280 },
   { id: 'reinforced-frame', branch: 'defense', tier: 1, name: 'REINFORCED FRAME', description: '+1 maximum hull, capped at five.', cost: 60 },
   { id: 'aegis-bank', branch: 'defense', tier: 1, name: 'AEGIS BANK', description: 'Store one reserve shield pip per mission.', cost: 60 },
   { id: 'quick-charge-loop', branch: 'defense', tier: 2, name: 'QUICK-CHARGE LOOP', description: 'Shield recharge drops to 5.5 seconds.', cost: 100 },
@@ -17,6 +22,10 @@ const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'repulsor-shield', branch: 'defense', tier: 3, name: 'REPULSOR SHIELD', description: 'Shield hits clear bullets within 130px.', cost: 140 },
   { id: 'second-wind', branch: 'defense', tier: 4, name: 'SECOND WIND', description: 'At one hull, restore shield and clear nearby fire once.', cost: 160 },
   { id: 'kinetic-reversal', branch: 'defense', tier: 4, name: 'KINETIC REVERSAL', description: 'Shield hits reflect fire and grant brief protection.', cost: 160 },
+  { id: 'nanite-lattice', branch: 'defense', tier: 5, name: 'NANITE LATTICE', description: 'Restore one hull after 35 seconds without hull damage, once per mission.', cost: 210 },
+  { id: 'aegis-harmonics', branch: 'defense', tier: 5, name: 'AEGIS HARMONICS', description: 'Recharge shield pips individually every 4.5 seconds.', cost: 210 },
+  { id: 'guardian-pulse', branch: 'defense', tier: 6, name: 'GUARDIAN PULSE', description: 'Restoring shield energy clears nearby hostile bullets.', cost: 280 },
+  { id: 'fortress-frame', branch: 'defense', tier: 6, name: 'FORTRESS FRAME', description: '+1 hull and ignore the first unshielded ram collision.', cost: 280 },
   { id: 'salvage-protocol', branch: 'systems', tier: 1, name: 'SALVAGE PROTOCOL', description: 'Earn 20% more campaign credits.', cost: 60 },
   { id: 'tractor-array', branch: 'systems', tier: 1, name: 'TRACTOR ARRAY', description: 'Passively attract pickups within 140px.', cost: 60 },
   { id: 'emp-overcharger', branch: 'systems', tier: 2, name: 'EMP OVERCHARGER', description: '+1 EMP capacity and 50% EMP damage.', cost: 100 },
@@ -25,11 +34,15 @@ const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'flux-capacitor', branch: 'systems', tier: 3, name: 'FLUX CAPACITOR', description: 'Utility effects last 50% longer; excess EMP scores.', cost: 140 },
   { id: 'chrono-relay', branch: 'systems', tier: 4, name: 'CHRONO RELAY', description: 'EMP leaves a five-second time-dilation field.', cost: 160 },
   { id: 'emergency-capacitor', branch: 'systems', tier: 4, name: 'EMERGENCY CAPACITOR', description: 'The first two hull hits restore EMP and Tractor.', cost: 160 },
+  { id: 'threat-analyzer', branch: 'systems', tier: 5, name: 'THREAT ANALYZER', description: 'Highlight weak points and earn 10% more specialist score.', cost: 210 },
+  { id: 'salvage-router', branch: 'systems', tier: 5, name: 'SALVAGE ROUTER', description: 'Excess utilities convert into two credits and 500 score.', cost: 210 },
+  { id: 'temporal-echo', branch: 'systems', tier: 6, name: 'TEMPORAL ECHO', description: 'EMP repeats as a weaker second pulse after two seconds.', cost: 280 },
+  { id: 'fabrication-matrix', branch: 'systems', tier: 6, name: 'FABRICATION MATRIX', description: 'Carriers produce utilities and fabrication triggers more often.', cost: 280 },
 ];
 
 export const UPGRADE_NODES: UpgradeNode[] = UPGRADE_NODE_DEFINITIONS.map((node) => ({
   ...node,
-  icon: `/ui/upgrades/${node.id}.png`,
+  icon: publicAssetUrl(`ui/upgrades/${node.id}.png`),
 }));
 
 export const UPGRADE_BRANCHES: UpgradeBranch[] = ['weapons', 'defense', 'systems'];
@@ -61,6 +74,18 @@ export const DEFAULT_COMBAT_MODIFIERS: CombatModifiers = {
   kineticReversal: false,
   chronoRelay: false,
   emergencyCapacitor: false,
+  swarmDoctrine: false,
+  resonanceMatrix: false,
+  heliosBattery: false,
+  gravityPayload: false,
+  naniteLattice: false,
+  aegisHarmonics: false,
+  guardianPulse: false,
+  fortressFrame: false,
+  threatAnalyzer: false,
+  salvageRouter: false,
+  temporalEcho: false,
+  fabricationMatrix: false,
 };
 
 export function getUpgradeNode(id: UpgradeNodeId): UpgradeNode {
@@ -106,5 +131,17 @@ export function buildCombatModifiers(purchased: readonly UpgradeNodeId[]): Comba
     kineticReversal: owned.has('kinetic-reversal'),
     chronoRelay: owned.has('chrono-relay'),
     emergencyCapacitor: owned.has('emergency-capacitor'),
+    swarmDoctrine: owned.has('swarm-doctrine'),
+    resonanceMatrix: owned.has('resonance-matrix'),
+    heliosBattery: owned.has('helios-battery'),
+    gravityPayload: owned.has('gravity-payload'),
+    naniteLattice: owned.has('nanite-lattice'),
+    aegisHarmonics: owned.has('aegis-harmonics'),
+    guardianPulse: owned.has('guardian-pulse'),
+    fortressFrame: owned.has('fortress-frame'),
+    threatAnalyzer: owned.has('threat-analyzer'),
+    salvageRouter: owned.has('salvage-router'),
+    temporalEcho: owned.has('temporal-echo'),
+    fabricationMatrix: owned.has('fabrication-matrix'),
   };
 }

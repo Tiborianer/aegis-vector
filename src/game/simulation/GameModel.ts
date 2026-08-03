@@ -48,9 +48,9 @@ export class GameModel {
   bossName = '';
   bossHealthRatio = 1;
   campaignSeed = 1;
+  sortieModule: MissionStartConfig['sortieModule'];
   modifiers: CombatModifiers = { ...DEFAULT_COMBAT_MODIFIERS };
 
-  private lastDamageAt = Number.NEGATIVE_INFINITY;
   private invulnerableUntil = 0;
   private comboUntil = 0;
   private comboKills = 0;
@@ -62,6 +62,11 @@ export class GameModel {
   private reserveShieldAvailable = false;
   private secondWindAvailable = false;
   private emergencyCapacitorTriggers = 0;
+  private nextShieldRechargeAt = Number.POSITIVE_INFINITY;
+  private lastHullDamageAt = Number.NEGATIVE_INFINITY;
+  private naniteLatticeAvailable = false;
+  private sortieNanitesAvailable = false;
+  private fortressRamAvailable = false;
 
   constructor(highScore = 0) {
     this.highScore = highScore;
@@ -77,7 +82,8 @@ export class GameModel {
     };
     this.modifiers = { ...config.modifiers };
     this.campaignSeed = config.campaignSeed;
-    this.hullMax = Math.min(5, 3 + this.modifiers.hullBonus);
+    this.sortieModule = config.sortieModule;
+    this.hullMax = Math.min(6, 3 + this.modifiers.hullBonus + (this.modifiers.fortressFrame ? 1 : 0));
     this.hull = this.hullMax;
     this.shieldBaseMax = Math.max(1, Math.min(3, config.shieldBaseMax));
     this.shieldMax = this.shieldBaseMax;
@@ -88,7 +94,7 @@ export class GameModel {
     this.kills = 0;
     this.creditsEarned = 0;
     this.empMax = 2 + this.modifiers.empCapacityBonus;
-    this.empCharges = 1;
+    this.empCharges = Math.min(this.empMax, 1 + (config.sortieModule === 'reserve-emp' ? 1 : 0));
     this.shotsFired = 0;
     this.shotsHit = 0;
     this.damageTaken = 0;
@@ -97,7 +103,6 @@ export class GameModel {
     this.bossActive = false;
     this.bossName = '';
     this.bossHealthRatio = 1;
-    this.lastDamageAt = Number.NEGATIVE_INFINITY;
     this.invulnerableUntil = 0;
     this.comboUntil = 0;
     this.comboKills = 0;
@@ -109,9 +114,14 @@ export class GameModel {
     this.reserveShieldAvailable = this.modifiers.reserveShield;
     this.secondWindAvailable = this.modifiers.secondWind;
     this.emergencyCapacitorTriggers = 0;
+    this.nextShieldRechargeAt = Number.POSITIVE_INFINITY;
+    this.lastHullDamageAt = Number.NEGATIVE_INFINITY;
+    this.naniteLatticeAvailable = this.modifiers.naniteLattice;
+    this.sortieNanitesAvailable = config.sortieModule === 'emergency-nanites';
+    this.fortressRamAvailable = this.modifiers.fortressFrame;
   }
 
-  tick(deltaMs: number): boolean {
+  tick(deltaMs: number): false | 'shield' | 'hull' {
     if (this.mode !== 'playing') return false;
     this.stageElapsedMs += deltaMs;
     if (this.multiplier > 1 && this.stageElapsedMs >= this.comboUntil) {
@@ -119,16 +129,32 @@ export class GameModel {
       this.comboKills = 0;
     }
 
-    if (this.shield < this.shieldMax && this.stageElapsedMs - this.lastDamageAt >= this.modifiers.shieldRechargeMs) {
-      this.shield = this.shieldMax;
-      return true;
+    if (this.shield < this.shieldMax && this.stageElapsedMs >= this.nextShieldRechargeAt) {
+      if (this.modifiers.aegisHarmonics) {
+        this.shield += 1;
+        this.nextShieldRechargeAt = this.shield < this.shieldMax ? this.stageElapsedMs + 4_500 : Number.POSITIVE_INFINITY;
+      } else {
+        this.shield = this.shieldMax;
+        this.nextShieldRechargeAt = Number.POSITIVE_INFINITY;
+      }
+      return 'shield';
+    }
+    if (this.naniteLatticeAvailable && this.hull < this.hullMax && this.stageElapsedMs - this.lastHullDamageAt >= 35_000) {
+      this.hull += 1;
+      this.naniteLatticeAvailable = false;
+      return 'hull';
     }
     return false;
   }
 
-  takeDamage(): DamageResult {
+  takeDamage(source: 'projectile' | 'ram' | 'hazard' = 'projectile'): DamageResult {
     if (this.mode !== 'playing' || this.stageElapsedMs < this.invulnerableUntil) return 'ignored';
-    this.lastDamageAt = this.stageElapsedMs;
+    if (source === 'ram' && this.shield <= 0 && this.fortressRamAvailable) {
+      this.fortressRamAvailable = false;
+      this.invulnerableUntil = this.stageElapsedMs + 750;
+      return 'fortress';
+    }
+    this.nextShieldRechargeAt = this.stageElapsedMs + (this.modifiers.aegisHarmonics ? 4_500 : this.modifiers.shieldRechargeMs);
     this.damageTaken += 1;
     if (this.shield > 0) {
       this.shield -= 1;
@@ -142,6 +168,7 @@ export class GameModel {
     }
 
     this.hull -= 1;
+    this.lastHullDamageAt = this.stageElapsedMs;
     this.invulnerableUntil = this.stageElapsedMs + this.modifiers.hullInvulnerabilityMs;
     if (this.modifiers.emergencyCapacitor && this.emergencyCapacitorTriggers < 2) {
       this.emergencyCapacitorTriggers += 1;
@@ -153,6 +180,12 @@ export class GameModel {
       this.shield = this.shieldMax;
       this.invulnerableUntil = Math.max(this.invulnerableUntil, this.stageElapsedMs + 1_200);
       return 'secondWind';
+    }
+    if (this.hull === 1 && this.sortieNanitesAvailable) {
+      this.sortieNanitesAvailable = false;
+      this.hull = Math.min(this.hullMax, this.hull + 1);
+      this.invulnerableUntil = Math.max(this.invulnerableUntil, this.stageElapsedMs + 1_200);
+      return 'nanites';
     }
     if (this.hull <= 0 && this.phoenixAvailable) {
       this.phoenixAvailable = false;
@@ -188,35 +221,35 @@ export class GameModel {
     return { upgraded: true, level: this.weapons[type] };
   }
 
-  collectUtility(type: UtilityPickupType): { applied: boolean; scoreAwarded: number } {
+  collectUtility(type: UtilityPickupType): { applied: boolean; scoreAwarded: number; creditsAwarded: number } {
     if (type === 'repair') {
       if (this.hull >= this.hullMax) {
         this.addFlatScore(500);
-        return { applied: false, scoreAwarded: 500 };
+        return this.routeExcessUtility();
       }
       this.hull += 1;
-      return { applied: true, scoreAwarded: 0 };
+      return { applied: true, scoreAwarded: 0, creditsAwarded: 0 };
     }
     if (type === 'overdrive') {
       const duration = 10_000 * this.modifiers.utilityDurationMultiplier;
       const cap = 20_000 * this.modifiers.utilityDurationMultiplier;
       const remaining = Math.max(0, this.overdriveUntil - this.stageElapsedMs);
       this.overdriveUntil = this.stageElapsedMs + Math.min(cap, remaining + duration);
-      return { applied: true, scoreAwarded: 0 };
+      return { applied: true, scoreAwarded: 0, creditsAwarded: 0 };
     }
     if (type === 'tractor') {
       this.tractorUntil = this.stageElapsedMs + 12_000 * this.modifiers.utilityDurationMultiplier;
-      return { applied: true, scoreAwarded: 0 };
+      return { applied: true, scoreAwarded: 0, creditsAwarded: 0 };
     }
     if (this.empCharges < this.empMax) {
       this.empCharges += 1;
-      return { applied: true, scoreAwarded: 0 };
+      return { applied: true, scoreAwarded: 0, creditsAwarded: 0 };
     }
     if (this.modifiers.utilityDurationMultiplier > 1) {
       this.addFlatScore(500);
-      return { applied: false, scoreAwarded: 500 };
+      return this.routeExcessUtility();
     }
-    return { applied: false, scoreAwarded: 0 };
+    return this.modifiers.salvageRouter ? this.routeExcessUtility() : { applied: false, scoreAwarded: 0, creditsAwarded: 0 };
   }
 
   activateEmp(): boolean {
@@ -234,19 +267,20 @@ export class GameModel {
     this.shotsHit += 1;
   }
 
-  registerKill(baseScore: number, baseCredits: number): KillResult {
+  registerKill(baseScore: number, baseCredits: number, specialist = false): KillResult {
     this.kills += 1;
     this.comboKills += 1;
     this.multiplier = Math.min(this.modifiers.comboMax, 1 + Math.floor(this.comboKills / 5));
     this.comboUntil = this.stageElapsedMs + this.modifiers.comboWindowMs;
-    const points = Math.round(baseScore * this.multiplier * this.difficultyScoreScale());
+    const points = Math.round(baseScore * this.multiplier * this.difficultyScoreScale() * (specialist && this.modifiers.threatAnalyzer ? 1.1 : 1));
     const credits = Math.round(baseCredits * this.modifiers.creditMultiplier);
     this.creditsEarned += credits;
     this.addFlatScore(points);
 
     const overdriveTriggered = this.modifiers.overdriveReactor && this.comboKills === 10;
     if (overdriveTriggered) this.reactorUntil = this.stageElapsedMs + 6_000;
-    const fabricatedPickup = this.modifiers.fieldFabricator && this.kills % 30 === 0
+    const fabricationInterval = this.modifiers.fabricationMatrix ? 24 : 30;
+    const fabricatedPickup = (this.modifiers.fieldFabricator || this.modifiers.fabricationMatrix) && this.kills % fabricationInterval === 0
       ? this.hull < this.hullMax ? 'repair' : 'overdrive'
       : undefined;
     return { points, credits, overdriveTriggered, fabricatedPickup };
@@ -255,6 +289,13 @@ export class GameModel {
   addFlatScore(points: number): void {
     this.score += points;
     this.highScore = Math.max(this.highScore, this.score);
+  }
+
+  private routeExcessUtility(): { applied: boolean; scoreAwarded: number; creditsAwarded: number } {
+    this.addFlatScore(500);
+    const creditsAwarded = this.modifiers.salvageRouter ? 2 : 0;
+    this.creditsEarned += creditsAwarded;
+    return { applied: false, scoreAwarded: 500, creditsAwarded };
   }
 
   setPaused(paused: boolean): void {
@@ -270,7 +311,6 @@ export class GameModel {
 
   restoreShield(): void {
     this.shield = this.shieldMax;
-    this.lastDamageAt = Number.NEGATIVE_INFINITY;
   }
 
   complete(finalVictory = false): void {
@@ -311,9 +351,7 @@ export class GameModel {
   }
 
   snapshot(): GameSnapshot {
-    const remaining = this.shield >= this.shieldMax
-      ? 0
-      : Math.max(0, this.modifiers.shieldRechargeMs - (this.stageElapsedMs - this.lastDamageAt));
+    const remaining = this.shield >= this.shieldMax ? 0 : Math.max(0, this.nextShieldRechargeAt - this.stageElapsedMs);
     return {
       mode: this.mode,
       difficulty: this.difficulty,

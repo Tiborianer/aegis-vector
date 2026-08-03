@@ -32,7 +32,7 @@ describe('GameModel', () => {
     model.upgrade('shield');
     model.takeDamage();
     expect(model.tick(5_499)).toBe(false);
-    expect(model.tick(1)).toBe(true);
+    expect(model.tick(1)).toBe('shield');
     expect(model.shield).toBe(model.shieldMax);
   });
 
@@ -145,5 +145,49 @@ describe('GameModel', () => {
     model.tick(18_001);
     expect(model.tractorRadius).toBe(0);
     expect(model.snapshot().overdriveRemainingMs).toBe(0);
+  });
+
+  it('applies sortie modules and restores them through a retry-compatible start config', () => {
+    const model = new GameModel();
+    model.start({ ...startConfig(), sortieModule: 'reserve-emp' });
+    expect(model.empCharges).toBe(2);
+    model.activateEmp();
+    model.start({ ...startConfig(), sortieModule: 'reserve-emp' });
+    expect(model.empCharges).toBe(2);
+  });
+
+  it('recharges shield pips separately with Aegis Harmonics', () => {
+    const model = new GameModel();
+    model.start(startConfig(['aegis-bank', 'quick-charge-loop', 'repulsor-shield', 'kinetic-reversal', 'aegis-harmonics']));
+    model.upgrade('shield');
+    model.upgrade('shield');
+    model.takeDamage();
+    model.tick(800);
+    model.takeDamage();
+    expect(model.shield).toBe(1);
+    expect(model.tick(4_499)).toBe(false);
+    expect(model.tick(1)).toBe('shield');
+    expect(model.shield).toBe(2);
+  });
+
+  it('restores one hull through Nanite Lattice after a safe interval', () => {
+    const model = new GameModel();
+    model.start(startConfig(['reinforced-frame', 'reactive-armor', 'repulsor-shield', 'kinetic-reversal', 'nanite-lattice']));
+    model.takeDamage();
+    model.tick(1_300);
+    model.takeDamage();
+    expect(model.hull).toBe(3);
+    expect(model.tick(34_999)).toBe('shield');
+    expect(model.tick(1)).toBe('hull');
+    expect(model.hull).toBe(4);
+  });
+
+  it('ignores the first unshielded ram through Fortress Frame', () => {
+    const model = new GameModel();
+    model.start(startConfig(['reinforced-frame', 'reactive-armor', 'repulsor-shield', 'kinetic-reversal', 'nanite-lattice', 'fortress-frame']));
+    model.takeDamage();
+    model.tick(800);
+    expect(model.takeDamage('ram')).toBe('fortress');
+    expect(model.hull).toBe(model.hullMax);
   });
 });

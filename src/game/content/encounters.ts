@@ -22,19 +22,28 @@ export const MISSION_DIFFICULTY: Record<Difficulty, Record<MissionId, MissionDif
     coastal: { healthScale: 0.86, pressureScale: 0.95 },
     minefield: { healthScale: 1.08, pressureScale: 1 },
     fortress: { healthScale: 1.3, pressureScale: 1.05 },
-    dreadnought: { healthScale: 1.48, pressureScale: 1.1 },
+    stormbreak: { healthScale: 1.4, pressureScale: 1.05 },
+    graveyard: { healthScale: 1.4, pressureScale: 1.05 },
+    carrierSiege: { healthScale: 1.58, pressureScale: 1.08 },
+    dreadnought: { healthScale: 1.75, pressureScale: 1.12 },
   },
   pilot: {
     coastal: { healthScale: 0.9, pressureScale: 0.95 },
     minefield: { healthScale: 1.18, pressureScale: 1.03 },
     fortress: { healthScale: 1.45, pressureScale: 1.08 },
-    dreadnought: { healthScale: 1.68, pressureScale: 1.12 },
+    stormbreak: { healthScale: 1.62, pressureScale: 1.1 },
+    graveyard: { healthScale: 1.62, pressureScale: 1.1 },
+    carrierSiege: { healthScale: 1.82, pressureScale: 1.13 },
+    dreadnought: { healthScale: 2.05, pressureScale: 1.17 },
   },
   ace: {
     coastal: { healthScale: 1, pressureScale: 1 },
     minefield: { healthScale: 1.32, pressureScale: 1.08 },
     fortress: { healthScale: 1.65, pressureScale: 1.16 },
-    dreadnought: { healthScale: 1.92, pressureScale: 1.22 },
+    stormbreak: { healthScale: 1.85, pressureScale: 1.18 },
+    graveyard: { healthScale: 1.85, pressureScale: 1.18 },
+    carrierSiege: { healthScale: 2.12, pressureScale: 1.22 },
+    dreadnought: { healthScale: 2.4, pressureScale: 1.28 },
   },
 };
 
@@ -54,6 +63,9 @@ const CARRIER_MILESTONES: Record<MissionId, readonly number[]> = {
   coastal: [0.2, 0.52, 0.84],
   minefield: [0.18, 0.42, 0.65],
   fortress: [0.15, 0.33, 0.51, 0.69],
+  stormbreak: [0.18, 0.48, 0.78],
+  graveyard: [0.18, 0.48, 0.78],
+  carrierSiege: [0.14, 0.36, 0.58, 0.76],
   dreadnought: [],
 };
 
@@ -61,7 +73,10 @@ const CARRIER_OFFSETS: Record<MissionId, number> = {
   coastal: 0,
   minefield: 3,
   fortress: 7,
-  dreadnought: 12,
+  stormbreak: 12,
+  graveyard: 15,
+  carrierSiege: 18,
+  dreadnought: 22,
 };
 
 export function getThreatLevel(progress: number): ThreatLevel {
@@ -103,7 +118,11 @@ export function globalCarrierIndex(missionId: MissionId, localIndex: number): nu
 export function carrierKind(missionId: MissionId, localIndex: number): EnemyKind {
   if (missionId === 'coastal') return localIndex === 0 ? 'bomber' : localIndex === 1 ? 'charger' : 'elite';
   if (missionId === 'minefield') return localIndex === 0 ? 'mineLayer' : localIndex === 1 ? 'shieldCarrier' : 'elite';
-  return localIndex % 2 === 0 ? 'elite' : 'shieldCarrier';
+  if (missionId === 'fortress') return localIndex % 2 === 0 ? 'elite' : 'shieldCarrier';
+  if (missionId === 'stormbreak') return localIndex === 0 ? 'phantom' : localIndex === 1 ? 'artillery' : 'elite';
+  if (missionId === 'graveyard') return localIndex === 0 ? 'reclaimer' : localIndex === 1 ? 'bulwark' : 'elite';
+  if (missionId === 'carrierSiege') return localIndex % 2 === 0 ? 'artillery' : 'phantom';
+  return 'elite';
 }
 
 export function seededRandom(seed: number): () => number {

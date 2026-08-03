@@ -74,7 +74,7 @@ describe('CampaignModel', () => {
   it('migrates version one campaigns to five-level weapons and ION', () => {
     const legacy = fundedCampaign();
     const campaign = new CampaignModel(legacy);
-    expect(campaign.snapshot().version).toBe(2);
+    expect(campaign.snapshot().version).toBe(3);
     expect(campaign.snapshot().weapons.ion).toBe(0);
     expect(campaign.snapshot().campaignSeed).toBeTypeOf('number');
   });
@@ -86,5 +86,50 @@ describe('CampaignModel', () => {
     campaign.purchase('hunter-logic');
     campaign.purchase('phase-arsenal');
     expect(campaign.purchase('prismatic-core').ok).toBe(true);
+  });
+
+  it('branches after Fortress Approach and converges on Carrier Siege', () => {
+    const fortress = fundedCampaign();
+    fortress.version = 3;
+    fortress.currentMissionId = 'fortress';
+    fortress.missionIndex = 2;
+    const campaign = new CampaignModel(fortress);
+    const battle = new GameModel();
+    battle.start(campaign.beginMission());
+    battle.complete();
+    expect(campaign.completeMission(battle.snapshot()).phase).toBe('route');
+    expect(campaign.selectRoute('storm')).toBe(true);
+    expect(campaign.currentMission().id).toBe('stormbreak');
+
+    const routeBattle = new GameModel();
+    routeBattle.start(campaign.beginMission());
+    routeBattle.complete();
+    expect(campaign.completeMission(routeBattle.snapshot()).currentMissionId).toBe('carrierSiege');
+  });
+
+  it('keeps a sortie module on failure and consumes it on success', () => {
+    const campaign = new CampaignModel(fundedCampaign());
+    expect(campaign.purchaseSortieModule('reserve-emp').ok).toBe(true);
+    expect(campaign.beginMission().sortieModule).toBe('reserve-emp');
+    campaign.failMission();
+    expect(campaign.snapshot().sortieModule).toBe('reserve-emp');
+
+    const battle = new GameModel();
+    battle.start(campaign.beginMission());
+    battle.complete();
+    campaign.completeMission(battle.snapshot());
+    expect(campaign.snapshot().sortieModule).toBeUndefined();
+  });
+
+  it('requires tiers five and six in order and still locks siblings', () => {
+    const state = fundedCampaign();
+    state.credits = 2_000;
+    const campaign = new CampaignModel(state);
+    for (const id of ['rapid-cycling', 'split-capacitors', 'overdrive-reactor', 'ordnance-cascade'] as const) {
+      expect(campaign.purchase(id).ok).toBe(true);
+    }
+    expect(campaign.purchase('swarm-doctrine').ok).toBe(true);
+    expect(campaign.purchase('resonance-matrix')).toEqual({ ok: false, reason: 'locked' });
+    expect(campaign.purchase('helios-battery').ok).toBe(true);
   });
 });
