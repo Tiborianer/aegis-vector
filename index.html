@@ -51,6 +51,39 @@
           </div>
           <button id="pause-button" class="icon-button" aria-label="Pause game">Ⅱ</button>
           <div id="announcement" class="announcement" aria-live="polite"></div>
+          <div id="radio-subtitle" class="radio-subtitle hidden" aria-live="assertive">
+            <span id="radio-speaker">ECHO-7</span><p id="radio-text"></p>
+          </div>
+        </section>
+
+        <section id="intro-screen" class="overlay cinematic-overlay hidden" aria-label="Opening cinematic">
+          <div class="cinematic-stage">
+            <img id="intro-image" src="cinematics/keyframes/scene-01-start.webp" alt="The moonlit Pelagos Array before the Project CROWN attack" />
+            <video id="intro-video" class="hidden" playsinline muted preload="metadata" poster="cinematics/keyframes/scene-01-start.webp" aria-label="Aegis Vector opening cinematic"></video>
+            <div class="cinematic-vignette" aria-hidden="true"></div>
+            <div id="intro-title" class="cinematic-title hidden" aria-live="polite">
+              <i aria-hidden="true">✦</i><h2><span>AEGIS</span> VECTOR</h2><p>Six vectors. One last line.</p>
+            </div>
+            <div class="cinematic-meta"><span>PROJECT CROWN // ARCHIVE 00</span><b id="intro-time">00:00 / 00:30</b></div>
+            <button id="intro-skip-button" class="cinematic-skip">SKIP INTRO <span>→</span></button>
+          </div>
+        </section>
+
+        <section id="story-screen" class="overlay story-overlay hidden" aria-labelledby="story-title">
+          <div class="story-stage">
+            <header><span id="story-kicker">PELAGOS ARCHIVE // CHAPTER</span><h2 id="story-title">THE FIRST SIGNAL</h2><b id="story-progress">01 / 03</b></header>
+            <figure id="story-frame" data-transition="dissolve">
+              <img id="story-image" alt="" />
+              <div class="story-shade" aria-hidden="true"></div>
+              <figcaption><span id="story-speaker">MARA</span><p id="story-caption"></p></figcaption>
+            </figure>
+            <footer>
+              <button id="story-back-button" class="secondary-button">← BACK</button>
+              <button id="story-pause-button" class="secondary-button">PAUSE</button>
+              <button id="story-skip-button" class="text-button">SKIP CHAPTER</button>
+              <button id="story-next-button" class="primary-button">NEXT <span>→</span></button>
+            </footer>
+          </div>
         </section>
 
         <section id="start-screen" class="overlay active" aria-labelledby="game-title">
@@ -166,6 +199,7 @@
               <button class="selected" data-manual-tab="weapons">WEAPONS</button>
               <button data-manual-tab="enemies">ENEMY INTEL</button>
               <button data-manual-tab="systems">SYSTEMS</button>
+              <button data-manual-tab="archive">ARCHIVE</button>
             </nav>
             <div id="manual-content" class="manual-content"></div>
           </div>
@@ -175,6 +209,8 @@
         <section id="audio-panel" class="audio-panel hidden" aria-label="Audio settings">
           <label><span>MUSIC</span><input id="music-volume" type="range" min="0" max="100" step="1" /></label>
           <label><span>SFX</span><input id="sfx-volume" type="range" min="0" max="100" step="1" /></label>
+          <label><span>VOICE</span><input id="voice-volume" type="range" min="0" max="100" step="1" /></label>
+          <label class="subtitle-toggle"><span>RADIO TEXT</span><input id="radio-subtitles" type="checkbox" /></label>
           <div class="audio-footer"><span id="audio-status">AUDIO LOCKED</span><button id="reset-mix-button" type="button">RESET MIX</button></div>
           <small id="audio-error" class="audio-error hidden">MUSIC UNAVAILABLE</small>
         </section>

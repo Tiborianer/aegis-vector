@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { SoundCue } from '../../audio/SoundEngine';
+import type { RadioCue, SoundCue } from '../../audio/SoundEngine';
 import { ASSET_KEYS } from '../../game/assets/manifest';
 import {
   DIFFICULTY,
@@ -150,6 +150,7 @@ export class BattleScene extends Phaser.Scene {
   private bulwarkIntroduced = false;
   private lastUtility?: UtilityPickupType;
   private armamentOfferHistory: Array<readonly [UpgradeType, UpgradeType]> = [];
+  private hullCriticalAnnounced = false;
 
   private readonly startHandler = (raw: Event): void => {
     this.startMission((raw as CustomEvent<MissionStartConfig>).detail);
@@ -209,11 +210,13 @@ export class BattleScene extends Phaser.Scene {
       this.shieldPulse(0x35e8ff, 1.2);
       this.emitSound('shield-ready');
       this.announce('SHIELD ENERGY RESTORED');
+      this.emitRadio('shield-restored');
       if (this.model.modifiers.guardianPulse) this.clearEnemyBullets(this.player.x, this.player.y, 90);
     } else if (restoration === 'hull') {
       this.emitSound('pickup');
       this.announce('NANITE LATTICE // HULL RESTORED');
     }
+    if (this.model.hull > 1) this.hullCriticalAnnounced = false;
 
     this.updatePlayer(time, delta);
     this.hitboxGraphics?.clear();
@@ -421,6 +424,7 @@ export class BattleScene extends Phaser.Scene {
     this.bulwarkIntroduced = false;
     this.lastUtility = undefined;
     this.armamentOfferHistory = [];
+    this.hullCriticalAnnounced = false;
     this.model.start(config);
     this.encounterDirector = new EncounterDirector(config.campaignSeed, config.difficulty, config.mission.id);
 
@@ -530,7 +534,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.model.modifiers.splitCapacitors) this.spawnPlayerBullet(this.player.x + 8, this.player.y - 40, ASSET_KEYS.playerBullet, 0, heliosVolley ? 1.5 : 1, heliosVolley, 'spread');
       const levelFiveRate = spreadLevel >= 5 ? 0.9 : 1;
       this.nextPrimaryAt = time + Math.max(62, (154 - spreadLevel * 12) * intervalScale * levelFiveRate);
-      this.emitSound('fire');
+      this.emitSound('arc-fire');
     }
 
     const droneLevel = this.model.weapons.drone;
@@ -546,6 +550,7 @@ export class BattleScene extends Phaser.Scene {
       }
       const levelRate = droneLevel >= 5 ? 0.72 : droneLevel >= 3 ? 0.82 : 1;
       this.nextDroneAt = time + 300 * intervalScale * levelRate * (this.model.modifiers.hunterLogic ? 0.8 : 1);
+      this.emitSound('wing-fire');
     }
 
     const missileLevel = this.model.weapons.missile;
@@ -557,7 +562,7 @@ export class BattleScene extends Phaser.Scene {
         this.spawnPlayerBullet(this.player.x + offset, this.player.y - 18, ASSET_KEYS.missile, offset * 0.0015, (3 + missileLevel) * hunterDamage, false, 'missile');
       }
       this.nextMissileAt = time + Math.max(360, (1_060 - missileLevel * 120) * intervalScale);
-      this.emitSound('missile');
+      this.emitSound('nova-fire');
     }
 
     const laserLevel = this.model.weapons.laser;
@@ -570,7 +575,7 @@ export class BattleScene extends Phaser.Scene {
       }
       const highLevelRate = laserLevel >= 4 ? 0.8 : 1;
       this.nextLaserAt = time + Math.max(520, (1_720 - laserLevel * 190) * intervalScale * highLevelRate);
-      this.emitSound('laser');
+      this.emitSound('lance-fire');
     }
 
     if (this.model.weapons.ion > 0 && time >= this.nextIonAt) this.fireIon(time);
@@ -617,7 +622,8 @@ export class BattleScene extends Phaser.Scene {
       if (this.model.modifiers.gravityPayload) this.pullRegularEnemies(final.x, final.y, 120);
     }
     this.nextIonAt = time + Math.max(720, 1_650 - level * 150) * this.model.fireIntervalMultiplier;
-    this.emitSound('laser');
+    this.emitSound('ion-fire');
+    this.emitSound('ion-impact', hit[0].x);
   }
 
   private ionArc(x1: number, y1: number, x2: number, y2: number): void {
@@ -1814,6 +1820,10 @@ export class BattleScene extends Phaser.Scene {
       if (this.model.modifiers.gravityPayload) this.pullRegularEnemies(impactX, impactY, Math.max(100, splashRadius + 35));
     }
     const weaponKind = bullet.getData('weaponKind') as WeaponType | undefined;
+    const impactCue: Partial<Record<WeaponType, SoundCue>> = {
+      spread: 'arc-impact', missile: 'nova-impact', laser: 'lance-impact', drone: 'wing-impact', ion: 'ion-impact',
+    };
+    if (weaponKind && impactCue[weaponKind]) this.emitSound(impactCue[weaponKind]!, impactX);
     if (this.model.modifiers.resonanceMatrix && (weaponKind === 'spread' || weaponKind === 'laser')) {
       this.resonanceHits += 1;
       if (this.resonanceHits % 10 === 0) {
@@ -2062,6 +2072,7 @@ export class BattleScene extends Phaser.Scene {
   private collectPickup(type: PickupType): void {
     if (this.model.mode !== 'playing') return;
     if (isUtilityPickup(type)) {
+      const previousEmp = this.model.empCharges;
       const result = this.model.collectUtility(type);
       const labels: Record<UtilityPickupType, string> = {
         repair: result.applied ? 'REPAIR NANITES // HULL RESTORED' : 'HULL FULL // +500',
@@ -2070,11 +2081,18 @@ export class BattleScene extends Phaser.Scene {
         emp: result.applied ? 'EMP CELL // CHARGE ACQUIRED' : result.scoreAwarded ? 'EMP CAPACITY // +500' : 'EMP CAPACITY FULL',
       };
       this.announce(labels[type]);
+      if (type === 'emp' && previousEmp === 0 && this.model.empCharges > 0) this.emitRadio('emp-ready');
       this.particles.setParticleTint(type === 'repair' ? 0xff667c : type === 'overdrive' ? 0xffb640 : type === 'tractor' ? 0x65ffb1 : 0x8b7dff);
     } else {
       const result = this.model.upgrade(type as UpgradeType);
       const label = type === 'shield' ? 'AEGIS CAPACITY' : WEAPON_LABELS[type as WeaponType].name.toUpperCase();
       this.announce(result.upgraded ? `${label} // LEVEL ${result.level}` : `${label} MAX // BONUS`);
+      if (result.upgraded) {
+        const radioByUpgrade: Record<UpgradeType, RadioCue> = {
+          spread: 'arc-upgraded', missile: 'nova-upgraded', laser: 'lance-upgraded', drone: 'wing-upgraded', ion: 'ion-upgraded', shield: 'aegis-upgraded',
+        };
+        this.emitRadio(radioByUpgrade[type as UpgradeType]);
+      }
       this.particles.setParticleTint(type === 'shield' ? 0x63a8ff : WEAPON_LABELS[type as WeaponType].color);
     }
     this.emitSound('pickup');
@@ -2172,6 +2190,7 @@ export class BattleScene extends Phaser.Scene {
 
   private damagePlayer(forced = false, source: 'projectile' | 'ram' | 'hazard' = 'projectile'): void {
     if (this.godMode && !forced) return;
+    const previousShield = this.model.shield;
     const result = this.model.takeDamage(source);
     if (result === 'ignored') return;
     if (result === 'shield' || result === 'reserve') {
@@ -2179,6 +2198,7 @@ export class BattleScene extends Phaser.Scene {
       this.emitSound('shield-hit');
       if (this.model.modifiers.repulsorShield) this.clearEnemyBullets(this.player.x, this.player.y, 130);
       if (result === 'reserve') this.announce('AEGIS RESERVE // SHIELD RESTORED');
+      if (previousShield > 0 && this.model.shield === 0) this.emitRadio('shield-down');
     } else {
       this.cameras.main.shake(result === 'destroyed' ? 650 : 260, result === 'destroyed' ? 0.02 : 0.009);
       this.particles.setParticleTint(result === 'phoenix' ? 0xffb640 : 0xff667c);
@@ -2193,6 +2213,10 @@ export class BattleScene extends Phaser.Scene {
       if (result === 'fortress') {
         this.clearEnemyBullets(this.player.x, this.player.y, 90);
         this.announce('FORTRESS FRAME // IMPACT DEFLECTED');
+      }
+      if (this.model.hull === 1 && !this.hullCriticalAnnounced) {
+        this.hullCriticalAnnounced = true;
+        this.emitRadio('hull-critical');
       }
     }
 
@@ -2301,8 +2325,12 @@ export class BattleScene extends Phaser.Scene {
     event('aegis:announce', message);
   }
 
-  private emitSound(cue: SoundCue): void {
-    event('aegis:sound', cue);
+  private emitSound(cue: SoundCue, x?: number): void {
+    event('aegis:sound', x === undefined ? cue : { cue, pan: Phaser.Math.Clamp((x / WORLD_WIDTH) * 2 - 1, -1, 1) });
+  }
+
+  private emitRadio(cue: RadioCue): void {
+    event('aegis:radio', cue);
   }
 
   private removeEscapedEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {

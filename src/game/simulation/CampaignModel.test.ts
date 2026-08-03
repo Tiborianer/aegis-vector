@@ -45,7 +45,10 @@ describe('CampaignModel', () => {
     battle.registerKill(100, 5);
     battle.upgrade('missile');
     battle.complete();
-    const state = campaign.completeMission(battle.snapshot());
+    const storyState = campaign.completeMission(battle.snapshot());
+    expect(storyState.phase).toBe('story');
+    expect(storyState.pendingStoryChapter).toBe('first-signal');
+    const state = campaign.completeStoryChapter();
     expect(state.missionIndex).toBe(1);
     expect(state.credits).toBe(30);
     expect(state.weapons.missile).toBe(1);
@@ -74,7 +77,7 @@ describe('CampaignModel', () => {
   it('migrates version one campaigns to five-level weapons and ION', () => {
     const legacy = fundedCampaign();
     const campaign = new CampaignModel(legacy);
-    expect(campaign.snapshot().version).toBe(3);
+    expect(campaign.snapshot().version).toBe(4);
     expect(campaign.snapshot().weapons.ion).toBe(0);
     expect(campaign.snapshot().campaignSeed).toBeTypeOf('number');
   });
@@ -97,14 +100,16 @@ describe('CampaignModel', () => {
     const battle = new GameModel();
     battle.start(campaign.beginMission());
     battle.complete();
-    expect(campaign.completeMission(battle.snapshot()).phase).toBe('route');
+    expect(campaign.completeMission(battle.snapshot()).phase).toBe('story');
+    expect(campaign.completeStoryChapter().phase).toBe('route');
     expect(campaign.selectRoute('storm')).toBe(true);
     expect(campaign.currentMission().id).toBe('stormbreak');
 
     const routeBattle = new GameModel();
     routeBattle.start(campaign.beginMission());
     routeBattle.complete();
-    expect(campaign.completeMission(routeBattle.snapshot()).currentMissionId).toBe('carrierSiege');
+    expect(campaign.completeMission(routeBattle.snapshot()).pendingStoryChapter).toBe('stillwater-directive');
+    expect(campaign.completeStoryChapter().currentMissionId).toBe('carrierSiege');
   });
 
   it('keeps a sortie module on failure and consumes it on success', () => {
@@ -131,5 +136,22 @@ describe('CampaignModel', () => {
     expect(campaign.purchase('swarm-doctrine').ok).toBe(true);
     expect(campaign.purchase('resonance-matrix')).toEqual({ ok: false, reason: 'locked' });
     expect(campaign.purchase('helios-battery').ok).toBe(true);
+  });
+
+  it('preserves a pending chapter across saves and unlocks it before advancing', () => {
+    const campaign = new CampaignModel();
+    campaign.startNew('pilot');
+    const battle = new GameModel();
+    battle.start(campaign.beginMission());
+    battle.complete();
+    campaign.completeMission(battle.snapshot());
+
+    const restored = new CampaignModel(campaign.exportSave());
+    expect(restored.snapshot().phase).toBe('story');
+    expect(restored.snapshot().pendingStoryChapter).toBe('first-signal');
+    const advanced = restored.completeStoryChapter();
+    expect(advanced.phase).toBe('hangar');
+    expect(advanced.seenStoryChapters).toContain('first-signal');
+    expect(advanced.currentMissionId).toBe('minefield');
   });
 });

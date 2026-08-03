@@ -1,5 +1,6 @@
 import { getMissionById, MISSIONS, nextMissionId, routeMissionId } from '../content/missions';
 import { getSortieModule } from '../content/sortieModules';
+import { STORY_CHAPTER_IDS, storyChapterForMission } from '../content/story';
 import { buildCombatModifiers, getSibling, getUpgradeNode, UPGRADE_NODES } from '../content/upgrades';
 import type {
   CampaignRoute,
@@ -11,6 +12,7 @@ import type {
   MissionId,
   MissionStartConfig,
   SortieModuleId,
+  StoryChapterId,
   UpgradeNodeId,
   WeaponLevel,
   WeaponLevels,
@@ -33,7 +35,7 @@ export class CampaignModel {
 
   static fresh(difficulty: Difficulty): CampaignSnapshot {
     return {
-      version: 3,
+      version: 4,
       phase: 'briefing',
       difficulty,
       missionIndex: 0,
@@ -47,6 +49,7 @@ export class CampaignModel {
       respecAvailable: true,
       campaignSeed: CampaignModel.makeSeed(),
       discoveredEnemies: [],
+      seenStoryChapters: [],
     };
   }
 
@@ -68,7 +71,7 @@ export class CampaignModel {
   }
 
   purchaseSortieModule(id: SortieModuleId): PurchaseResult {
-    if (this.state.phase === 'mission' || this.state.phase === 'victory' || this.state.phase === 'route') return { ok: false, reason: 'unavailable' };
+    if (this.state.phase === 'mission' || this.state.phase === 'story' || this.state.phase === 'victory' || this.state.phase === 'route') return { ok: false, reason: 'unavailable' };
     if (this.state.sortieModule) return { ok: false, reason: 'equipped' };
     const module = getSortieModule(id);
     if (this.state.credits < module.cost) return { ok: false, reason: 'insufficient' };
@@ -83,7 +86,7 @@ export class CampaignModel {
   }
 
   beginMission(debugDurationMs?: number): MissionStartConfig {
-    if (this.state.phase === 'victory' || this.state.phase === 'route') throw new Error('The campaign cannot start this mission yet.');
+    if (this.state.phase === 'story' || this.state.phase === 'victory' || this.state.phase === 'route') throw new Error('The campaign cannot start this mission yet.');
     this.state.phase = 'mission';
     return {
       difficulty: this.state.difficulty,
@@ -128,12 +131,21 @@ export class CampaignModel {
       accuracy: shotsFired === 0 ? 0 : Math.min(100, Math.round((result.shotsHit / shotsFired) * 100)),
     };
 
-    const next = nextMissionId(mission.id, this.state.route);
-    if (next === 'victory') {
-      this.state.phase = 'victory';
-    } else if (next === 'route') {
-      this.state.phase = 'route';
-    } else {
+    this.state.pendingStoryChapter = storyChapterForMission(mission.id);
+    this.state.phase = 'story';
+    return this.snapshot();
+  }
+
+  completeStoryChapter(): CampaignSnapshot {
+    const pending = this.state.pendingStoryChapter;
+    if (this.state.phase !== 'story' || !pending) throw new Error('No story chapter is awaiting completion.');
+    const seen = this.state.seenStoryChapters ?? [];
+    if (!seen.includes(pending)) this.state.seenStoryChapters = [...seen, pending];
+    this.state.pendingStoryChapter = undefined;
+    const next = nextMissionId(this.currentMission().id, this.state.route);
+    if (next === 'victory') this.state.phase = 'victory';
+    else if (next === 'route') this.state.phase = 'route';
+    else {
       this.state.currentMissionId = next;
       this.state.missionIndex = MISSIONS.findIndex((candidate) => candidate.id === next);
       this.state.phase = 'hangar';
@@ -143,7 +155,7 @@ export class CampaignModel {
 
   canPurchase(id: UpgradeNodeId): PurchaseResult {
     const node = getUpgradeNode(id);
-    if (this.state.phase === 'mission' || this.state.phase === 'victory') return { ok: false, reason: 'unavailable' };
+    if (this.state.phase === 'mission' || this.state.phase === 'story' || this.state.phase === 'victory') return { ok: false, reason: 'unavailable' };
     if (this.state.purchased.includes(id)) return { ok: false, reason: 'owned' };
     if (this.state.purchased.includes(getSibling(node).id)) return { ok: false, reason: 'locked' };
     if (node.tier > 1) {
@@ -166,7 +178,7 @@ export class CampaignModel {
   }
 
   respec(): boolean {
-    if (!this.state.respecAvailable || this.state.phase === 'mission' || this.state.phase === 'victory') return false;
+    if (!this.state.respecAvailable || this.state.phase === 'mission' || this.state.phase === 'story' || this.state.phase === 'victory') return false;
     const refund = this.state.purchased.reduce((total, id) => total + getUpgradeNode(id).cost, 0);
     this.state.credits += refund;
     this.state.purchased = [];
@@ -180,6 +192,7 @@ export class CampaignModel {
       weapons: { ...this.state.weapons },
       purchased: [...this.state.purchased],
       discoveredEnemies: [...(this.state.discoveredEnemies ?? [])],
+      seenStoryChapters: [...(this.state.seenStoryChapters ?? [])],
       lastReport: this.state.lastReport ? { ...this.state.lastReport } : undefined,
     };
   }
@@ -195,14 +208,19 @@ export class CampaignModel {
     const validNodes = new Set(UPGRADE_NODES.map((node) => node.id));
     const purchased = Array.isArray(candidate.purchased) ? candidate.purchased.filter((id): id is UpgradeNodeId => validNodes.has(id)) : [];
     const legacyIndex = Math.max(0, Math.min(LEGACY_MISSIONS.length - 1, Math.floor(candidate.missionIndex ?? 0)));
-    const candidateMission = candidate.version === 3 ? candidate.currentMissionId : LEGACY_MISSIONS[legacyIndex];
+    const candidateMission = (candidate.version ?? 1) >= 3 ? candidate.currentMissionId : LEGACY_MISSIONS[legacyIndex];
     const currentMissionId = MISSIONS.some((mission) => mission.id === candidateMission) ? candidateMission! : 'coastal';
     const missionIndex = MISSIONS.findIndex((mission) => mission.id === currentMissionId);
-    const phase = candidate.phase === 'victory' ? 'victory'
-      : candidate.phase === 'route' ? 'route'
-        : candidate.phase === 'hangar' || currentMissionId !== 'coastal' ? 'hangar' : 'briefing';
+    const validStoryIds = new Set<StoryChapterId>(STORY_CHAPTER_IDS);
+    const pendingStoryChapter = validStoryIds.has(candidate.pendingStoryChapter as StoryChapterId)
+      ? candidate.pendingStoryChapter
+      : undefined;
+    const phase = pendingStoryChapter ? 'story'
+      : candidate.phase === 'victory' ? 'victory'
+        : candidate.phase === 'route' ? 'route'
+          : candidate.phase === 'hangar' || currentMissionId !== 'coastal' ? 'hangar' : 'briefing';
     return {
-      version: 3,
+      version: 4,
       phase,
       difficulty: validDifficulty,
       missionIndex,
@@ -225,6 +243,10 @@ export class CampaignModel {
       respecAvailable: candidate.respecAvailable !== false,
       campaignSeed: Number.isFinite(candidate.campaignSeed) ? Math.max(1, Math.floor(candidate.campaignSeed!)) : CampaignModel.makeSeed(),
       lastReport: candidate.lastReport,
+      pendingStoryChapter,
+      seenStoryChapters: Array.isArray(candidate.seenStoryChapters)
+        ? [...new Set(candidate.seenStoryChapters.filter((id): id is StoryChapterId => validStoryIds.has(id)))]
+        : [],
     };
   }
 

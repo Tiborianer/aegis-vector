@@ -31,7 +31,15 @@ Add `?debug=1` to the local URL to enable browser QA controls while preserving f
 - Every mission rises through five deterministic threat levels while attack warnings keep their full readable timing. Later operations add Phantom phase attackers, interruptible Artillery barrages, utility-stealing Reclaimers, and the multipart Bastion Carrier.
 - Failed missions restore the pre-mission checkpoint, preventing failed-attempt credit farming.
 - Campaign progress is saved locally between missions and restored after a refresh.
-- The built-in Flight Manual explains every weapon family, major system, and specialist counterplay.
+- Successful missions unlock a 20-panel, route-aware motion comic. The Flight Manual explains every weapon family and specialist counterplay, and its Archive replays recovered chapters and the opening.
+
+## Narrative and radio assets
+
+The game includes a complete 30-second opening keyframe animatic and all 20 motion-comic panels. The ten start/end keyframes and ready-to-paste image-to-video prompts are documented in `CINEMATIC_PROMPTS.md`. If supplied, `public/cinematics/video/aegis-vector-intro.webm` is used automatically, with `aegis-vector-intro.mp4` as the fallback; otherwise the built-in animatic plays.
+
+Radio subtitles work immediately. Optional ECHO-7 and Rook recordings can be added under `public/audio/voice/` using the filenames in that folder's README. Voice has its own saved volume control, and radio speech ducks the music without restarting it.
+
+ARC, NOVA, LANCE, WING, and ION currently use distinct, spatially panned layered Web Audio sounds with concurrency limits and mix protection. `SFX_GENERATION_PROMPTS.md` contains the ten dry sample briefs for a later recorded/generated asset pass.
 
 ## ElevenLabs music
 

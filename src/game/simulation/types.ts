@@ -23,7 +23,7 @@ export type EnemyKind =
 export type GameMode = 'briefing' | 'playing' | 'paused' | 'complete' | 'gameover' | 'victory';
 export type DamageResult = 'ignored' | 'shield' | 'reserve' | 'hull' | 'secondWind' | 'nanites' | 'fortress' | 'phoenix' | 'destroyed';
 export type MissionId = 'coastal' | 'minefield' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought';
-export type CampaignPhase = 'briefing' | 'mission' | 'hangar' | 'route' | 'victory';
+export type CampaignPhase = 'briefing' | 'mission' | 'story' | 'hangar' | 'route' | 'victory';
 export type CampaignRoute = 'storm' | 'salvage';
 export type SortieModuleId = 'reserve-emp' | 'armament-scanner' | 'emergency-nanites' | 'wingman-beacon';
 export type UpgradeBranch = 'weapons' | 'defense' | 'systems';
@@ -32,6 +32,16 @@ export type EnemyRank = 'standard' | 'veteran' | 'elite' | 'carrier';
 export type ArrivalMode = 'top' | 'sideBank' | 'depthRise' | 'horizonRise';
 export type GraphicsQuality = 'auto' | 'high' | 'balanced' | 'low';
 export type MissionVisualId = MissionId;
+export type StoryChapterId =
+  | 'first-signal'
+  | 'warden-key'
+  | 'forked-truth'
+  | 'stillwater-directive'
+  | 'project-crown'
+  | 'rook-confession'
+  | 'last-vector';
+export type StorySpeaker = 'Mara' | 'Rook' | 'ECHO-7' | 'Narrator';
+export type StoryTransition = 'dissolve' | 'comic-wipe' | 'flash' | 'push';
 export type MusicTrack =
   | 'menu'
   | 'hangar'
@@ -73,12 +83,32 @@ export interface AudioDebugState {
   source?: 'buffer' | 'debug-synth';
   musicGain: number;
   sfxGain: number;
+  voiceGain: number;
+  activeRadioCue?: string;
   positionSeconds: number;
   logicalStartCount: number;
   loopRegion?: { startSeconds: number; endSeconds: number };
   queuedSources: number;
   loopIteration: number;
   lastError?: string;
+}
+
+export interface StoryPanel {
+  id: string;
+  image: string;
+  alt: string;
+  speaker?: StorySpeaker;
+  caption: string;
+  durationMs: number;
+  transition: StoryTransition;
+}
+
+export interface StoryChapter {
+  id: StoryChapterId;
+  title: string;
+  afterMission: MissionId;
+  route?: CampaignRoute;
+  panels: readonly StoryPanel[];
 }
 
 export type UpgradeNodeId =
@@ -217,7 +247,7 @@ export interface MissionReport {
 }
 
 export interface CampaignSnapshot {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   phase: CampaignPhase;
   difficulty: Difficulty;
   missionIndex: number;
@@ -234,6 +264,8 @@ export interface CampaignSnapshot {
   respecAvailable: boolean;
   campaignSeed?: number;
   lastReport?: MissionReport;
+  pendingStoryChapter?: StoryChapterId;
+  seenStoryChapters?: StoryChapterId[];
 }
 
 export interface SortieModuleDefinition {

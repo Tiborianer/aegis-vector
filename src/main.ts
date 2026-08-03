@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import './styles.css';
-import { SoundEngine, type SoundCue } from './audio/SoundEngine';
+import { SoundEngine, type RadioCue, type SoundCue, type SoundRequest } from './audio/SoundEngine';
 import { UPGRADE_BRANCHES, UPGRADE_NODES } from './game/content/upgrades';
 import { SORTIE_MODULES } from './game/content/sortieModules';
 import { WEAPON_LABELS, WORLD_HEIGHT, WORLD_WIDTH } from './game/content/balance';
 import { chooseArmamentOffer } from './game/content/pickups';
 import { globalCarrierIndex } from './game/content/encounters';
 import { CampaignModel } from './game/simulation/CampaignModel';
+import { getStoryChapter, STORY_CHAPTERS } from './game/content/story';
 import type {
   CampaignSnapshot,
   Difficulty,
@@ -19,11 +20,19 @@ import type {
   UpgradeBranch,
   UpgradeNodeId,
   WeaponType,
+  StoryChapter,
+  StoryChapterId,
 } from './game/simulation/types';
 import { BootScene } from './phaser/scenes/BootScene';
 import { BattleScene } from './phaser/scenes/BattleScene';
 
 const CAMPAIGN_SAVE_KEY = 'aegis-vector-campaign-v1';
+const INTRO_SEEN_KEY = 'aegis-vector-intro-seen-v1';
+const STORY_ARCHIVE_KEY = 'aegis-vector-story-archive-v1';
+const INTRO_FRAMES = [
+  'scene-01-start', 'scene-01-end', 'scene-02-start', 'scene-02-end', 'scene-03-start',
+  'scene-03-end', 'scene-04-start', 'scene-04-end', 'scene-05-start', 'scene-05-end',
+].map((name) => `cinematics/keyframes/${name}.webp`);
 
 const required = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -75,6 +84,27 @@ const ui = {
   empCount: required<HTMLElement>('emp-count'),
   effectReadout: required<HTMLElement>('effect-readout'),
   announcement: required<HTMLElement>('announcement'),
+  radioSubtitle: required<HTMLElement>('radio-subtitle'),
+  radioSpeaker: required<HTMLElement>('radio-speaker'),
+  radioText: required<HTMLElement>('radio-text'),
+  intro: required<HTMLElement>('intro-screen'),
+  introImage: required<HTMLImageElement>('intro-image'),
+  introVideo: required<HTMLVideoElement>('intro-video'),
+  introTitle: required<HTMLElement>('intro-title'),
+  introTime: required<HTMLElement>('intro-time'),
+  introSkip: required<HTMLButtonElement>('intro-skip-button'),
+  story: required<HTMLElement>('story-screen'),
+  storyFrame: required<HTMLElement>('story-frame'),
+  storyKicker: required<HTMLElement>('story-kicker'),
+  storyTitle: required<HTMLElement>('story-title'),
+  storyProgress: required<HTMLElement>('story-progress'),
+  storyImage: required<HTMLImageElement>('story-image'),
+  storySpeaker: required<HTMLElement>('story-speaker'),
+  storyCaption: required<HTMLElement>('story-caption'),
+  storyBack: required<HTMLButtonElement>('story-back-button'),
+  storyPause: required<HTMLButtonElement>('story-pause-button'),
+  storySkip: required<HTMLButtonElement>('story-skip-button'),
+  storyNext: required<HTMLButtonElement>('story-next-button'),
   hangarKicker: required<HTMLElement>('hangar-kicker'),
   hangarCredits: required<HTMLElement>('hangar-credits'),
   reportScore: required<HTMLElement>('report-score'),
@@ -92,6 +122,8 @@ const ui = {
   manual: required<HTMLElement>('manual-screen'),
   manualContent: required<HTMLElement>('manual-content'),
   manualClose: required<HTMLButtonElement>('manual-close-button'),
+  voiceVolume: required<HTMLInputElement>('voice-volume'),
+  radioSubtitles: required<HTMLInputElement>('radio-subtitles'),
   resultKicker: required<HTMLElement>('result-kicker'),
   resultTitle: required<HTMLElement>('result-title'),
   resultScoreLabel: required<HTMLElement>('result-score-label'),
@@ -105,6 +137,16 @@ let ready = false;
 let announceTimer = 0;
 let resultIsVictory = false;
 let defeatStingIndex = 0;
+let storyChapter: StoryChapter | undefined;
+let storyPanelIndex = 0;
+let storyTimer = 0;
+let storyPaused = false;
+let storyReplay = false;
+let introTimer = 0;
+let introSequenceToken = 0;
+let introCompletion: (() => void) | undefined;
+let introVideoSourcePromise: Promise<string | undefined> | undefined;
+let replayReturnScreen: HTMLElement = ui.start;
 let savedCampaign = loadCampaign();
 let campaign = new CampaignModel(savedCampaign);
 const debugMode = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -123,6 +165,8 @@ ui.launch.textContent = 'INITIALIZING…';
 const initialAudio = audio.getSettings();
 ui.musicVolume.value = String(Math.round(initialAudio.music * 100));
 ui.sfxVolume.value = String(Math.round(initialAudio.sfx * 100));
+ui.voiceVolume.value = String(Math.round(initialAudio.voice * 100));
+ui.radioSubtitles.checked = initialAudio.radioSubtitles;
 
 document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -137,7 +181,8 @@ ui.launch.addEventListener('click', () => {
   preloadUpgradeIcons();
   campaign.startNew(difficulty);
   saveCampaign();
-  startCurrentMission();
+  if (hasSeenIntro()) startCurrentMission();
+  else showIntro(() => startCurrentMission());
 });
 
 ui.continue.addEventListener('click', () => {
@@ -145,7 +190,9 @@ ui.continue.addEventListener('click', () => {
   void audio.unlock();
   preloadUpgradeIcons();
   campaign = new CampaignModel(savedCampaign);
-  openHangar();
+  const state = campaign.snapshot();
+  if (state.phase === 'story' && state.pendingStoryChapter) openStory(state.pendingStoryChapter);
+  else openHangar();
 });
 
 ui.hangarLaunch.addEventListener('click', () => startCurrentMission());
@@ -207,16 +254,68 @@ ui.routePanel.addEventListener('click', (raw) => {
   }
 });
 
-const openManual = (): void => {
-  renderManual('weapons');
+const openManualAt = (tab: ManualTab): void => {
+  renderManual(tab);
   ui.manual.classList.remove('hidden');
 };
+const openManual = (): void => openManualAt('weapons');
 ['manual-button', 'hangar-manual-button', 'pause-manual-button'].forEach((id) => {
   required<HTMLButtonElement>(id).addEventListener('click', openManual);
 });
 ui.manualClose.addEventListener('click', () => ui.manual.classList.add('hidden'));
 document.querySelectorAll<HTMLButtonElement>('[data-manual-tab]').forEach((button) => {
   button.addEventListener('click', () => renderManual(button.dataset.manualTab as ManualTab));
+});
+ui.manualContent.addEventListener('click', (raw) => {
+  const introButton = (raw.target as HTMLElement).closest<HTMLElement>('[data-replay-intro]');
+  if (introButton) {
+    replayReturnScreen = visibleBaseScreen();
+    ui.manual.classList.add('hidden');
+    showIntro(() => {
+      replayReturnScreen.classList.remove('hidden');
+      openManualAt('archive');
+    }, true);
+    return;
+  }
+  const chapterButton = (raw.target as HTMLElement).closest<HTMLElement>('[data-story-id]');
+  if (!chapterButton || chapterButton.classList.contains('locked')) return;
+  replayReturnScreen = visibleBaseScreen();
+  ui.manual.classList.add('hidden');
+  openStory(chapterButton.dataset.storyId as StoryChapterId, true);
+});
+
+ui.storyBack.addEventListener('click', () => setStoryPanel(storyPanelIndex - 1));
+ui.storyNext.addEventListener('click', () => {
+  if (!storyChapter) return;
+  if (storyPanelIndex >= storyChapter.panels.length - 1) finishStory();
+  else setStoryPanel(storyPanelIndex + 1);
+});
+ui.storyPause.addEventListener('click', () => {
+  storyPaused = !storyPaused;
+  ui.storyPause.textContent = storyPaused ? 'RESUME' : 'PAUSE';
+  if (storyPaused) window.clearTimeout(storyTimer);
+  else scheduleStoryAdvance();
+});
+ui.storySkip.addEventListener('click', finishStory);
+ui.introSkip.addEventListener('click', finishIntro);
+
+document.addEventListener('keydown', (event) => {
+  if (!ui.intro.classList.contains('hidden') && event.key === 'Escape') {
+    event.preventDefault();
+    finishIntro();
+    return;
+  }
+  if (ui.story.classList.contains('hidden')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    finishStory();
+  } else if (event.key === 'ArrowLeft') {
+    event.preventDefault();
+    setStoryPanel(storyPanelIndex - 1);
+  } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    ui.storyNext.click();
+  }
 });
 
 ui.hangarAbandon.addEventListener('click', abandonCampaign);
@@ -231,10 +330,17 @@ ui.audioButton.addEventListener('click', () => {
 });
 ui.musicVolume.addEventListener('input', () => audio.setMusicVolume(Number(ui.musicVolume.value) / 100));
 ui.sfxVolume.addEventListener('input', () => audio.setSfxVolume(Number(ui.sfxVolume.value) / 100));
+ui.voiceVolume.addEventListener('input', () => audio.setVoiceVolume(Number(ui.voiceVolume.value) / 100));
+ui.radioSubtitles.addEventListener('change', () => {
+  audio.setRadioSubtitles(ui.radioSubtitles.checked);
+  if (!ui.radioSubtitles.checked) ui.radioSubtitle.classList.add('hidden');
+});
 ui.resetMix.addEventListener('click', () => {
   const mix = audio.resetMix();
   ui.musicVolume.value = String(Math.round(mix.music * 100));
   ui.sfxVolume.value = String(Math.round(mix.sfx * 100));
+  ui.voiceVolume.value = String(Math.round(mix.voice * 100));
+  ui.radioSubtitles.checked = mix.radioSubtitles;
 });
 
 required<HTMLElement>('game-shell').addEventListener('pointerdown', () => { void audio.unlock(); }, { capture: true });
@@ -288,7 +394,23 @@ if (debugMode) {
   });
 }
 
-window.addEventListener('aegis:sound', (raw) => audio.play((raw as CustomEvent<SoundCue>).detail));
+window.addEventListener('aegis:sound', (raw) => {
+  const detail = (raw as CustomEvent<SoundCue | SoundRequest>).detail;
+  if (typeof detail === 'string') audio.play(detail);
+  else audio.play(detail.cue, detail.pan ?? 0);
+});
+window.addEventListener('aegis:radio', (raw) => audio.playRadio((raw as CustomEvent<RadioCue>).detail));
+window.addEventListener('aegis:radio-state', (raw) => {
+  const state = (raw as CustomEvent<{ active: boolean; speaker?: string; subtitle?: string; subtitles?: boolean }>).detail;
+  if (!state.active || state.subtitles === false) {
+    ui.radioSubtitle.classList.add('hidden');
+    return;
+  }
+  ui.radioSpeaker.textContent = state.speaker ?? 'ECHO-7';
+  ui.radioText.textContent = state.subtitle ?? '';
+  ui.radioSubtitle.dataset.speaker = state.speaker ?? 'ECHO-7';
+  ui.radioSubtitle.classList.remove('hidden');
+});
 window.addEventListener('aegis:music', (raw) => {
   const track = (raw as CustomEvent<MusicTrack>).detail;
   const variant = track === 'boss' ? campaign.snapshot().campaignSeed ?? 0 : 0;
@@ -309,17 +431,201 @@ window.addEventListener('aegis:mission-ended', (raw) => {
   ui.hud.classList.add('hidden');
   if (snapshot.mode === 'complete' || snapshot.mode === 'victory') {
     const state = campaign.completeMission(snapshot);
-    if (state.phase === 'victory') showVictory(state, snapshot);
-    else {
-      saveCampaign();
-      openHangar(snapshot.missionNumber - 1);
-    }
+    saveCampaign();
+    if (state.pendingStoryChapter) openStory(state.pendingStoryChapter);
   } else {
     campaign.failMission();
     saveCampaign();
     showFailure(snapshot);
   }
 });
+
+function showIntro(onComplete: () => void, replay = false): void {
+  const token = ++introSequenceToken;
+  introCompletion = onComplete;
+  window.clearTimeout(introTimer);
+  ui.start.classList.add('hidden');
+  ui.manual.classList.add('hidden');
+  ui.intro.classList.remove('hidden');
+  ui.introTitle.classList.add('hidden');
+  ui.introImage.classList.remove('hidden');
+  ui.introVideo.classList.add('hidden');
+  setIntroFrame(0);
+  void playIntroVideoIfAvailable(token);
+  if (!replay) markIntroSeen();
+}
+
+async function playIntroVideoIfAvailable(token: number): Promise<void> {
+  const source = await findIntroVideoSource();
+  if (!source || token !== introSequenceToken || ui.intro.classList.contains('hidden')) return;
+  window.clearTimeout(introTimer);
+  ui.introImage.classList.add('hidden');
+  ui.introVideo.classList.remove('hidden');
+  ui.introVideo.src = new URL(source, document.baseURI).href;
+  ui.introVideo.currentTime = 0;
+  ui.introVideo.ontimeupdate = () => {
+    const elapsed = Math.min(27, Math.floor(ui.introVideo.currentTime));
+    ui.introTime.textContent = `00:${String(elapsed).padStart(2, '0')} / 00:30`;
+  };
+  ui.introVideo.onended = () => {
+    if (token === introSequenceToken) showIntroTitle();
+  };
+  ui.introVideo.onerror = () => {
+    if (token !== introSequenceToken) return;
+    ui.introVideo.classList.add('hidden');
+    ui.introImage.classList.remove('hidden');
+    setIntroFrame(0);
+  };
+  try {
+    await ui.introVideo.play();
+  } catch {
+    ui.introVideo.onerror?.(new Event('error'));
+  }
+}
+
+function findIntroVideoSource(): Promise<string | undefined> {
+  introVideoSourcePromise ??= (async () => {
+    const formats = ui.introVideo.canPlayType('video/webm')
+      ? ['cinematics/video/aegis-vector-intro.webm', 'cinematics/video/aegis-vector-intro.mp4']
+      : ['cinematics/video/aegis-vector-intro.mp4', 'cinematics/video/aegis-vector-intro.webm'];
+    for (const path of formats) {
+      try {
+        const response = await fetch(new URL(path, document.baseURI), { method: 'HEAD' });
+        if (response.ok && Number(response.headers.get('content-length') ?? 1) > 0) return path;
+      } catch { /* the keyframe animatic remains available */ }
+    }
+    return undefined;
+  })();
+  return introVideoSourcePromise;
+}
+
+function setIntroFrame(index: number): void {
+  window.clearTimeout(introTimer);
+  if (index >= INTRO_FRAMES.length) {
+    showIntroTitle();
+    return;
+  }
+  ui.introImage.src = INTRO_FRAMES[index];
+  ui.introImage.alt = [
+    'The moonlit Pelagos Array before the attack.', 'A crimson signal spreads across the Pelagos horizon.',
+    'A dark silhouette divides the storm above the ocean.', 'The Dreadnought rises and activates its crimson reactor trenches.',
+    'Mara Vey approaches the AV-7 while Rook watches from flight control.', 'Mara closes her helmet as the ECHO-7 glyph appears.',
+    'The AV-7 waits on a rain-covered magnetic launch rail.', 'The AV-7 climbs into the storm above Pelagos.',
+    'The AV-7 banks through autonomous enemy fighters.', 'The AV-7 flies toward the distant Dreadnought.',
+  ][index];
+  ui.introImage.parentElement?.setAttribute('data-beat', index % 2 === 0 ? 'start' : 'end');
+  ui.introTime.textContent = `00:${String(Math.min(27, Math.round(index * 2.7))).padStart(2, '0')} / 00:30`;
+  void ui.introImage.offsetWidth;
+  if (index === 2) audio.play('warning');
+  if (index === 6) audio.play('nova-fire');
+  if (index === 8) audio.play('enemy-fire');
+  introTimer = window.setTimeout(() => setIntroFrame(index + 1), 2_700);
+}
+
+function showIntroTitle(): void {
+  window.clearTimeout(introTimer);
+  ui.introVideo.pause();
+  ui.introVideo.classList.add('hidden');
+  ui.introImage.classList.add('hidden');
+  ui.introTitle.classList.remove('hidden');
+  ui.introTime.textContent = '00:27 / 00:30';
+  audio.play('victory');
+  introTimer = window.setTimeout(finishIntro, 3_000);
+}
+
+function finishIntro(): void {
+  if (ui.intro.classList.contains('hidden')) return;
+  window.clearTimeout(introTimer);
+  introSequenceToken += 1;
+  ui.introVideo.pause();
+  ui.introVideo.removeAttribute('src');
+  ui.introVideo.load();
+  ui.intro.classList.add('hidden');
+  const callback = introCompletion;
+  introCompletion = undefined;
+  callback?.();
+}
+
+function openStory(id: StoryChapterId, replay = false): void {
+  storyChapter = getStoryChapter(id);
+  storyReplay = replay;
+  storyPaused = false;
+  storyPanelIndex = 0;
+  ui.storyPause.textContent = 'PAUSE';
+  ui.start.classList.add('hidden');
+  ui.hangar.classList.add('hidden');
+  ui.pause.classList.add('hidden');
+  ui.result.classList.add('hidden');
+  ui.hud.classList.add('hidden');
+  ui.manual.classList.add('hidden');
+  ui.story.classList.remove('hidden');
+  ui.storyTitle.textContent = storyChapter.title;
+  ui.storyKicker.textContent = `PELAGOS ARCHIVE // ${storyChapter.afterMission.toUpperCase()}`;
+  if (!replay) {
+    const variant = storyChapter.afterMission === 'dreadnought' ? 3 : Math.max(0, (campaign.currentMission().number - 1) % 3);
+    void audio.playMusic('victory', undefined, variant);
+  }
+  setStoryPanel(0);
+}
+
+function setStoryPanel(index: number): void {
+  if (!storyChapter) return;
+  storyPanelIndex = Math.max(0, Math.min(storyChapter.panels.length - 1, index));
+  const panel = storyChapter.panels[storyPanelIndex];
+  window.clearTimeout(storyTimer);
+  ui.storyFrame.dataset.transition = panel.transition;
+  ui.storyImage.src = panel.image;
+  ui.storyImage.alt = panel.alt;
+  ui.storySpeaker.textContent = panel.speaker?.toUpperCase() ?? 'PELAGOS ARCHIVE';
+  ui.storyCaption.textContent = panel.caption;
+  ui.storyProgress.textContent = `${String(storyPanelIndex + 1).padStart(2, '0')} / ${String(storyChapter.panels.length).padStart(2, '0')}`;
+  ui.storyBack.disabled = storyPanelIndex === 0;
+  ui.storyNext.innerHTML = storyPanelIndex === storyChapter.panels.length - 1 ? 'COMPLETE CHAPTER <span>→</span>' : 'NEXT <span>→</span>';
+  void ui.storyImage.offsetWidth;
+  const next = storyChapter.panels[storyPanelIndex + 1];
+  if (next) {
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = next.image;
+  }
+  scheduleStoryAdvance();
+}
+
+function scheduleStoryAdvance(): void {
+  window.clearTimeout(storyTimer);
+  if (!storyChapter || storyPaused) return;
+  storyTimer = window.setTimeout(() => {
+    if (!storyChapter || storyPanelIndex >= storyChapter.panels.length - 1) return;
+    setStoryPanel(storyPanelIndex + 1);
+  }, storyChapter.panels[storyPanelIndex].durationMs);
+}
+
+function finishStory(): void {
+  if (!storyChapter) return;
+  window.clearTimeout(storyTimer);
+  ui.story.classList.add('hidden');
+  if (storyReplay) {
+    storyChapter = undefined;
+    storyReplay = false;
+    replayReturnScreen.classList.remove('hidden');
+    openManualAt('archive');
+    return;
+  }
+  storyChapter = undefined;
+  const state = campaign.completeStoryChapter();
+  rememberStoryChapter(state.seenStoryChapters ?? []);
+  saveCampaign();
+  if (state.phase === 'victory') showVictory(state, latestSnapshot);
+  else openHangar();
+}
+
+function hasSeenIntro(): boolean {
+  try { return localStorage.getItem(INTRO_SEEN_KEY) === '1'; } catch { return false; }
+}
+
+function markIntroSeen(): void {
+  try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* optional */ }
+}
 
 function startCurrentMission(): void {
   if (!ready) return;
@@ -332,6 +638,8 @@ function startCurrentMission(): void {
   ui.hangar.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.result.classList.add('hidden');
+  ui.story.classList.add('hidden');
+  ui.intro.classList.add('hidden');
   ui.hud.classList.remove('hidden');
   window.dispatchEvent(new CustomEvent('aegis:start-mission', { detail: config }));
 }
@@ -460,7 +768,7 @@ function showFailure(snapshot: GameSnapshot): void {
   defeatStingIndex = (defeatStingIndex + 1) % 2;
 }
 
-function showVictory(state: CampaignSnapshot, snapshot: GameSnapshot): void {
+function showVictory(state: CampaignSnapshot, snapshot?: GameSnapshot): void {
   resultIsVictory = true;
   clearCampaignSave();
   ui.result.classList.remove('hidden');
@@ -472,7 +780,7 @@ function showVictory(state: CampaignSnapshot, snapshot: GameSnapshot): void {
   ui.resultKills.textContent = String(state.campaignKills);
   ui.resultAction.innerHTML = 'NEW CAMPAIGN <span>→</span>';
   ui.resultAbandon.classList.add('hidden');
-  latestSnapshot = snapshot;
+  if (snapshot) latestSnapshot = snapshot;
   void audio.playMusic('victory', undefined, 3);
 }
 
@@ -482,6 +790,8 @@ function showStart(): void {
   ui.pause.classList.add('hidden');
   ui.result.classList.add('hidden');
   ui.hud.classList.add('hidden');
+  ui.story.classList.add('hidden');
+  ui.intro.classList.add('hidden');
   refreshContinueButton();
   void audio.playMusic('menu');
 }
@@ -575,7 +885,7 @@ function preloadUpgradeIcons(): void {
   });
 }
 
-type ManualTab = 'weapons' | 'enemies' | 'systems';
+type ManualTab = 'weapons' | 'enemies' | 'systems' | 'archive';
 
 const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; description: string }>> = {
   weapons: [
@@ -604,15 +914,55 @@ const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; descr
     { name: 'SORTIE MODULE', tag: 'CONSUMABLE', description: 'A hangar purchase used for the next mission only. Failed attempts restore it with the mission checkpoint.' },
     { name: 'THREAT LEVEL', tag: 'ESCALATION', description: 'Each mission climbs through five deterministic pressure bands. Warning times never become shorter.' },
   ],
+  archive: [],
 };
 
 function renderManual(tab: ManualTab): void {
   document.querySelectorAll<HTMLButtonElement>('[data-manual-tab]').forEach((button) => button.classList.toggle('selected', button.dataset.manualTab === tab));
+  ui.manualContent.classList.toggle('archive-content', tab === 'archive');
+  if (tab === 'archive') {
+    const unlocked = unlockedStoryChapters();
+    const intro = document.createElement('article');
+    intro.dataset.replayIntro = 'true';
+    intro.innerHTML = `<img src="cinematics/keyframes/scene-01-start.webp" alt=""><div><span>OPENING CINEMATIC</span><h3>PROJECT CROWN AWAKENS</h3><p>Replay the thirty-second Pelagos campaign introduction.</p></div>`;
+    const chapters = STORY_CHAPTERS.map((chapter) => {
+      const article = document.createElement('article');
+      const available = unlocked.has(chapter.id);
+      article.dataset.storyId = chapter.id;
+      article.classList.toggle('locked', !available);
+      article.innerHTML = `<img src="${chapter.panels[0].image}" alt=""><div><span>${available ? chapter.afterMission.toUpperCase() : 'ENCRYPTED'}</span><h3>${available ? chapter.title : 'LOCKED ARCHIVE'}</h3><p>${available ? `${chapter.panels.length} recovered panels. Select to replay.` : 'Complete the associated mission to decrypt this chapter.'}</p></div>`;
+      return article;
+    });
+    ui.manualContent.replaceChildren(intro, ...chapters);
+    return;
+  }
   ui.manualContent.replaceChildren(...MANUAL_ENTRIES[tab].map((entry) => {
     const article = document.createElement('article');
     article.innerHTML = `<div><span>${entry.tag}</span><h3>${entry.name}</h3></div><p>${entry.description}</p>`;
     return article;
   }));
+}
+
+function visibleBaseScreen(): HTMLElement {
+  return [ui.hangar, ui.pause, ui.result, ui.start].find((screen) => !screen.classList.contains('hidden')) ?? ui.start;
+}
+
+function unlockedStoryChapters(): Set<StoryChapterId> {
+  const campaignSeen = campaign.snapshot().seenStoryChapters ?? [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORY_ARCHIVE_KEY) ?? '[]') as StoryChapterId[];
+    return new Set([...stored, ...campaignSeen]);
+  } catch {
+    return new Set(campaignSeen);
+  }
+}
+
+function rememberStoryChapter(ids: StoryChapterId[]): void {
+  try {
+    const existing = unlockedStoryChapters();
+    ids.forEach((id) => existing.add(id));
+    localStorage.setItem(STORY_ARCHIVE_KEY, JSON.stringify([...existing]));
+  } catch { /* optional */ }
 }
 
 function upgradeName(type: string): string {
@@ -661,7 +1011,9 @@ function clearCampaignSave(): void {
 
 function refreshContinueButton(): void {
   ui.continue.classList.toggle('hidden', !savedCampaign || savedCampaign.phase === 'victory');
-  if (savedCampaign) ui.continue.textContent = `RESUME // MISSION ${savedCampaign.missionIndex + 1}`;
+  if (savedCampaign) ui.continue.textContent = savedCampaign.phase === 'story'
+    ? 'RESUME // STORY TRANSMISSION'
+    : `RESUME // MISSION ${savedCampaign.missionIndex + 1}`;
 }
 
 const config: Phaser.Types.Core.GameConfig = {

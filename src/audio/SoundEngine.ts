@@ -10,6 +10,16 @@ export type SoundCue =
   | 'fire'
   | 'laser'
   | 'missile'
+  | 'arc-fire'
+  | 'arc-impact'
+  | 'nova-fire'
+  | 'nova-impact'
+  | 'lance-fire'
+  | 'lance-impact'
+  | 'wing-fire'
+  | 'wing-impact'
+  | 'ion-fire'
+  | 'ion-impact'
   | 'enemy-fire'
   | 'explode'
   | 'pickup'
@@ -22,10 +32,51 @@ export type SoundCue =
   | 'victory'
   | 'defeat';
 
+export interface SoundRequest {
+  cue: SoundCue;
+  pan?: number;
+}
+
 export interface AudioSettings {
   music: number;
   sfx: number;
+  voice: number;
+  radioSubtitles: boolean;
 }
+
+export type RadioCue =
+  | 'shield-down'
+  | 'hull-critical'
+  | 'shield-restored'
+  | 'emp-ready'
+  | 'arc-upgraded'
+  | 'nova-upgraded'
+  | 'lance-upgraded'
+  | 'wing-upgraded'
+  | 'ion-upgraded'
+  | 'aegis-upgraded';
+
+export interface VoiceAssetDefinition {
+  file: string;
+  speaker: 'ECHO-7' | 'Rook';
+  subtitle: string;
+  priority: 'critical' | 'tactical' | 'upgrade';
+  cooldownMs: number;
+  gain: number;
+}
+
+export const VOICE_ASSETS: Record<RadioCue, VoiceAssetDefinition> = {
+  'shield-down': { file: 'audio/voice/shield-down.mp3', speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: 1 },
+  'hull-critical': { file: 'audio/voice/hull-critical.mp3', speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: 1 },
+  'shield-restored': { file: 'audio/voice/shield-restored.mp3', speaker: 'ECHO-7', subtitle: 'Shield restored.', priority: 'tactical', cooldownMs: 8_000, gain: .94 },
+  'emp-ready': { file: 'audio/voice/emp-ready.mp3', speaker: 'ECHO-7', subtitle: 'EMP ready.', priority: 'tactical', cooldownMs: 8_000, gain: .94 },
+  'arc-upgraded': { file: 'audio/voice/arc-upgraded.mp3', speaker: 'Rook', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'nova-upgraded': { file: 'audio/voice/nova-upgraded.mp3', speaker: 'Rook', subtitle: 'NOVA missiles upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'lance-upgraded': { file: 'audio/voice/lance-upgraded.mp3', speaker: 'Rook', subtitle: 'LANCE laser upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'wing-upgraded': { file: 'audio/voice/wing-upgraded.mp3', speaker: 'Rook', subtitle: 'WING drones upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'ion-upgraded': { file: 'audio/voice/ion-upgraded.mp3', speaker: 'Rook', subtitle: 'ION conductor upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'aegis-upgraded': { file: 'audio/voice/aegis-upgraded.mp3', speaker: 'Rook', subtitle: 'Aegis capacity upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+};
 
 interface ActiveMusic {
   track: MusicTrack;
@@ -50,7 +101,13 @@ interface DesiredMusic {
 }
 
 const AUDIO_SETTINGS_KEY = 'aegis-vector-audio-v1';
-const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7 };
+const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7, voice: 0.8, radioSubtitles: true };
+const RADIO_PRIORITY = { upgrade: 1, tactical: 2, critical: 3 } as const;
+const CUE_INTERVALS: Partial<Record<SoundCue, number>> = {
+  'arc-fire': 64, 'arc-impact': 80, 'wing-fire': 130, 'wing-impact': 95,
+  'nova-fire': 240, 'nova-impact': 160, 'lance-fire': 260, 'lance-impact': 150,
+  'ion-fire': 420, 'ion-impact': 130,
+};
 
 export interface MusicVoiceSchedule {
   startSeconds: number;
@@ -122,6 +179,7 @@ export class SoundEngine {
   private master?: GainNode;
   private sfxBus?: GainNode;
   private musicBus?: GainNode;
+  private voiceBus?: GainNode;
   private settings: AudioSettings = SoundEngine.loadSettings();
   private buffers = new Map<string, AudioBuffer | null>();
   private activeMusic?: ActiveMusic;
@@ -129,10 +187,16 @@ export class SoundEngine {
   private currentTrack?: MusicTrack;
   private playbackState: MusicPlaybackState = 'locked';
   private musicRequest = 0;
-  private ducked = false;
+  private pauseDucked = false;
+  private radioDucked = false;
   private lastError?: string;
   private source?: AudioDebugState['source'];
   private logicalStartCount = 0;
+  private activeRadio?: { cue: RadioCue; source?: AudioBufferSourceNode; timer?: number };
+  private pendingRadio?: RadioCue;
+  private readonly voiceBuffers = new Map<string, AudioBuffer | null>();
+  private readonly radioCooldowns = new Map<RadioCue, number>();
+  private readonly lastCueAt = new Map<SoundCue, number>();
   private readonly debugSynth = new URLSearchParams(window.location.search).get('audioSynth') === '1';
 
   async unlock(): Promise<void> {
@@ -169,6 +233,8 @@ export class SoundEngine {
       source: this.source,
       musicGain: this.settings.music,
       sfxGain: this.settings.sfx,
+      voiceGain: this.settings.voice,
+      activeRadioCue: this.activeRadio?.cue,
       positionSeconds,
       logicalStartCount: this.logicalStartCount,
       loopRegion,
@@ -182,6 +248,7 @@ export class SoundEngine {
     this.settings = { ...DEFAULT_SETTINGS };
     this.applyMusicVolume();
     if (this.sfxBus && this.context) this.sfxBus.gain.setTargetAtTime(this.settings.sfx, this.context.currentTime, 0.03);
+    if (this.voiceBus && this.context) this.voiceBus.gain.setTargetAtTime(this.settings.voice, this.context.currentTime, 0.03);
     this.saveSettings();
     this.emitState();
     return this.getSettings();
@@ -201,9 +268,38 @@ export class SoundEngine {
     this.emitState();
   }
 
+  setVoiceVolume(value: number): void {
+    this.settings.voice = SoundEngine.clampVolume(value);
+    if (this.voiceBus && this.context) this.voiceBus.gain.setTargetAtTime(this.settings.voice, this.context.currentTime, 0.03);
+    this.saveSettings();
+    this.emitState();
+  }
+
+  setRadioSubtitles(enabled: boolean): void {
+    this.settings.radioSubtitles = enabled;
+    this.saveSettings();
+  }
+
   setMusicDucked(ducked: boolean): void {
-    this.ducked = ducked;
+    this.pauseDucked = ducked;
     this.applyMusicVolume();
+  }
+
+  playRadio(cue: RadioCue): void {
+    const definition = VOICE_ASSETS[cue];
+    const now = performance.now();
+    if ((this.radioCooldowns.get(cue) ?? 0) > now) return;
+    this.radioCooldowns.set(cue, now + definition.cooldownMs);
+    if (this.activeRadio) {
+      const activePriority = RADIO_PRIORITY[VOICE_ASSETS[this.activeRadio.cue].priority];
+      const nextPriority = RADIO_PRIORITY[definition.priority];
+      if (nextPriority > activePriority) this.stopRadio();
+      else {
+        this.pendingRadio = cue;
+        return;
+      }
+    }
+    void this.startRadio(cue);
   }
 
   async playMusic(track: MusicTrack, nextTrack?: MusicTrack, variantIndex = 0): Promise<void> {
@@ -229,12 +325,42 @@ export class SoundEngine {
     this.emitState();
   }
 
-  play(cue: SoundCue): void {
+  play(cue: SoundCue, pan = 0): void {
     if (!this.context || this.context.state !== 'running' || !this.sfxBus || this.settings.sfx <= 0) return;
+    const nowMs = performance.now();
+    const minimum = CUE_INTERVALS[cue] ?? 0;
+    if (nowMs - (this.lastCueAt.get(cue) ?? -Infinity) < minimum) return;
+    this.lastCueAt.set(cue, nowMs);
     switch (cue) {
-      case 'fire': this.tone(235, 120, 0.045, 'square', 0.025); break;
-      case 'laser': this.tone(650, 180, 0.13, 'sawtooth', 0.055); break;
-      case 'missile': this.tone(150, 65, 0.16, 'sawtooth', 0.05); break;
+      case 'fire':
+      case 'arc-fire':
+        this.tone(290, 82, 0.075, 'square', 0.035, pan);
+        this.tone(92, 48, 0.11, 'sine', 0.045, pan);
+        this.noise(0.055, 0.025, 1_800, pan);
+        break;
+      case 'arc-impact': this.tone(520, 145, 0.08, 'square', 0.022, pan); this.noise(0.065, 0.018, 3_400, pan); break;
+      case 'laser':
+      case 'lance-fire':
+        this.tone(1_280, 270, 0.19, 'sawtooth', 0.042, pan);
+        this.tone(640, 410, 0.24, 'sine', 0.036, pan);
+        this.noise(0.11, 0.014, 5_800, pan);
+        break;
+      case 'lance-impact': this.tone(1_850, 340, 0.15, 'sawtooth', 0.026, pan); this.noise(0.12, 0.012, 6_600, pan); break;
+      case 'missile':
+      case 'nova-fire':
+        this.tone(145, 48, 0.25, 'sawtooth', 0.046, pan);
+        this.tone(70, 40, 0.31, 'sine', 0.04, pan);
+        this.noise(0.22, 0.027, 1_100, pan);
+        break;
+      case 'nova-impact': this.tone(108, 34, 0.31, 'sawtooth', 0.055, pan); this.noise(0.3, 0.052, 920, pan); break;
+      case 'wing-fire': this.tone(510, 155, 0.055, 'square', 0.022, pan); this.noise(0.035, 0.012, 2_600, pan); break;
+      case 'wing-impact': this.tone(760, 290, 0.055, 'triangle', 0.015, pan); this.noise(0.04, 0.008, 4_200, pan); break;
+      case 'ion-fire':
+        this.tone(1_120, 180, 0.31, 'sawtooth', 0.035, pan);
+        this.sequence([1_760, 1_120, 2_260, 720], 0.045, 'square', 0.018, pan);
+        this.noise(0.24, 0.02, 7_200, pan);
+        break;
+      case 'ion-impact': this.sequence([1_480, 860, 1_920], 0.027, 'square', 0.013, pan); this.noise(0.07, 0.008, 8_000, pan); break;
       case 'enemy-fire': this.tone(180, 110, 0.08, 'triangle', 0.025); break;
       case 'explode':
         this.noise(0.18, 0.09);
@@ -264,16 +390,97 @@ export class SoundEngine {
     this.master = this.context.createGain();
     this.sfxBus = this.context.createGain();
     this.musicBus = this.context.createGain();
+    this.voiceBus = this.context.createGain();
+    const limiter = this.context.createDynamicsCompressor();
+    limiter.threshold.value = -5;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.18;
     this.master.gain.value = 1;
     this.sfxBus.gain.value = this.settings.sfx;
     this.musicBus.gain.value = this.settings.music;
+    this.voiceBus.gain.value = this.settings.voice;
     this.sfxBus.connect(this.master);
     this.musicBus.connect(this.master);
-    this.master.connect(this.context.destination);
+    this.voiceBus.connect(this.master);
+    this.master.connect(limiter).connect(this.context.destination);
     this.context.addEventListener('statechange', () => {
       if (this.context?.state === 'suspended' && this.currentTrack) this.playbackState = 'locked';
       this.emitState();
     });
+    void this.preloadVoiceAssets();
+  }
+
+  private async preloadVoiceAssets(): Promise<void> {
+    await Promise.all(Object.values(VOICE_ASSETS).map((definition) => this.loadVoice(definition.file)));
+  }
+
+  private async startRadio(cue: RadioCue): Promise<void> {
+    const definition = VOICE_ASSETS[cue];
+    this.activeRadio = { cue };
+    this.radioDucked = true;
+    this.applyMusicVolume();
+    window.dispatchEvent(new CustomEvent('aegis:radio-state', {
+      detail: { active: true, cue, speaker: definition.speaker, subtitle: definition.subtitle, subtitles: this.settings.radioSubtitles },
+    }));
+    this.emitState();
+
+    const buffer = this.context && this.settings.voice > 0 ? await this.loadVoice(definition.file) : null;
+    if (!this.activeRadio || this.activeRadio.cue !== cue) return;
+    if (buffer && this.context && this.voiceBus) {
+      const source = this.context.createBufferSource();
+      const gain = this.context.createGain();
+      source.buffer = buffer;
+      gain.gain.value = definition.gain;
+      source.connect(gain).connect(this.voiceBus);
+      source.addEventListener('ended', () => this.finishRadio(cue));
+      this.activeRadio.source = source;
+      source.start();
+      this.activeRadio.timer = window.setTimeout(() => this.finishRadio(cue), Math.max(2_200, buffer.duration * 1_000 + 100));
+    } else {
+      this.activeRadio.timer = window.setTimeout(() => this.finishRadio(cue), 2_200);
+    }
+  }
+
+  private finishRadio(cue: RadioCue): void {
+    if (!this.activeRadio || this.activeRadio.cue !== cue) return;
+    if (this.activeRadio.timer !== undefined) window.clearTimeout(this.activeRadio.timer);
+    this.activeRadio = undefined;
+    this.radioDucked = false;
+    this.applyMusicVolume();
+    window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue } }));
+    this.emitState();
+    const pending = this.pendingRadio;
+    this.pendingRadio = undefined;
+    if (pending) void this.startRadio(pending);
+  }
+
+  private stopRadio(): void {
+    if (!this.activeRadio) return;
+    const cue = this.activeRadio.cue;
+    if (this.activeRadio.timer !== undefined) window.clearTimeout(this.activeRadio.timer);
+    try { this.activeRadio.source?.stop(); } catch { /* already ended */ }
+    this.activeRadio = undefined;
+    this.radioDucked = false;
+    window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue } }));
+  }
+
+  private async loadVoice(file: string): Promise<AudioBuffer | null> {
+    if (this.voiceBuffers.has(file)) return this.voiceBuffers.get(file) ?? null;
+    if (!this.context) return null;
+    try {
+      const response = await fetch(new URL(file, document.baseURI));
+      if (!response.ok) throw new Error(`${file} returned HTTP ${response.status}`);
+      const data = await response.arrayBuffer();
+      if (data.byteLength === 0) throw new Error(`${file} is empty`);
+      const buffer = await this.context.decodeAudioData(data);
+      this.voiceBuffers.set(file, buffer);
+      return buffer;
+    } catch {
+      this.voiceBuffers.set(file, null);
+      return null;
+    }
   }
 
   private async startDesired(request: number): Promise<void> {
@@ -492,8 +699,9 @@ export class SoundEngine {
 
   private applyMusicVolume(): void {
     if (!this.musicBus || !this.context) return;
-    const target = this.settings.music * (this.ducked ? 0.45 : 1);
-    this.musicBus.gain.setTargetAtTime(target, this.context.currentTime, 0.08);
+    const duckScale = this.pauseDucked ? 0.45 : this.radioDucked ? 0.63 : 1;
+    const target = this.settings.music * duckScale;
+    this.musicBus.gain.setTargetAtTime(target, this.context.currentTime, this.radioDucked ? 0.05 : 0.25);
   }
 
   private emitState(): void {
@@ -506,7 +714,7 @@ export class SoundEngine {
     this.emitState();
   }
 
-  private tone(startHz: number, endHz: number, duration: number, type: OscillatorType, volume: number): void {
+  private tone(startHz: number, endHz: number, duration: number, type: OscillatorType, volume: number, pan = 0): void {
     if (!this.context || !this.sfxBus) return;
     const now = this.context.currentTime;
     const oscillator = this.context.createOscillator();
@@ -516,12 +724,13 @@ export class SoundEngine {
     oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endHz), now + duration);
     gain.gain.setValueAtTime(volume, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    oscillator.connect(gain).connect(this.sfxBus);
+    oscillator.connect(gain);
+    this.connectToSfx(gain, pan);
     oscillator.start(now);
     oscillator.stop(now + duration + 0.02);
   }
 
-  private sequence(notes: number[], noteLength: number, type: OscillatorType, volume: number): void {
+  private sequence(notes: number[], noteLength: number, type: OscillatorType, volume: number, pan = 0): void {
     if (!this.context || !this.sfxBus) return;
     const start = this.context.currentTime;
     notes.forEach((frequency, index) => {
@@ -533,13 +742,14 @@ export class SoundEngine {
       gain.gain.setValueAtTime(0.0001, time);
       gain.gain.exponentialRampToValueAtTime(volume, time + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, time + noteLength * 0.9);
-      oscillator.connect(gain).connect(this.sfxBus!);
+      oscillator.connect(gain);
+      this.connectToSfx(gain, pan);
       oscillator.start(time);
       oscillator.stop(time + noteLength);
     });
   }
 
-  private noise(duration: number, volume: number): void {
+  private noise(duration: number, volume: number, cutoff = 820, pan = 0): void {
     if (!this.context || !this.sfxBus) return;
     const buffer = this.context.createBuffer(1, Math.ceil(this.context.sampleRate * duration), this.context.sampleRate);
     const data = buffer.getChannelData(0);
@@ -548,12 +758,20 @@ export class SoundEngine {
     const filter = this.context.createBiquadFilter();
     const gain = this.context.createGain();
     filter.type = 'lowpass';
-    filter.frequency.value = 820;
+    filter.frequency.value = cutoff;
     gain.gain.setValueAtTime(volume, this.context.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, this.context.currentTime + duration);
     source.buffer = buffer;
-    source.connect(filter).connect(gain).connect(this.sfxBus);
+    source.connect(filter).connect(gain);
+    this.connectToSfx(gain, pan);
     source.start();
+  }
+
+  private connectToSfx(node: AudioNode, pan: number): void {
+    if (!this.context || !this.sfxBus) return;
+    const panner = this.context.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    node.connect(panner).connect(this.sfxBus);
   }
 
   private saveSettings(): void {
@@ -566,6 +784,8 @@ export class SoundEngine {
       return {
         music: SoundEngine.clampVolume(parsed.music ?? DEFAULT_SETTINGS.music),
         sfx: SoundEngine.clampVolume(parsed.sfx ?? DEFAULT_SETTINGS.sfx),
+        voice: SoundEngine.clampVolume(parsed.voice ?? DEFAULT_SETTINGS.voice),
+        radioSubtitles: parsed.radioSubtitles !== false,
       };
     } catch {
       return { ...DEFAULT_SETTINGS };
