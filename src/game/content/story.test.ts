@@ -20,7 +20,14 @@ describe('story campaign mapping', () => {
     for (const panel of STORY_CHAPTERS.flatMap((chapter) => chapter.panels)) {
       expect(panel.image.endsWith('.webp')).toBe(true);
       expect(panel.alt.length).toBeGreaterThan(30);
-      expect(panel.caption.length).toBeGreaterThan(10);
+      expect(panel.caption.length).toBeGreaterThan(85);
+      expect(panel.durationMs).toBeGreaterThanOrEqual(5_500);
     }
+  });
+
+  it('uses only established characters and never a narrator', () => {
+    const speakers = STORY_CHAPTERS.flatMap((chapter) => chapter.panels.map((panel) => panel.speaker));
+    expect(new Set(speakers)).toEqual(new Set(['Mara', 'Rook', 'ECHO-7']));
+    expect(speakers).not.toContain('Narrator');
   });
 });

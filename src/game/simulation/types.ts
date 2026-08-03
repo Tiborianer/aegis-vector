@@ -43,7 +43,7 @@ export type StoryChapterId =
   | 'project-crown'
   | 'rook-confession'
   | 'last-vector';
-export type StorySpeaker = 'Mara' | 'Rook' | 'ECHO-7' | 'Narrator';
+export type StorySpeaker = 'Mara' | 'Rook' | 'ECHO-7';
 export type StoryTransition = 'dissolve' | 'comic-wipe' | 'flash' | 'push';
 export type MusicTrack =
   | 'menu'
@@ -106,7 +106,7 @@ export interface StoryPanel {
   id: string;
   image: string;
   alt: string;
-  speaker?: StorySpeaker;
+  speaker: StorySpeaker;
   caption: string;
   durationMs: number;
   transition: StoryTransition;

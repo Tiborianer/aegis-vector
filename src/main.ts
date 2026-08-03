@@ -628,9 +628,11 @@ function setStoryPanel(index: number): void {
   const panel = storyChapter.panels[storyPanelIndex];
   window.clearTimeout(storyTimer);
   ui.storyFrame.dataset.transition = panel.transition;
+  ui.storyFrame.dataset.speaker = panel.speaker;
   ui.storyImage.src = panel.image;
   ui.storyImage.alt = panel.alt;
-  ui.storySpeaker.textContent = panel.speaker?.toUpperCase() ?? 'PELAGOS ARCHIVE';
+  const speakerLabels = { Mara: 'MARA // VECTOR', Rook: 'COMMANDER ROOK', 'ECHO-7': 'ECHO-7 // AV-7' } as const;
+  ui.storySpeaker.textContent = speakerLabels[panel.speaker];
   ui.storyCaption.textContent = panel.caption;
   ui.storyProgress.textContent = `${String(storyPanelIndex + 1).padStart(2, '0')} / ${String(storyChapter.panels.length).padStart(2, '0')}`;
   ui.storyBack.disabled = storyPanelIndex === 0;
