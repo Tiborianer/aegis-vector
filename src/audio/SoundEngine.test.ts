@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMusicVoiceSchedule, MUSIC_ASSETS } from './SoundEngine';
+import { buildMusicVoiceSchedule, MUSIC_ASSETS, VOICE_ASSETS } from './SoundEngine';
 
 describe('music asset loop strategy', () => {
   it('uses tail crossfades for every long-form track', () => {
@@ -29,5 +29,15 @@ describe('music asset loop strategy', () => {
     const playingAt100 = schedule.filter((voice) => voice.startSeconds <= 100 && voice.startSeconds + voice.durationSeconds > 100);
     expect(playingAt100.length).toBeGreaterThanOrEqual(1);
     expect(schedule.every((voice) => voice.offsetSeconds === 0 || voice.offsetSeconds === 51.05)).toBe(true);
+  });
+});
+
+describe('radio voice assets', () => {
+  it('maps the three approved production recordings and preserves subtitle fallbacks', () => {
+    expect(Object.keys(VOICE_ASSETS)).toHaveLength(10);
+    expect(VOICE_ASSETS['shield-down'].file).toBe('audio/voice/shield-down.wav');
+    expect(VOICE_ASSETS['hull-critical'].file).toBe('audio/voice/hull-critical.wav');
+    expect(VOICE_ASSETS['arc-upgraded'].file).toBe('audio/voice/arc-upgraded.wav');
+    expect(VOICE_ASSETS['shield-restored'].file).toBe('audio/voice/shield-restored.mp3');
   });
 });

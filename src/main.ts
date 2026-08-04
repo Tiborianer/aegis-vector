@@ -396,7 +396,10 @@ window.addEventListener('aegis:audio-state', (raw) => {
   if (state.playbackState === 'unavailable') {
     ui.audioError.textContent = 'MUSIC UNAVAILABLE';
   } else if (voiceFilesMissing) {
-    ui.audioError.textContent = `RADIO VOICES MISSING ${state.voiceAssetsMissing}/${state.voiceAssetsReady + state.voiceAssetsMissing} // SUBTITLES ONLY`;
+    const totalVoices = state.voiceAssetsReady + state.voiceAssetsMissing;
+    ui.audioError.textContent = state.voiceAssetsReady === 0
+      ? `RADIO VOICES MISSING ${state.voiceAssetsMissing}/${totalVoices} // SUBTITLES ONLY`
+      : `RADIO VOICES ${state.voiceAssetsReady}/${totalVoices} // ${state.voiceAssetsMissing} SUBTITLE ONLY`;
   }
   ui.audioError.classList.toggle('hidden', state.playbackState !== 'unavailable' && !voiceFilesMissing);
   ui.audioError.classList.toggle('voice-notice', state.playbackState !== 'unavailable' && voiceFilesMissing);

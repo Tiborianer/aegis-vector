@@ -67,11 +67,11 @@ export interface VoiceAssetDefinition {
 }
 
 export const VOICE_ASSETS: Record<RadioCue, VoiceAssetDefinition> = {
-  'shield-down': { file: 'audio/voice/shield-down.mp3', speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: 1 },
-  'hull-critical': { file: 'audio/voice/hull-critical.mp3', speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: 1 },
+  'shield-down': { file: 'audio/voice/shield-down.wav', speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: 1 },
+  'hull-critical': { file: 'audio/voice/hull-critical.wav', speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: 1 },
   'shield-restored': { file: 'audio/voice/shield-restored.mp3', speaker: 'ECHO-7', subtitle: 'Shield restored.', priority: 'tactical', cooldownMs: 8_000, gain: .94 },
   'emp-ready': { file: 'audio/voice/emp-ready.mp3', speaker: 'ECHO-7', subtitle: 'EMP ready.', priority: 'tactical', cooldownMs: 8_000, gain: .94 },
-  'arc-upgraded': { file: 'audio/voice/arc-upgraded.mp3', speaker: 'Rook', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'arc-upgraded': { file: 'audio/voice/arc-upgraded.wav', speaker: 'Rook', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
   'nova-upgraded': { file: 'audio/voice/nova-upgraded.mp3', speaker: 'Rook', subtitle: 'NOVA missiles upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
   'lance-upgraded': { file: 'audio/voice/lance-upgraded.mp3', speaker: 'Rook', subtitle: 'LANCE laser upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
   'wing-upgraded': { file: 'audio/voice/wing-upgraded.mp3', speaker: 'Rook', subtitle: 'WING drones upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
