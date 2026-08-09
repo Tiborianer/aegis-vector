@@ -200,4 +200,50 @@ describe('GameModel', () => {
     model.complete(true);
     expect(model.snapshot().finalePhase).toBe('cleared');
   });
+
+  it('restores waypoint progress with partial service and without temporary advantages', () => {
+    const model = new GameModel();
+    model.start(startConfig(['aegis-bank', 'quick-charge-loop', 'reactive-armor', 'phoenix-protocol']));
+    model.tick(65_000);
+    model.registerKill(200, 5);
+    model.collectUtility('overdrive');
+    model.activateEmp();
+    model.takeDamage();
+    model.tick(2_100);
+    model.takeDamage();
+    model.tick(2_100);
+    model.takeDamage();
+    const checkpoint = model.exportCheckpoint();
+
+    const restored = new GameModel();
+    restored.start({
+      ...startConfig(['aegis-bank', 'quick-charge-loop', 'reactive-armor', 'phoenix-protocol']),
+      resumeFrom: {
+        missionId: 'coastal',
+        waypointId: 1,
+        capturedAtMs: checkpoint.stageElapsedMs,
+        game: checkpoint,
+        encounter: {
+          waveIndex: 7,
+          nextCarrierIndex: 1,
+          killsSinceUtilityDrop: 2,
+          armamentOfferHistory: [],
+          minibossSpawned: false,
+          commandSpawned: false,
+          commandRemaining: 0,
+          bulwarkIntroduced: false,
+          finaleApproachWave: 0,
+          bossSpawned: false,
+          lastThreatLevel: 2,
+        },
+      },
+    });
+    expect(restored.stageElapsedMs).toBe(checkpoint.stageElapsedMs);
+    expect(restored.creditsEarned).toBe(5);
+    expect(restored.hull).toBeGreaterThanOrEqual(2);
+    expect(restored.shield).toBe(restored.shieldMax);
+    expect(restored.empCharges).toBeGreaterThanOrEqual(1);
+    expect(restored.snapshot().overdriveRemainingMs).toBe(0);
+    expect(restored.snapshot().latestWaypointId).toBe(1);
+  });
 });

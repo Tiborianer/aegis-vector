@@ -42,6 +42,7 @@ export interface AudioSettings {
   music: number;
   sfx: number;
   voice: number;
+  cinematic: number;
   radioSubtitles: boolean;
 }
 
@@ -67,16 +68,16 @@ export interface VoiceAssetDefinition {
 }
 
 export const VOICE_ASSETS: Record<RadioCue, VoiceAssetDefinition> = {
-  'shield-down': { file: 'audio/voice/shield-down.wav', speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: 1 },
-  'hull-critical': { file: 'audio/voice/hull-critical.wav', speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: 1 },
-  'shield-restored': { file: 'audio/voice/shield-restored.mp3', speaker: 'ECHO-7', subtitle: 'Shield restored.', priority: 'tactical', cooldownMs: 8_000, gain: .94 },
-  'emp-ready': { file: 'audio/voice/emp-ready.mp3', speaker: 'ECHO-7', subtitle: 'EMP ready.', priority: 'tactical', cooldownMs: 8_000, gain: .94 },
-  'arc-upgraded': { file: 'audio/voice/arc-upgraded.wav', speaker: 'Rook', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
-  'nova-upgraded': { file: 'audio/voice/nova-upgraded.mp3', speaker: 'Rook', subtitle: 'NOVA missiles upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
-  'lance-upgraded': { file: 'audio/voice/lance-upgraded.mp3', speaker: 'Rook', subtitle: 'LANCE laser upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
-  'wing-upgraded': { file: 'audio/voice/wing-upgraded.mp3', speaker: 'Rook', subtitle: 'WING drones upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
-  'ion-upgraded': { file: 'audio/voice/ion-upgraded.mp3', speaker: 'Rook', subtitle: 'ION conductor upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
-  'aegis-upgraded': { file: 'audio/voice/aegis-upgraded.mp3', speaker: 'Rook', subtitle: 'Aegis capacity upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .98 },
+  'shield-down': { file: 'audio/voice/shield-down.wav', speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: .52 },
+  'hull-critical': { file: 'audio/voice/hull-critical.wav', speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: .52 },
+  'shield-restored': { file: 'audio/voice/shield-restored.wav', speaker: 'ECHO-7', subtitle: 'Shields restored.', priority: 'tactical', cooldownMs: 8_000, gain: .52 },
+  'emp-ready': { file: 'audio/voice/emp-ready.wav', speaker: 'ECHO-7', subtitle: 'EMP ready.', priority: 'tactical', cooldownMs: 8_000, gain: .52 },
+  'arc-upgraded': { file: 'audio/voice/arc-upgraded.wav', speaker: 'Rook', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'nova-upgraded': { file: 'audio/voice/nova-upgraded.wav', speaker: 'Rook', subtitle: 'NOVA missiles upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'lance-upgraded': { file: 'audio/voice/lance-upgraded.wav', speaker: 'Rook', subtitle: 'LANCE laser upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'wing-upgraded': { file: 'audio/voice/wing-upgraded.wav', speaker: 'Rook', subtitle: 'WING drones upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'ion-upgraded': { file: 'audio/voice/ion-upgraded.wav', speaker: 'Rook', subtitle: 'ION conductor upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'aegis-upgraded': { file: 'audio/voice/aegis-upgraded.wav', speaker: 'Rook', subtitle: 'Aegis capacity upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
 };
 
 interface ActiveMusic {
@@ -102,8 +103,10 @@ interface DesiredMusic {
 }
 
 const AUDIO_SETTINGS_KEY = 'aegis-vector-audio-v1';
-const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7, voice: 0.9, radioSubtitles: true };
+const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7, voice: 0.9, cinematic: 0.8, radioSubtitles: true };
 const RADIO_PRIORITY = { upgrade: 1, tactical: 2, critical: 3 } as const;
+export const RADIO_TRIM_DB = -6;
+export const RADIO_TRIM_GAIN = 10 ** (RADIO_TRIM_DB / 20);
 const CUE_INTERVALS: Partial<Record<SoundCue, number>> = {
   'arc-fire': 64, 'arc-impact': 80, 'wing-fire': 130, 'wing-impact': 95,
   'nova-fire': 240, 'nova-impact': 160, 'lance-fire': 260, 'lance-impact': 150,
@@ -241,6 +244,7 @@ export class SoundEngine {
       musicGain: this.settings.music,
       sfxGain: this.settings.sfx,
       voiceGain: this.settings.voice,
+      cinematicGain: this.settings.cinematic,
       activeRadioCue: this.activeRadio?.cue,
       voicePlaybackState: this.voicePlaybackState,
       voiceDurationSeconds: this.voiceDurationSeconds,
@@ -249,6 +253,8 @@ export class SoundEngine {
       voiceAssetCheckComplete: this.voiceAssetCheckComplete,
       voiceAssetsReady: this.voiceAssetsReady,
       voiceAssetsMissing: this.voiceAssetsMissing,
+      radioTrimDb: RADIO_TRIM_DB,
+      radioTrimGain: RADIO_TRIM_GAIN,
       positionSeconds,
       logicalStartCount: this.logicalStartCount,
       loopRegion,
@@ -285,6 +291,12 @@ export class SoundEngine {
   setVoiceVolume(value: number): void {
     this.settings.voice = SoundEngine.clampVolume(value);
     if (this.voiceBus && this.context) this.voiceBus.gain.setTargetAtTime(this.settings.voice, this.context.currentTime, 0.03);
+    this.saveSettings();
+    this.emitState();
+  }
+
+  setCinematicVolume(value: number): void {
+    this.settings.cinematic = SoundEngine.clampVolume(value);
     this.saveSettings();
     this.emitState();
   }
@@ -329,12 +341,12 @@ export class SoundEngine {
     await this.startDesired(request);
   }
 
-  stopMusic(): void {
+  stopMusic(fadeSeconds = 0.65): void {
     this.musicRequest += 1;
     this.desired = undefined;
     this.currentTrack = undefined;
     this.playbackState = this.context?.state === 'running' ? 'loading' : 'locked';
-    if (this.activeMusic) this.fadeOut(this.activeMusic, 0.65);
+    if (this.activeMusic) this.fadeOut(this.activeMusic, Math.max(0.05, fadeSeconds));
     this.activeMusic = undefined;
     this.emitState();
   }
@@ -469,7 +481,7 @@ export class SoundEngine {
       const gain = this.context.createGain();
       const correction = SoundEngine.measuredVoiceGain(buffer);
       source.buffer = buffer;
-      gain.gain.value = definition.gain * correction;
+      gain.gain.value = definition.gain * correction * RADIO_TRIM_GAIN;
       source.connect(gain).connect(this.voiceBus);
       source.addEventListener('ended', () => this.finishRadio(cue));
       this.activeRadio.source = source;
@@ -829,6 +841,7 @@ export class SoundEngine {
         music: SoundEngine.clampVolume(parsed.music ?? DEFAULT_SETTINGS.music),
         sfx: SoundEngine.clampVolume(parsed.sfx ?? DEFAULT_SETTINGS.sfx),
         voice: SoundEngine.clampVolume(parsed.voice ?? DEFAULT_SETTINGS.voice),
+        cinematic: SoundEngine.clampVolume(parsed.cinematic ?? DEFAULT_SETTINGS.cinematic),
         radioSubtitles: parsed.radioSubtitles !== false,
       };
     } catch {

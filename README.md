@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Open the address printed by Vite. Choose a difficulty, launch, move with WASD or the arrow keys, hold Space or Z to fire, press X to discharge an EMP, and press Escape to pause.
+Open the address printed by Vite. Choose a difficulty, launch, move with WASD or the arrow keys, hold Space or Z to fire, press X or either Shift key to discharge an EMP, and press Escape to pause.
 
 ## Other commands
 
@@ -30,12 +30,12 @@ Add `?debug=1` to the local URL to enable browser QA controls while preserving f
 - The one-hit rechargeable shield can grow to three points and normally recharges after seven seconds without damage.
 - Every mission rises through five deterministic threat levels while attack warnings keep their full readable timing. Later operations add Phantom phase attackers, interruptible Artillery barrages, utility-stealing Reclaimers, and the multipart Bastion Carrier.
 - Failed missions restore the pre-mission checkpoint, preventing failed-attempt credit farming.
-- Campaign progress is saved locally between missions and restored after a refresh.
+- Campaign progress and the latest automatic mission waypoint are saved locally and restored after a refresh.
 - Successful missions unlock a 20-panel, route-aware motion comic. The Flight Manual explains every weapon family and specialist counterplay, and its Archive replays recovered chapters and the opening.
 
 ## Narrative and radio assets
 
-The game includes a complete 30-second opening keyframe animatic and all 20 motion-comic panels. The ten start/end keyframes and ready-to-paste image-to-video prompts are documented in `CINEMATIC_PROMPTS.md`. If supplied, `public/cinematics/video/aegis-vector-intro.webm` is used automatically, with `aegis-vector-intro.mp4` as the fallback; otherwise the built-in animatic plays.
+The game includes the complete 34-second, 1920×1080 authored opening cinematic at `public/cinematics/video/aegis-vector-intro-v1.mp4` plus all 20 motion-comic panels. Start New Campaign always plays the video, Continue resumes immediately, and the Flight Manual Archive can replay it. If the video cannot load, a short branded poster appears before the mission continues; the retired slideshow is never used in production.
 
 Radio subtitles work immediately. Optional ECHO-7 and Rook recordings can be added under `public/audio/voice/` using the filenames in that folder's README. Voice has its own saved volume control, and radio speech ducks the music without restarting it.
 

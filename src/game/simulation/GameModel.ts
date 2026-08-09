@@ -15,6 +15,8 @@ import type {
   WeaponLevels,
   WeaponOverdriveState,
   FinalePhase,
+  GameCheckpointSnapshot,
+  MissionWaypointId,
 } from './types';
 
 const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 });
@@ -49,6 +51,7 @@ export class GameModel {
   bossName = '';
   bossHealthRatio = 1;
   finalePhase?: FinalePhase;
+  latestWaypointId?: MissionWaypointId;
   campaignSeed = 1;
   sortieModule: MissionStartConfig['sortieModule'];
   modifiers: CombatModifiers = { ...DEFAULT_COMBAT_MODIFIERS };
@@ -106,6 +109,7 @@ export class GameModel {
     this.bossName = '';
     this.bossHealthRatio = 1;
     this.finalePhase = config.mission.id === 'dreadnought' ? 'approach' : undefined;
+    this.latestWaypointId = undefined;
     this.invulnerableUntil = 0;
     this.comboUntil = 0;
     this.comboKills = 0;
@@ -122,6 +126,77 @@ export class GameModel {
     this.naniteLatticeAvailable = this.modifiers.naniteLattice;
     this.sortieNanitesAvailable = config.sortieModule === 'emergency-nanites';
     this.fortressRamAvailable = this.modifiers.fortressFrame;
+    if (config.resumeFrom) this.restoreCheckpoint(config.resumeFrom.game, config.resumeFrom.waypointId);
+  }
+
+  exportCheckpoint(): GameCheckpointSnapshot {
+    return {
+      stageElapsedMs: this.stageElapsedMs,
+      score: this.score,
+      kills: this.kills,
+      creditsEarned: this.creditsEarned,
+      shotsFired: this.shotsFired,
+      shotsHit: this.shotsHit,
+      damageTaken: this.damageTaken,
+      weapons: { ...this.weapons },
+      shieldBaseMax: this.shieldBaseMax,
+      hull: this.hull,
+      shield: this.shield,
+      empCharges: this.empCharges,
+      phoenixAvailable: this.phoenixAvailable,
+      reserveShieldAvailable: this.reserveShieldAvailable,
+      secondWindAvailable: this.secondWindAvailable,
+      emergencyCapacitorTriggers: this.emergencyCapacitorTriggers,
+      naniteLatticeAvailable: this.naniteLatticeAvailable,
+      sortieNanitesAvailable: this.sortieNanitesAvailable,
+      fortressRamAvailable: this.fortressRamAvailable,
+      finalePhase: this.finalePhase,
+    };
+  }
+
+  restoreCheckpoint(checkpoint: GameCheckpointSnapshot, waypointId: MissionWaypointId): void {
+    this.stageElapsedMs = Math.max(0, Math.min(this.stageDurationMs, checkpoint.stageElapsedMs));
+    this.score = Math.max(0, checkpoint.score);
+    this.highScore = Math.max(this.highScore, this.score);
+    this.kills = Math.max(0, checkpoint.kills);
+    this.creditsEarned = Math.max(0, checkpoint.creditsEarned);
+    this.shotsFired = Math.max(0, checkpoint.shotsFired);
+    this.shotsHit = Math.max(0, checkpoint.shotsHit);
+    this.damageTaken = Math.max(0, checkpoint.damageTaken);
+    this.weapons = { ...checkpoint.weapons };
+    this.shieldBaseMax = Math.max(1, Math.min(3, checkpoint.shieldBaseMax));
+    this.shieldMax = this.shieldBaseMax;
+    this.hull = Math.min(this.hullMax, Math.max(checkpoint.hull, Math.min(2, this.hullMax)));
+    this.shield = this.shieldMax;
+    this.empCharges = Math.min(this.empMax, Math.max(checkpoint.empCharges, Math.min(1, this.empMax)));
+    this.phoenixAvailable = checkpoint.phoenixAvailable;
+    this.reserveShieldAvailable = checkpoint.reserveShieldAvailable;
+    this.secondWindAvailable = checkpoint.secondWindAvailable;
+    this.emergencyCapacitorTriggers = Math.max(0, checkpoint.emergencyCapacitorTriggers);
+    this.naniteLatticeAvailable = checkpoint.naniteLatticeAvailable;
+    this.sortieNanitesAvailable = checkpoint.sortieNanitesAvailable;
+    this.fortressRamAvailable = checkpoint.fortressRamAvailable;
+    this.finalePhase = checkpoint.finalePhase;
+    this.latestWaypointId = waypointId;
+
+    // Partial service deliberately clears transient combat advantages and hazards.
+    this.multiplier = 1;
+    this.comboUntil = 0;
+    this.comboKills = 0;
+    this.overdriveUntil = 0;
+    this.reactorUntil = 0;
+    this.tractorUntil = 0;
+    this.chronoUntil = 0;
+    this.invulnerableUntil = 0;
+    this.nextShieldRechargeAt = Number.POSITIVE_INFINITY;
+    this.lastHullDamageAt = Number.NEGATIVE_INFINITY;
+    this.bossActive = false;
+    this.bossName = '';
+    this.bossHealthRatio = checkpoint.finalePhase === 'boss' ? 0.66 : 1;
+  }
+
+  setLatestWaypoint(id: MissionWaypointId): void {
+    this.latestWaypointId = id;
   }
 
   tick(deltaMs: number): false | 'shield' | 'hull' {
@@ -397,6 +472,7 @@ export class GameModel {
       chronoRemainingMs: Math.max(0, this.chronoUntil - this.stageElapsedMs),
       reserveShieldAvailable: this.reserveShieldAvailable,
       secondWindAvailable: this.secondWindAvailable,
+      latestWaypointId: this.latestWaypointId,
     };
   }
 

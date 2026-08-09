@@ -7,6 +7,9 @@ import {
   MAX_ACTIVE_ENEMIES,
   MAX_ACTIVE_MINES,
   MAX_HOSTILE_PROJECTILES,
+  PICKUP_HORIZONTAL_MARGIN,
+  PLAYER_COMBAT_MIN_Y,
+  STATIONARY_PICKUP_SAFE_Y,
   WEAPON_LABELS,
   WORLD_HEIGHT,
   WORLD_WIDTH,
@@ -33,6 +36,9 @@ import type {
   EnemyHitboxRect,
   EnemyHitZoneRole,
   GameSnapshot,
+  EncounterCheckpointSnapshot,
+  MissionWaypointId,
+  MissionWaypointSnapshot,
   MissionStartConfig,
   PickupType,
   GraphicsQuality,
@@ -164,6 +170,8 @@ export class BattleScene extends Phaser.Scene {
   private lastUtility?: UtilityPickupType;
   private armamentOfferHistory: Array<readonly [UpgradeType, UpgradeType]> = [];
   private hullCriticalAnnounced = false;
+  private pendingWaypointId?: MissionWaypointId;
+  private resumeBossHealthRatio?: number;
 
   private readonly startHandler = (raw: Event): void => {
     this.startMission((raw as CustomEvent<MissionStartConfig>).detail);
@@ -338,7 +346,12 @@ export class BattleScene extends Phaser.Scene {
     if (!this.input.keyboard) throw new Error('Keyboard input is unavailable.');
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D,Z,SPACE') as typeof this.keys;
-    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X).on('down', () => this.activateEmp());
+    const activateEmp = (_key: Phaser.Input.Keyboard.Key, event?: KeyboardEvent): void => {
+      if (event?.repeat) return;
+      this.activateEmp();
+    };
+    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X).on('down', activateEmp);
+    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT).on('down', activateEmp);
     let pauseKeyHeld = false;
     const togglePause = (): void => {
       if (pauseKeyHeld) return;
@@ -448,8 +461,11 @@ export class BattleScene extends Phaser.Scene {
     this.lastUtility = undefined;
     this.armamentOfferHistory = [];
     this.hullCriticalAnnounced = false;
+    this.pendingWaypointId = undefined;
+    this.resumeBossHealthRatio = undefined;
     this.model.start(config);
     this.encounterDirector = new EncounterDirector(config.campaignSeed, config.difficulty, config.mission.id);
+    if (config.resumeFrom) this.restoreEncounterCheckpoint(config.resumeFrom);
 
     const missionTints: Record<string, number> = {
       coastal: 0xffffff,
@@ -488,6 +504,16 @@ export class BattleScene extends Phaser.Scene {
     this.contrails.setVisible(true);
     (this.player.body as Phaser.Physics.Arcade.Body).enable = true;
     this.nextWaveAt = this.time.now + 1_100;
+    if (config.resumeFrom && config.mission.id === 'dreadnought' && config.resumeFrom.game.finalePhase === 'boss') {
+      this.bossSpawned = false;
+      this.bossSpawnScheduled = true;
+      this.resumeBossHealthRatio = config.resumeFrom.bossHealthRatio ?? 1;
+      this.time.delayedCall(700, () => {
+        this.bossSpawnScheduled = false;
+        this.spawnBoss(this.resumeBossHealthRatio);
+        this.resumeBossHealthRatio = undefined;
+      });
+    }
     this.cameras.main.fadeIn(500, 2, 8, 18);
     this.announce(`${config.mission.sector} // ${config.mission.title}`);
     event('aegis:music', config.mission.music);
@@ -511,9 +537,8 @@ export class BattleScene extends Phaser.Scene {
     const direction = new Phaser.Math.Vector2(x, y).normalize();
     this.player.setVelocity(direction.x * 430, direction.y * 430);
 
-    const minY = WORLD_HEIGHT * 0.29;
-    if (this.player.y < minY) {
-      this.player.y = minY;
+    if (this.player.y < PLAYER_COMBAT_MIN_Y) {
+      this.player.y = PLAYER_COMBAT_MIN_Y;
       this.player.setVelocityY(Math.max(0, (this.player.body as Phaser.Physics.Arcade.Body).velocity.y));
     }
 
@@ -728,7 +753,8 @@ export class BattleScene extends Phaser.Scene {
     body.enable = true;
     const isLaser = texture === ASSET_KEYS.laser;
     const isWing = texture === ASSET_KEYS.wingBullet;
-    body.setSize(isLaser && this.model.modifiers.splitCapacitors ? 11 : isWing ? 7 : 8, isLaser ? 48 : isWing ? 16 : 18);
+    const isArc = texture === ASSET_KEYS.playerBullet;
+    body.setSize(isLaser && this.model.modifiers.splitCapacitors ? 11 : isWing ? 7 : 8, isLaser ? 48 : isWing ? 16 : isArc ? 24 : 18);
     const missile = texture === ASSET_KEYS.missile;
     bullet.setDataEnabled()
       .setData('damage', baseDamage * this.model.damageMultiplier)
@@ -847,6 +873,7 @@ export class BattleScene extends Phaser.Scene {
     }
 
     const progress = Math.min(1, this.model.stageElapsedMs / this.model.stageDurationMs);
+    this.maybeSecureProgressWaypoint(progress);
     const threat = this.model.snapshot().threatLevel;
     if (threat !== this.lastThreatLevel) {
       this.lastThreatLevel = threat;
@@ -900,11 +927,83 @@ export class BattleScene extends Phaser.Scene {
     this.announce('FORTRESS CORE AHEAD');
     this.enemyBullets.clear(true, true);
     this.mines.clear(true, true);
+    if (!this.model.latestWaypointId) this.secureWaypoint(1);
     this.bossSpawnScheduled = true;
     this.time.delayedCall(650, () => {
       this.bossSpawnScheduled = false;
       this.spawnBoss();
     });
+  }
+
+  private maybeSecureProgressWaypoint(progress: number): void {
+    const nextId = ((this.model.latestWaypointId ?? 0) + 1) as MissionWaypointId;
+    if (nextId > 2) return;
+    const threshold = nextId === 1 ? 0.33 : 0.66;
+    if (progress < threshold && this.pendingWaypointId !== nextId) return;
+    if (this.commandEncounterActive || this.hasActiveArmamentPair()) {
+      this.pendingWaypointId = nextId;
+      return;
+    }
+    this.pendingWaypointId = undefined;
+    this.secureWaypoint(nextId);
+  }
+
+  private hasActiveArmamentPair(): boolean {
+    return this.pickups.getMatching('active', true)
+      .some((pickup) => (pickup as Phaser.Physics.Arcade.Sprite).getData('pairId') !== undefined);
+  }
+
+  private encounterCheckpoint(): EncounterCheckpointSnapshot {
+    return {
+      waveIndex: this.waveIndex,
+      nextCarrierIndex: this.nextCarrierIndex,
+      killsSinceUtilityDrop: this.killsSinceUtilityDrop,
+      armamentOfferHistory: this.armamentOfferHistory.map((pair) => [pair[0], pair[1]] as const),
+      minibossSpawned: this.minibossSpawned,
+      commandSpawned: this.commandSpawned,
+      commandRemaining: this.commandRemaining,
+      bulwarkIntroduced: this.bulwarkIntroduced,
+      finaleApproachWave: this.finaleApproachWave,
+      bossSpawned: this.bossSpawned,
+      lastThreatLevel: this.lastThreatLevel as 1 | 2 | 3 | 4 | 5,
+      lastUtility: this.lastUtility,
+    };
+  }
+
+  private secureWaypoint(id: MissionWaypointId): void {
+    if ((this.model.latestWaypointId ?? 0) >= id) return;
+    this.model.setLatestWaypoint(id);
+    const healthRatio = this.boss?.active
+      ? (this.boss.getData('health') as number) / Math.max(1, this.boss.getData('maxHealth') as number)
+      : undefined;
+    const waypoint: MissionWaypointSnapshot = {
+      missionId: this.model.mission.id,
+      waypointId: id,
+      capturedAtMs: this.model.stageElapsedMs,
+      game: this.model.exportCheckpoint(),
+      encounter: this.encounterCheckpoint(),
+      bossHealthRatio: healthRatio,
+    };
+    event('aegis:waypoint-secured', waypoint);
+    this.announce(`WAYPOINT SECURED // ${id} OF 2`);
+    this.emitSound('pickup');
+    this.emitState(true);
+  }
+
+  private restoreEncounterCheckpoint(waypoint: MissionWaypointSnapshot): void {
+    const checkpoint = waypoint.encounter;
+    this.waveIndex = Math.max(0, checkpoint.waveIndex);
+    this.nextCarrierIndex = Math.max(0, checkpoint.nextCarrierIndex);
+    this.killsSinceUtilityDrop = Math.max(0, checkpoint.killsSinceUtilityDrop);
+    this.armamentOfferHistory = checkpoint.armamentOfferHistory.map((pair) => [pair[0], pair[1]] as const);
+    this.minibossSpawned = checkpoint.minibossSpawned;
+    this.commandSpawned = checkpoint.commandSpawned;
+    this.commandRemaining = Math.max(0, checkpoint.commandRemaining);
+    this.commandEncounterActive = false;
+    this.bulwarkIntroduced = checkpoint.bulwarkIntroduced;
+    this.finaleApproachWave = Math.max(0, checkpoint.finaleApproachWave);
+    this.lastThreatLevel = checkpoint.lastThreatLevel;
+    this.lastUtility = checkpoint.lastUtility;
   }
 
   private maybeSpawnMiniboss(progress: number): boolean {
@@ -1450,23 +1549,31 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private updateStandardEnemy(enemy: Phaser.Physics.Arcade.Sprite, kind: EnemyKind, time: number): void {
-    const aliveMs = time - (enemy.getData('motionStartedAt') as number);
     const phase = enemy.getData('phase') as number;
+    if (kind === 'bomber' && enemy.getData('state') === 'entry' && enemy.y > 135) this.beginStandardCombatMotion(enemy, time);
+    if (kind === 'elite' && enemy.getData('state') === 'entry' && enemy.y > 125) this.beginStandardCombatMotion(enemy, time);
+    const motionMs = time - (enemy.getData('motionStartedAt') as number);
     const originX = enemy.getData('motionOriginX') as number;
-    if (kind === 'scout') enemy.x = originX + Math.sin(aliveMs * 0.0024 + phase) * 54;
-    if (kind === 'bomber' && enemy.y > 135) {
+    if (kind === 'scout') enemy.x = originX + (Math.sin(motionMs * 0.0024 + phase) - Math.sin(phase)) * 54;
+    if (kind === 'bomber' && enemy.getData('state') === 'combat') {
       enemy.setVelocityY(36 * (enemy.getData('speedScale') as number));
-      enemy.x = originX + Math.sin(aliveMs * 0.0012) * 135;
+      enemy.x = originX + Math.sin(motionMs * 0.0012) * 135;
     }
-    if (kind === 'elite' && enemy.y > 125) {
+    if (kind === 'elite' && enemy.getData('state') === 'combat') {
       enemy.setVelocityY(22 * (enemy.getData('speedScale') as number));
-      enemy.x = originX + Math.sin(aliveMs * 0.0017) * 230;
+      enemy.x = originX + Math.sin(motionMs * 0.0017) * 230;
     }
     if (enemy.y > 45 && enemy.y < 470 && time >= (enemy.getData('nextFire') as number)) {
       this.enemyFire(enemy, kind);
       const base = ENEMIES[kind].fireMs / (DIFFICULTY[this.model.difficulty].enemyFireRate * (enemy.getData('fireScale') as number));
       enemy.setData('nextFire', time + base * Phaser.Math.FloatBetween(0.82, 1.24));
     }
+  }
+
+  private beginStandardCombatMotion(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
+    enemy.setData('state', 'combat')
+      .setData('motionStartedAt', time)
+      .setData('motionOriginX', enemy.x);
   }
 
   private updateCharger(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
@@ -2013,7 +2120,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private spawnBoss(): void {
+  private spawnBoss(initialHealthRatio = 1): void {
     if (this.bossSpawned || this.model.mode !== 'playing') return;
     this.bossSpawned = true;
     this.model.setFinalePhase('boss');
@@ -2030,7 +2137,11 @@ export class BattleScene extends Phaser.Scene {
     this.cameras.main.shake(550, 0.006);
     this.boss = this.spawnEnemy('boss', WORLD_WIDTH / 2, -100, 0);
     this.boss?.setData('attackIndex', 0);
-    this.model.setBoss('DREADNOUGHT', 1);
+    if (this.boss && initialHealthRatio < 1) {
+      const maxHealth = this.boss.getData('maxHealth') as number;
+      this.boss.setData('health', Math.max(1, Math.round(maxHealth * initialHealthRatio)));
+    }
+    this.model.setBoss('DREADNOUGHT', initialHealthRatio);
   }
 
   private updateBoss(boss: Phaser.Physics.Arcade.Sprite, time: number): void {
@@ -2043,6 +2154,7 @@ export class BattleScene extends Phaser.Scene {
     boss.x = (boss.getData('motionOriginX') as number) + Math.sin(aliveMs * 0.00075) * 320;
     const healthRatio = (boss.getData('health') as number) / (boss.getData('maxHealth') as number);
     this.model.setBoss('DREADNOUGHT', healthRatio);
+    if ((this.model.latestWaypointId ?? 0) < 2 && healthRatio <= 0.66) this.secureWaypoint(2);
     if (time < (boss.getData('nextFire') as number)) return;
 
     const attackIndex = boss.getData('attackIndex') as number;
@@ -2320,7 +2432,11 @@ export class BattleScene extends Phaser.Scene {
       this.model.modifiers.utilityDurationMultiplier > 1,
     );
     if (isUtilityPickup(type)) this.lastUtility = type;
-    const pickup = this.physics.add.sprite(x, y, `${ASSET_KEYS.pickupPrefix}${type}`).setDepth(5);
+    const pickup = this.physics.add.sprite(
+      Phaser.Math.Clamp(x, PICKUP_HORIZONTAL_MARGIN, WORLD_WIDTH - PICKUP_HORIZONTAL_MARGIN),
+      y,
+      `${ASSET_KEYS.pickupPrefix}${type}`,
+    ).setDepth(5);
     this.pickups.add(pickup);
     pickup.setDataEnabled().setData('pickup', type).setVelocityY(92);
     (pickup.body as Phaser.Physics.Arcade.Body).setCircle(22, 8, 8);
@@ -2340,14 +2456,16 @@ export class BattleScene extends Phaser.Scene {
     );
     this.armamentOfferHistory.push(offer.options);
     const pairId = ++this.offerId;
+    const centerX = Phaser.Math.Clamp(x, PICKUP_HORIZONTAL_MARGIN + 42, WORLD_WIDTH - PICKUP_HORIZONTAL_MARGIN - 42);
     offer.options.forEach((type, index) => {
-      const pickup = this.physics.add.sprite(x + (index === 0 ? -42 : 42), y, `${ASSET_KEYS.pickupPrefix}${type}`).setDepth(6);
+      const pickup = this.physics.add.sprite(centerX + (index === 0 ? -42 : 42), y, `${ASSET_KEYS.pickupPrefix}${type}`).setDepth(6);
       this.pickups.add(pickup);
       pickup.setDataEnabled()
         .setData('pickup', type)
         .setData('pairId', pairId)
+        .setData('settleY', Math.max(y, STATIONARY_PICKUP_SAFE_Y))
         .setData('expiresAt', this.time.now + offer.expiresAfterMs)
-        .setVelocity(index === 0 ? -16 : 16, 45)
+        .setVelocity(0, y < STATIONARY_PICKUP_SAFE_Y ? 150 : 0)
         .setTint(0xffe6a3);
       (pickup.body as Phaser.Physics.Arcade.Body).setCircle(22, 8, 8);
       this.tweens.add({ targets: pickup, scale: { from: 0.82, to: 1.12 }, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
@@ -2368,9 +2486,17 @@ export class BattleScene extends Phaser.Scene {
       }
       const distance = Phaser.Math.Distance.Between(pickup.x, pickup.y, this.player.x, this.player.y);
       const tractorEligible = canTractorPickup(pickup.getData('pairId') as number | undefined);
-      if (tractorEligible && tractorRadius > 0 && distance <= tractorRadius) this.physics.moveToObject(pickup, this.player, 380);
-      else if (tractorEligible) pickup.setVelocity(0, 92);
-      else pickup.setVelocity(0, 0);
+      if (!tractorEligible) {
+        const settleY = Math.max(STATIONARY_PICKUP_SAFE_Y, pickup.getData('settleY') as number || STATIONARY_PICKUP_SAFE_Y);
+        pickup.x = Phaser.Math.Clamp(pickup.x, PICKUP_HORIZONTAL_MARGIN, WORLD_WIDTH - PICKUP_HORIZONTAL_MARGIN);
+        if (pickup.y < settleY) pickup.setVelocity(0, 150);
+        else pickup.setY(settleY).setVelocity(0, 0);
+      } else if (tractorRadius > 0 && distance <= tractorRadius) this.physics.moveToObject(pickup, this.player, 380);
+      else pickup.setVelocity(0, 92);
+
+      // Any stationary reward that somehow enters the unreachable strip is returned to play.
+      const body = pickup.body as Phaser.Physics.Arcade.Body;
+      if (pickup.y < STATIONARY_PICKUP_SAFE_Y && Math.abs(body.velocity.y) < 1) pickup.setVelocityY(92);
       if (pickup.y > WORLD_HEIGHT + 60) pickup.destroy();
       return true;
     });
@@ -2684,19 +2810,34 @@ export class BattleScene extends Phaser.Scene {
     this.lastHudAt = this.time.now;
     event('aegis:state', this.model.snapshot());
     if (this.debugMode) {
-      const enemies: Array<{ kind: EnemyKind; combatReady: boolean; reactors?: number[] }> = [];
+      const enemies: Array<{ kind: EnemyKind; x: number; y: number; state: string; combatReady: boolean; reactors?: number[] }> = [];
       this.enemies.children.each((child) => {
         const enemy = child as Phaser.Physics.Arcade.Sprite;
         if (enemy.active) {
           enemies.push({
             kind: enemy.getData('kind') as EnemyKind,
+            x: Math.round(enemy.x * 10) / 10,
+            y: Math.round(enemy.y * 10) / 10,
+            state: enemy.getData('state') as string,
             combatReady: enemy.getData('combatReady') !== false,
             reactors: enemy.getData('kind') === 'bulwark' ? [...(enemy.getData('reactorHealth') as number[])] : undefined,
           });
         }
         return true;
       });
-      event('aegis:debug-combat', enemies);
+      const pickups: Array<{ type: PickupType; x: number; y: number; paired: boolean; velocityY: number }> = [];
+      this.pickups.children.each((child) => {
+        const pickup = child as Phaser.Physics.Arcade.Sprite;
+        if (pickup.active) pickups.push({
+          type: pickup.getData('pickup') as PickupType,
+          x: Math.round(pickup.x * 10) / 10,
+          y: Math.round(pickup.y * 10) / 10,
+          paired: pickup.getData('pairId') !== undefined,
+          velocityY: Math.round((pickup.body as Phaser.Physics.Arcade.Body).velocity.y * 10) / 10,
+        });
+        return true;
+      });
+      event('aegis:debug-combat', { enemies, pickups });
     }
   }
 

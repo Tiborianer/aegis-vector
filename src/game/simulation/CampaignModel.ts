@@ -11,6 +11,7 @@ import type {
   MissionDefinition,
   MissionId,
   MissionStartConfig,
+  MissionWaypointSnapshot,
   SortieModuleId,
   StoryChapterId,
   UpgradeNodeId,
@@ -35,7 +36,7 @@ export class CampaignModel {
 
   static fresh(difficulty: Difficulty): CampaignSnapshot {
     return {
-      version: 4,
+      version: 5,
       phase: 'briefing',
       difficulty,
       missionIndex: 0,
@@ -97,12 +98,22 @@ export class CampaignModel {
       modifiers: buildCombatModifiers(this.state.purchased),
       campaignSeed: this.state.campaignSeed ?? CampaignModel.makeSeed(),
       sortieModule: this.state.sortieModule,
+      resumeFrom: this.state.activeWaypoint ? CampaignModel.cloneWaypoint(this.state.activeWaypoint) : undefined,
       debugDurationMs,
     };
   }
 
   failMission(): void {
-    this.state.phase = this.currentMission().id === 'coastal' ? 'briefing' : 'hangar';
+    this.state.phase = this.state.activeWaypoint
+      ? 'mission'
+      : this.currentMission().id === 'coastal' ? 'briefing' : 'hangar';
+  }
+
+  saveWaypoint(waypoint: MissionWaypointSnapshot): boolean {
+    if (this.state.phase !== 'mission' || waypoint.missionId !== this.currentMission().id) return false;
+    if (this.state.activeWaypoint && this.state.activeWaypoint.waypointId >= waypoint.waypointId) return false;
+    this.state.activeWaypoint = CampaignModel.cloneWaypoint(waypoint);
+    return true;
   }
 
   completeMission(result: GameSnapshot): CampaignSnapshot {
@@ -119,6 +130,7 @@ export class CampaignModel {
     this.state.weapons = { ...result.weapons };
     this.state.shieldBaseMax = result.shieldBaseMax;
     this.state.sortieModule = undefined;
+    this.state.activeWaypoint = undefined;
     this.state.lastReport = {
       missionId: mission.id,
       title: mission.title,
@@ -194,12 +206,13 @@ export class CampaignModel {
       discoveredEnemies: [...(this.state.discoveredEnemies ?? [])],
       seenStoryChapters: [...(this.state.seenStoryChapters ?? [])],
       lastReport: this.state.lastReport ? { ...this.state.lastReport } : undefined,
+      activeWaypoint: this.state.activeWaypoint ? CampaignModel.cloneWaypoint(this.state.activeWaypoint) : undefined,
     };
   }
 
   exportSave(): CampaignSnapshot {
     const snapshot = this.snapshot();
-    if (snapshot.phase === 'mission') snapshot.phase = snapshot.currentMissionId === 'coastal' ? 'briefing' : 'hangar';
+    if (snapshot.phase === 'mission' && !snapshot.activeWaypoint) snapshot.phase = snapshot.currentMissionId === 'coastal' ? 'briefing' : 'hangar';
     return snapshot;
   }
 
@@ -215,12 +228,14 @@ export class CampaignModel {
     const pendingStoryChapter = validStoryIds.has(candidate.pendingStoryChapter as StoryChapterId)
       ? candidate.pendingStoryChapter
       : undefined;
+    const activeWaypoint = CampaignModel.sanitizeWaypoint(candidate.activeWaypoint, currentMissionId);
     const phase = pendingStoryChapter ? 'story'
       : candidate.phase === 'victory' ? 'victory'
         : candidate.phase === 'route' ? 'route'
+          : candidate.phase === 'mission' && activeWaypoint ? 'mission'
           : candidate.phase === 'hangar' || currentMissionId !== 'coastal' ? 'hangar' : 'briefing';
     return {
-      version: 4,
+      version: 5,
       phase,
       difficulty: validDifficulty,
       missionIndex,
@@ -247,6 +262,26 @@ export class CampaignModel {
       seenStoryChapters: Array.isArray(candidate.seenStoryChapters)
         ? [...new Set(candidate.seenStoryChapters.filter((id): id is StoryChapterId => validStoryIds.has(id)))]
         : [],
+      activeWaypoint,
+    };
+  }
+
+  private static sanitizeWaypoint(candidate: MissionWaypointSnapshot | undefined, missionId: MissionId): MissionWaypointSnapshot | undefined {
+    if (!candidate || candidate.missionId !== missionId || (candidate.waypointId !== 1 && candidate.waypointId !== 2)) return undefined;
+    const game = candidate.game;
+    const encounter = candidate.encounter;
+    if (!game || !encounter || !Number.isFinite(game.stageElapsedMs) || !Number.isFinite(encounter.waveIndex)) return undefined;
+    return CampaignModel.cloneWaypoint(candidate);
+  }
+
+  private static cloneWaypoint(waypoint: MissionWaypointSnapshot): MissionWaypointSnapshot {
+    return {
+      ...waypoint,
+      game: { ...waypoint.game, weapons: { ...waypoint.game.weapons } },
+      encounter: {
+        ...waypoint.encounter,
+        armamentOfferHistory: waypoint.encounter.armamentOfferHistory.map((pair) => [pair[0], pair[1]] as const),
+      },
     };
   }
 

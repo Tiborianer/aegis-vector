@@ -15,6 +15,7 @@ const keyframes = Array.from({ length: 5 }, (_, index) => [
   `cinematics/keyframes/scene-0${index + 1}-start.webp`,
   `cinematics/keyframes/scene-0${index + 1}-end.webp`,
 ]).flat();
+const introVideo = 'cinematics/video/aegis-vector-intro-v1.mp4';
 
 let storyBytes = 0;
 for (const relative of [...storyFiles, ...keyframes]) {
@@ -33,4 +34,14 @@ for (const relative of [...storyFiles, ...keyframes]) {
 
 if (storyFiles.length !== 20) throw new Error(`Expected exactly 20 story panels, mapped ${storyFiles.length}`);
 if (storyBytes > 6.5 * 1024 * 1024) throw new Error(`Story panel set exceeds 6.5MB (${storyBytes} bytes)`);
-console.log(`Verified ${storyFiles.length} story panels and ${keyframes.length} intro keyframes in ${root} (${Math.round(storyBytes / 1024)}KB story set).`);
+
+const videoPath = join(root, introVideo);
+const videoInfo = await stat(videoPath).catch(() => undefined);
+if (!videoInfo?.isFile() || videoInfo.size < 256 * 1024) throw new Error(`Missing or truncated intro video: ${videoPath}`);
+if (videoInfo.size > 50 * 1024 * 1024) throw new Error(`Intro video exceeds the approved 50MB original-file limit: ${videoPath} (${videoInfo.size} bytes)`);
+const video = await readFile(videoPath);
+if (video.subarray(4, 8).toString('ascii') !== 'ftyp') throw new Error(`Intro video does not have an ISO/QuickTime media signature: ${videoPath}`);
+if (!video.includes(Buffer.from('avc1'))) throw new Error(`Intro video is missing H.264/AVC video: ${videoPath}`);
+if (!video.includes(Buffer.from('mp4a'))) throw new Error(`Intro video is missing AAC audio: ${videoPath}`);
+
+console.log(`Verified ${storyFiles.length} story panels, ${keyframes.length} intro keyframes, and the ${(videoInfo.size / 1024 / 1024).toFixed(1)}MB intro video in ${root}.`);

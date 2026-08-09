@@ -1,7 +1,5 @@
 # Radio voice files
 
-The production pack currently includes `shield-down.wav`, `hull-critical.wav`, and `arc-upgraded.wav`.
+The production pack contains ten mandatory mono, 22.05kHz, 16-bit PCM WAV files. ECHO-7 uses Samantha at 195–205 words per minute; Rook uses Daniel at 185 words per minute. Regenerate them with `scripts/generate-radio-voices.sh` and process them with `scripts/process-radio-voice.py`.
 
-The remaining optional recordings use these exact names: `shield-restored.mp3`, `emp-ready.mp3`, `nova-upgraded.mp3`, `lance-upgraded.mp3`, `wing-upgraded.mp3`, `ion-upgraded.mp3`, and `aegis-upgraded.mp3`.
-
-The game always presents the matching subtitle. If a recording is absent, it continues silently without affecting music or SFX and reports the available voice count in the Audio panel.
+Runtime playback applies a central −6dB trim after per-file loudness correction. The Voice slider remains independent, subtitles remain available at zero Voice volume, and radio never changes the music gain or playback position.

@@ -26,14 +26,16 @@ import type {
 } from './game/simulation/types';
 import { BootScene } from './phaser/scenes/BootScene';
 import { BattleScene } from './phaser/scenes/BattleScene';
+import {
+  INTRO_VIDEO,
+  formatIntroTime,
+  introCaptionAt,
+  introMetadataIsValid,
+  type IntroPlaybackState,
+} from './ui/introVideo';
 
 const CAMPAIGN_SAVE_KEY = 'aegis-vector-campaign-v1';
-const INTRO_SEEN_KEY = 'aegis-vector-intro-seen-v1';
 const STORY_ARCHIVE_KEY = 'aegis-vector-story-archive-v1';
-const INTRO_FRAMES = [
-  'scene-01-start', 'scene-01-end', 'scene-02-start', 'scene-02-end', 'scene-03-start',
-  'scene-03-end', 'scene-04-start', 'scene-04-end', 'scene-05-start', 'scene-05-end',
-].map((name) => `cinematics/keyframes/${name}.webp`);
 
 const required = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -63,6 +65,7 @@ const ui = {
   audioPanel: required<HTMLElement>('audio-panel'),
   musicVolume: required<HTMLInputElement>('music-volume'),
   sfxVolume: required<HTMLInputElement>('sfx-volume'),
+  cinematicVolume: required<HTMLInputElement>('cinematic-volume'),
   resetMix: required<HTMLButtonElement>('reset-mix-button'),
   audioStatus: required<HTMLElement>('audio-status'),
   audioError: required<HTMLElement>('audio-error'),
@@ -76,6 +79,8 @@ const ui = {
   missionLabel: required<HTMLElement>('mission-label'),
   threatLevel: required<HTMLElement>('threat-level'),
   stageProgress: required<HTMLElement>('stage-progress'),
+  waypointMarker1: required<HTMLElement>('waypoint-marker-1'),
+  waypointMarker2: required<HTMLElement>('waypoint-marker-2'),
   stageTime: required<HTMLElement>('stage-time'),
   bossHud: required<HTMLElement>('boss-hud'),
   bossName: required<HTMLElement>('boss-name'),
@@ -95,7 +100,14 @@ const ui = {
   intro: required<HTMLElement>('intro-screen'),
   introImage: required<HTMLImageElement>('intro-image'),
   introVideo: required<HTMLVideoElement>('intro-video'),
-  introTitle: required<HTMLElement>('intro-title'),
+  introLoading: required<HTMLElement>('intro-loading'),
+  introFallback: required<HTMLElement>('intro-fallback'),
+  introCaption: required<HTMLElement>('intro-caption'),
+  introCaptionSpeaker: required<HTMLElement>('intro-caption-speaker'),
+  introCaptionText: required<HTMLElement>('intro-caption-text'),
+  introPlay: required<HTMLButtonElement>('intro-play-button'),
+  introContinue: required<HTMLButtonElement>('intro-continue-button'),
+  introPause: required<HTMLButtonElement>('intro-pause-button'),
   introTime: required<HTMLElement>('intro-time'),
   introSkip: required<HTMLButtonElement>('intro-skip-button'),
   story: required<HTMLElement>('story-screen'),
@@ -150,11 +162,13 @@ let storyReplay = false;
 let introTimer = 0;
 let introSequenceToken = 0;
 let introCompletion: (() => void) | undefined;
-let introVideoSourcePromise: Promise<string | undefined> | undefined;
+let introPlaybackState: IntroPlaybackState = 'preloading';
+let introEnding = false;
+let introVisibilityPaused = false;
 let replayReturnScreen: HTMLElement = ui.start;
 const GAMEPLAY_KEY_CODES = new Set([
   'Space', 'KeyZ', 'KeyW', 'KeyA', 'KeyS', 'KeyD',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyX', 'KeyP', 'Escape',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyX', 'ShiftLeft', 'ShiftRight', 'KeyP', 'Escape',
 ]);
 const heldGameplayKeys = new Set<string>();
 let transitionInputLatched = false;
@@ -177,7 +191,10 @@ const initialAudio = audio.getSettings();
 ui.musicVolume.value = String(Math.round(initialAudio.music * 100));
 ui.sfxVolume.value = String(Math.round(initialAudio.sfx * 100));
 ui.voiceVolume.value = String(Math.round(initialAudio.voice * 100));
+ui.cinematicVolume.value = String(Math.round(initialAudio.cinematic * 100));
 ui.radioSubtitles.checked = initialAudio.radioSubtitles;
+bindIntroVideoEvents();
+prepareIntroVideo(false);
 
 document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
   button.addEventListener('click', () => {
@@ -192,9 +209,11 @@ ui.launch.addEventListener('click', () => {
   preloadUpgradeIcons();
   campaign.startNew(difficulty);
   saveCampaign();
-  if (hasSeenIntro()) startCurrentMission();
-  else showIntro(() => startCurrentMission());
+  showIntro(() => startCurrentMission());
 });
+ui.launch.addEventListener('pointerenter', () => prepareIntroVideo(true));
+ui.launch.addEventListener('focus', () => prepareIntroVideo(true));
+ui.launch.addEventListener('pointerdown', () => prepareIntroVideo(true));
 
 ui.continue.addEventListener('click', () => {
   if (!ready || !savedCampaign) return;
@@ -203,6 +222,7 @@ ui.continue.addEventListener('click', () => {
   campaign = new CampaignModel(savedCampaign);
   const state = campaign.snapshot();
   if (state.phase === 'story' && state.pendingStoryChapter) openStory(state.pendingStoryChapter);
+  else if (state.phase === 'mission' && state.activeWaypoint) startCurrentMission();
   else openHangar();
 });
 
@@ -285,7 +305,7 @@ ui.manualContent.addEventListener('click', (raw) => {
     showIntro(() => {
       replayReturnScreen.classList.remove('hidden');
       openManualAt('archive');
-    }, true);
+    });
     return;
   }
   const chapterButton = (raw.target as HTMLElement).closest<HTMLElement>('[data-story-id]');
@@ -308,20 +328,28 @@ ui.storyPause.addEventListener('click', () => {
   else scheduleStoryAdvance();
 });
 ui.storySkip.addEventListener('click', finishStory);
-ui.introSkip.addEventListener('click', finishIntro);
+ui.introSkip.addEventListener('click', () => { void finishIntro(true); });
+ui.introPlay.addEventListener('click', () => { void startIntroPlayback(introSequenceToken); });
+ui.introContinue.addEventListener('click', () => { void finishIntro(false); });
+ui.introPause.addEventListener('click', () => {
+  if (ui.introVideo.paused) void resumeIntroPlayback();
+  else ui.introVideo.pause();
+});
 
 document.addEventListener('keydown', (event) => {
   if (GAMEPLAY_KEY_CODES.has(event.code)) heldGameplayKeys.add(event.code);
-  if (!ui.intro.classList.contains('hidden') && event.key === 'Escape') {
-    if (event.repeat || transitionInputLatched) {
+  if (!ui.intro.classList.contains('hidden')) {
+    if (event.key === 'Escape' && !event.repeat && !transitionInputLatched) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void finishIntro(true);
+      return;
+    }
+    if (GAMEPLAY_KEY_CODES.has(event.code)) {
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
     }
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    finishIntro();
-    return;
   }
   if (!ui.missionClear.classList.contains('hidden') && GAMEPLAY_KEY_CODES.has(event.code)) {
     event.preventDefault();
@@ -355,6 +383,17 @@ window.addEventListener('blur', () => {
   transitionInputLatched = false;
 });
 
+document.addEventListener('visibilitychange', () => {
+  if (ui.intro.classList.contains('hidden')) return;
+  if (document.hidden && !ui.introVideo.paused) {
+    introVisibilityPaused = true;
+    ui.introVideo.pause();
+  } else if (!document.hidden && introVisibilityPaused) {
+    introVisibilityPaused = false;
+    void resumeIntroPlayback();
+  }
+});
+
 ui.hangarAbandon.addEventListener('click', abandonCampaign);
 ui.pauseAbandon.addEventListener('click', abandonCampaign);
 ui.resultAbandon.addEventListener('click', abandonCampaign);
@@ -368,6 +407,11 @@ ui.audioButton.addEventListener('click', () => {
 ui.musicVolume.addEventListener('input', () => audio.setMusicVolume(Number(ui.musicVolume.value) / 100));
 ui.sfxVolume.addEventListener('input', () => audio.setSfxVolume(Number(ui.sfxVolume.value) / 100));
 ui.voiceVolume.addEventListener('input', () => audio.setVoiceVolume(Number(ui.voiceVolume.value) / 100));
+ui.cinematicVolume.addEventListener('input', () => {
+  const value = Number(ui.cinematicVolume.value) / 100;
+  audio.setCinematicVolume(value);
+  ui.introVideo.volume = value;
+});
 ui.radioSubtitles.addEventListener('change', () => {
   audio.setRadioSubtitles(ui.radioSubtitles.checked);
   if (!ui.radioSubtitles.checked) ui.radioSubtitle.classList.add('hidden');
@@ -377,6 +421,8 @@ ui.resetMix.addEventListener('click', () => {
   ui.musicVolume.value = String(Math.round(mix.music * 100));
   ui.sfxVolume.value = String(Math.round(mix.sfx * 100));
   ui.voiceVolume.value = String(Math.round(mix.voice * 100));
+  ui.cinematicVolume.value = String(Math.round(mix.cinematic * 100));
+  ui.introVideo.volume = mix.cinematic;
   ui.radioSubtitles.checked = mix.radioSubtitles;
 });
 
@@ -468,6 +514,8 @@ window.addEventListener('aegis:music', (raw) => {
 window.addEventListener('aegis:pause-state', (raw) => {
   const paused = (raw as CustomEvent<boolean>).detail;
   ui.pause.classList.toggle('hidden', !paused);
+  const waypoint = latestSnapshot?.latestWaypointId;
+  ui.restart.textContent = waypoint ? `RETRY FROM WAYPOINT ${waypoint}` : 'RETRY MISSION';
   audio.setMusicDucked(paused);
 });
 
@@ -482,6 +530,12 @@ window.addEventListener('aegis:mission-clear', (raw) => {
   ui.missionClear.style.setProperty('--clear-duration', `${detail.durationMs}ms`);
   void ui.missionClear.offsetWidth;
   ui.missionClear.classList.add('show');
+});
+
+window.addEventListener('aegis:waypoint-secured', (raw) => {
+  const waypoint = (raw as CustomEvent<CampaignSnapshot['activeWaypoint']>).detail;
+  if (!waypoint || !campaign.saveWaypoint(waypoint)) return;
+  saveCampaign();
 });
 
 window.addEventListener('aegis:mission-ended', (raw) => {
@@ -503,110 +557,196 @@ window.addEventListener('aegis:mission-ended', (raw) => {
   }
 });
 
-function showIntro(onComplete: () => void, replay = false): void {
+function showIntro(onComplete: () => void): void {
   const token = ++introSequenceToken;
   introCompletion = onComplete;
   window.clearTimeout(introTimer);
+  introEnding = false;
+  introVisibilityPaused = false;
+  transitionInputLatched = transitionInputLatched || heldGameplayKeys.size > 0;
   ui.start.classList.add('hidden');
   ui.manual.classList.add('hidden');
   ui.intro.classList.remove('hidden');
-  ui.introTitle.classList.add('hidden');
   ui.introImage.classList.remove('hidden');
   ui.introVideo.classList.add('hidden');
-  setIntroFrame(0);
-  void playIntroVideoIfAvailable(token);
-  if (!replay) markIntroSeen();
+  ui.introLoading.classList.remove('hidden');
+  ui.introFallback.classList.add('hidden');
+  ui.introPlay.classList.add('hidden');
+  ui.introContinue.classList.add('hidden');
+  ui.introPause.classList.add('hidden');
+  ui.introSkip.classList.remove('hidden');
+  ui.introCaption.classList.add('hidden');
+  ui.introTime.textContent = formatIntroTime(0);
+  ui.introVideo.volume = audio.getSettings().cinematic;
+  audio.stopMusic(0.25);
+  prepareIntroVideo(true);
+  ui.intro.focus({ preventScroll: true });
+  void startIntroPlayback(token);
 }
 
-async function playIntroVideoIfAvailable(token: number): Promise<void> {
-  const source = await findIntroVideoSource();
-  if (!source || token !== introSequenceToken || ui.intro.classList.contains('hidden')) return;
-  window.clearTimeout(introTimer);
-  ui.introImage.classList.add('hidden');
-  ui.introVideo.classList.remove('hidden');
-  ui.introVideo.src = new URL(source, document.baseURI).href;
-  ui.introVideo.currentTime = 0;
-  ui.introVideo.ontimeupdate = () => {
-    const elapsed = Math.min(27, Math.floor(ui.introVideo.currentTime));
-    ui.introTime.textContent = `00:${String(elapsed).padStart(2, '0')} / 00:30`;
-  };
-  ui.introVideo.onended = () => {
-    if (token === introSequenceToken) showIntroTitle();
-  };
-  ui.introVideo.onerror = () => {
-    if (token !== introSequenceToken) return;
-    ui.introVideo.classList.add('hidden');
-    ui.introImage.classList.remove('hidden');
-    setIntroFrame(0);
-  };
+function prepareIntroVideo(eager: boolean): void {
+  ui.introVideo.preload = eager ? 'auto' : 'metadata';
+  const source = new URL(INTRO_VIDEO.file, document.baseURI).href;
+  if (ui.introVideo.src !== source) {
+    introPlaybackState = 'preloading';
+    ui.introVideo.src = source;
+    ui.introVideo.load();
+  }
+}
+
+async function startIntroPlayback(token: number): Promise<void> {
+  if (token !== introSequenceToken || ui.intro.classList.contains('hidden')) return;
+  prepareIntroVideo(true);
+  introPlaybackState = 'buffering';
+  ui.introLoading.classList.remove('hidden');
+  ui.introFallback.classList.add('hidden');
+  ui.introPlay.classList.add('hidden');
+  ui.introVideo.volume = audio.getSettings().cinematic;
+  if (ui.introVideo.ended || ui.introVideo.currentTime > 0.25) ui.introVideo.currentTime = 0;
   try {
     await ui.introVideo.play();
-  } catch {
-    ui.introVideo.onerror?.(new Event('error'));
-  }
-}
-
-function findIntroVideoSource(): Promise<string | undefined> {
-  introVideoSourcePromise ??= (async () => {
-    const formats = ui.introVideo.canPlayType('video/webm')
-      ? ['cinematics/video/aegis-vector-intro.webm', 'cinematics/video/aegis-vector-intro.mp4']
-      : ['cinematics/video/aegis-vector-intro.mp4', 'cinematics/video/aegis-vector-intro.webm'];
-    for (const path of formats) {
-      try {
-        const response = await fetch(new URL(path, document.baseURI), { method: 'HEAD' });
-        if (response.ok && Number(response.headers.get('content-length') ?? 1) > 0) return path;
-      } catch { /* the keyframe animatic remains available */ }
+    if (token !== introSequenceToken || ui.intro.classList.contains('hidden')) return;
+    ui.introVideo.classList.remove('hidden');
+    ui.introImage.classList.add('hidden');
+  } catch (error) {
+    if (token !== introSequenceToken) return;
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      introPlaybackState = 'ready';
+      ui.introLoading.classList.add('hidden');
+      ui.introPlay.classList.remove('hidden');
+      ui.introPlay.focus({ preventScroll: true });
+      return;
     }
-    return undefined;
-  })();
-  return introVideoSourcePromise;
-}
-
-function setIntroFrame(index: number): void {
-  window.clearTimeout(introTimer);
-  if (index >= INTRO_FRAMES.length) {
-    showIntroTitle();
-    return;
+    showIntroFallback();
   }
-  ui.introImage.src = INTRO_FRAMES[index];
-  ui.introImage.alt = [
-    'The moonlit Pelagos Array before the attack.', 'A crimson signal spreads across the Pelagos horizon.',
-    'A dark silhouette divides the storm above the ocean.', 'The Dreadnought rises and activates its crimson reactor trenches.',
-    'Mara Vey approaches the AV-7 while Rook watches from flight control.', 'Mara closes her helmet as the ECHO-7 glyph appears.',
-    'The AV-7 waits on a rain-covered magnetic launch rail.', 'The AV-7 climbs into the storm above Pelagos.',
-    'The AV-7 banks through autonomous enemy fighters.', 'The AV-7 flies toward the distant Dreadnought.',
-  ][index];
-  ui.introImage.parentElement?.setAttribute('data-beat', index % 2 === 0 ? 'start' : 'end');
-  ui.introTime.textContent = `00:${String(Math.min(27, Math.round(index * 2.7))).padStart(2, '0')} / 00:30`;
-  void ui.introImage.offsetWidth;
-  if (index === 2) audio.play('warning');
-  if (index === 6) audio.play('nova-fire');
-  if (index === 8) audio.play('enemy-fire');
-  introTimer = window.setTimeout(() => setIntroFrame(index + 1), 2_700);
 }
 
-function showIntroTitle(): void {
-  window.clearTimeout(introTimer);
+async function resumeIntroPlayback(): Promise<void> {
+  if (ui.intro.classList.contains('hidden')) return;
+  try {
+    await ui.introVideo.play();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      introPlaybackState = 'ready';
+      ui.introPlay.classList.remove('hidden');
+    } else {
+      showIntroFallback();
+    }
+  }
+}
+
+function showIntroFallback(): void {
+  if (ui.intro.classList.contains('hidden') || introEnding) return;
+  introPlaybackState = 'fallback';
   ui.introVideo.pause();
   ui.introVideo.classList.add('hidden');
-  ui.introImage.classList.add('hidden');
-  ui.introTitle.classList.remove('hidden');
-  ui.introTime.textContent = '00:27 / 00:30';
-  audio.play('victory');
-  introTimer = window.setTimeout(finishIntro, 3_000);
+  ui.introImage.classList.remove('hidden');
+  ui.introLoading.classList.add('hidden');
+  ui.introPlay.classList.add('hidden');
+  ui.introContinue.classList.add('hidden');
+  ui.introPause.classList.add('hidden');
+  ui.introCaption.classList.add('hidden');
+  ui.introFallback.classList.remove('hidden');
+  window.clearTimeout(introTimer);
+  introTimer = window.setTimeout(() => { void finishIntro(false); }, 2_000);
 }
 
-function finishIntro(): void {
-  if (ui.intro.classList.contains('hidden')) return;
+async function finishIntro(fadeAudio: boolean): Promise<void> {
+  if (ui.intro.classList.contains('hidden') || introEnding) return;
+  introEnding = true;
   window.clearTimeout(introTimer);
   introSequenceToken += 1;
+  if (fadeAudio && !ui.introVideo.paused) await fadeIntroVideoVolume(0.16);
   ui.introVideo.pause();
   ui.introVideo.removeAttribute('src');
   ui.introVideo.load();
+  ui.introVideo.volume = audio.getSettings().cinematic;
+  ui.introCaption.classList.add('hidden');
+  ui.introContinue.classList.add('hidden');
   ui.intro.classList.add('hidden');
+  introPlaybackState = 'complete';
   const callback = introCompletion;
   introCompletion = undefined;
+  introEnding = false;
   callback?.();
+}
+
+function completeIntroPlayback(): void {
+  if (ui.intro.classList.contains('hidden') || introEnding) return;
+  introPlaybackState = 'complete';
+  ui.introVideo.classList.remove('hidden');
+  ui.introImage.classList.add('hidden');
+  ui.introLoading.classList.add('hidden');
+  ui.introFallback.classList.add('hidden');
+  ui.introPlay.classList.add('hidden');
+  ui.introPause.classList.add('hidden');
+  ui.introSkip.classList.add('hidden');
+  ui.introCaption.classList.add('hidden');
+  ui.introTime.textContent = formatIntroTime(ui.introVideo.duration, ui.introVideo.duration);
+  ui.introContinue.classList.remove('hidden');
+  ui.introContinue.focus({ preventScroll: true });
+}
+
+function fadeIntroVideoVolume(seconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    const startedAt = performance.now();
+    const initial = ui.introVideo.volume;
+    const tick = (now: number): void => {
+      const progress = Math.min(1, (now - startedAt) / Math.max(1, seconds * 1_000));
+      ui.introVideo.volume = initial * (1 - progress);
+      if (progress < 1) requestAnimationFrame(tick);
+      else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+function bindIntroVideoEvents(): void {
+  ui.introVideo.addEventListener('loadedmetadata', () => {
+    const valid = introMetadataIsValid(ui.introVideo.duration, ui.introVideo.videoWidth, ui.introVideo.videoHeight);
+    if (!valid && !ui.intro.classList.contains('hidden')) showIntroFallback();
+    else introPlaybackState = 'ready';
+    ui.introTime.textContent = formatIntroTime(0, ui.introVideo.duration);
+  });
+  ui.introVideo.addEventListener('loadeddata', () => {
+    if (ui.intro.classList.contains('hidden')) return;
+    ui.introVideo.classList.remove('hidden');
+    ui.introImage.classList.add('hidden');
+  });
+  ui.introVideo.addEventListener('timeupdate', () => {
+    const duration = Number.isFinite(ui.introVideo.duration) ? ui.introVideo.duration : INTRO_VIDEO.expectedDurationSeconds;
+    ui.introTime.textContent = formatIntroTime(ui.introVideo.currentTime, duration);
+    const caption = audio.getSettings().radioSubtitles ? introCaptionAt(ui.introVideo.currentTime) : undefined;
+    ui.introCaption.classList.toggle('hidden', !caption);
+    if (caption) {
+      ui.introCaptionSpeaker.textContent = caption.speaker;
+      ui.introCaptionText.textContent = caption.text;
+    }
+  });
+  ui.introVideo.addEventListener('waiting', () => {
+    if (ui.intro.classList.contains('hidden')) return;
+    introPlaybackState = 'buffering';
+    ui.introLoading.classList.remove('hidden');
+  });
+  ui.introVideo.addEventListener('playing', () => {
+    if (ui.intro.classList.contains('hidden')) return;
+    introPlaybackState = 'playing';
+    ui.introVideo.classList.remove('hidden');
+    ui.introImage.classList.add('hidden');
+    ui.introLoading.classList.add('hidden');
+    ui.introPlay.classList.add('hidden');
+    ui.introPause.classList.remove('hidden');
+    ui.introPause.textContent = 'PAUSE';
+  });
+  ui.introVideo.addEventListener('pause', () => {
+    if (ui.intro.classList.contains('hidden') || introEnding || ui.introVideo.ended) return;
+    introPlaybackState = 'paused';
+    ui.introPause.textContent = 'RESUME';
+  });
+  ui.introVideo.addEventListener('ended', completeIntroPlayback);
+  ui.introVideo.addEventListener('error', () => {
+    if (!ui.intro.classList.contains('hidden') && !introEnding) showIntroFallback();
+  });
 }
 
 function openStory(id: StoryChapterId, replay = false): void {
@@ -684,14 +824,6 @@ function finishStory(): void {
   saveCampaign();
   if (state.phase === 'victory') showVictory(state, latestSnapshot);
   else openHangar();
-}
-
-function hasSeenIntro(): boolean {
-  try { return localStorage.getItem(INTRO_SEEN_KEY) === '1'; } catch { return false; }
-}
-
-function markIntroSeen(): void {
-  try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* optional */ }
 }
 
 function startCurrentMission(): void {
@@ -827,13 +959,18 @@ function renderUpgradeTree(state: CampaignSnapshot): void {
 function showFailure(snapshot: GameSnapshot): void {
   resultIsVictory = false;
   ui.result.classList.remove('hidden');
-  ui.resultKicker.textContent = 'MISSION FAILED // CHECKPOINT RESTORED';
+  const waypoint = snapshot.latestWaypointId;
+  ui.resultKicker.textContent = waypoint
+    ? `MISSION FAILED // WAYPOINT ${waypoint} RESTORED`
+    : 'MISSION FAILED // SORTIE RESET';
   ui.resultTitle.textContent = 'FIGHTER DOWN';
   ui.resultTitle.style.color = 'var(--danger)';
   ui.resultScore.textContent = formatScore(snapshot.score);
   ui.resultScoreLabel.textContent = 'ATTEMPT SCORE';
   ui.resultKills.textContent = String(snapshot.kills);
-  ui.resultAction.innerHTML = `RETRY ${snapshot.missionTitle} <span>→</span>`;
+  ui.resultAction.innerHTML = waypoint
+    ? `RETRY FROM WAYPOINT ${waypoint} <span>→</span>`
+    : `RETRY ${snapshot.missionTitle} <span>→</span>`;
   ui.resultAbandon.classList.remove('hidden');
   void audio.playMusic('defeat', undefined, defeatStingIndex);
   defeatStingIndex = (defeatStingIndex + 1) % 2;
@@ -899,6 +1036,8 @@ function updateHud(snapshot: GameSnapshot): void {
   const timedElapsed = finaleBoss ? Math.max(0, snapshot.stageElapsedMs - 30_000) : snapshot.stageElapsedMs;
   const progress = finaleApproach ? Math.min(1, timedElapsed / timedDuration) : Math.min(1, snapshot.stageElapsedMs / snapshot.stageDurationMs);
   ui.stageProgress.style.width = `${progress * 100}%`;
+  ui.waypointMarker1.classList.toggle('secured', (snapshot.latestWaypointId ?? 0) >= 1);
+  ui.waypointMarker2.classList.toggle('secured', (snapshot.latestWaypointId ?? 0) >= 2);
   const remainingSeconds = Math.max(0, Math.ceil(((finaleApproach ? 30_000 : snapshot.stageDurationMs) - (finaleApproach ? timedElapsed : snapshot.stageElapsedMs)) / 1_000));
   ui.stageTime.textContent = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`;
 
@@ -992,7 +1131,8 @@ const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; descr
   ],
   systems: [
     { name: 'AEGIS SHIELD', tag: 'DEFENSE', description: 'Absorbs hits before hull and recharges after avoiding damage. Battlefield shield cores increase capacity up to three.' },
-    { name: 'EMP', tag: 'X KEY', description: 'Clears nearby bullets and mines, damages enemies, and temporarily disrupts Bulwark armor.' },
+    { name: 'EMP', tag: 'X / SHIFT', description: 'Press X or either Shift key to clear nearby bullets and mines, damage enemies, and temporarily disrupt Bulwark armor.' },
+    { name: 'WAYPOINTS', tag: 'RESTART', description: 'Two automatic waypoints preserve mission progress. A retry restores full shields, at least two hull, and at least one EMP without restoring used one-shot defenses.' },
     { name: 'OVERDRIVE', tag: 'UTILITY', description: 'Fires every weapon faster. White-hot gold projectiles show when Overdrive is active.' },
     { name: 'ARMAMENT CARRIER', tag: 'CHOICE', description: 'Gold-marked targets drop two permanent campaign upgrades. Collect one before the offer expires.' },
     { name: 'SORTIE MODULE', tag: 'CONSUMABLE', description: 'A hangar purchase used for the next mission only. Failed attempts restore it with the mission checkpoint.' },
@@ -1009,7 +1149,7 @@ function renderManual(tab: ManualTab): void {
     const unlocked = unlockedStoryChapters();
     const intro = document.createElement('article');
     intro.dataset.replayIntro = 'true';
-    intro.innerHTML = `<img src="cinematics/keyframes/scene-01-start.webp" alt=""><div><span>OPENING CINEMATIC</span><h3>PROJECT CROWN AWAKENS</h3><p>Replay the thirty-second Pelagos campaign introduction.</p></div>`;
+    intro.innerHTML = `<img src="cinematics/keyframes/scene-01-start.webp" alt=""><div><span>OPENING CINEMATIC</span><h3>PROJECT CROWN AWAKENS</h3><p>Replay the complete twenty-six-second Pelagos campaign introduction.</p></div>`;
     const chapters = STORY_CHAPTERS.map((chapter) => {
       const article = document.createElement('article');
       const available = unlocked.has(chapter.id);
@@ -1098,6 +1238,8 @@ function refreshContinueButton(): void {
   ui.continue.classList.toggle('hidden', !savedCampaign || savedCampaign.phase === 'victory');
   if (savedCampaign) ui.continue.textContent = savedCampaign.phase === 'story'
     ? 'RESUME // STORY TRANSMISSION'
+    : savedCampaign.phase === 'mission' && savedCampaign.activeWaypoint
+      ? `RESUME // ${savedCampaign.currentMissionId?.toUpperCase()} WAYPOINT ${savedCampaign.activeWaypoint.waypointId}`
     : `RESUME // MISSION ${savedCampaign.missionIndex + 1}`;
 }
 
@@ -1128,6 +1270,7 @@ const config: Phaser.Types.Core.GameConfig = {
         Phaser.Input.Keyboard.KeyCodes.UP,
         Phaser.Input.Keyboard.KeyCodes.DOWN,
         Phaser.Input.Keyboard.KeyCodes.X,
+        Phaser.Input.Keyboard.KeyCodes.SHIFT,
       ],
     },
   },
@@ -1148,6 +1291,18 @@ Object.defineProperty(window, '__AEGIS_AUDIO__', {
   get: () => audio.getDebugState(),
   configurable: true,
 });
+Object.defineProperty(window, '__AEGIS_INTRO__', {
+  get: () => ({
+    state: introPlaybackState,
+    currentTime: ui.introVideo.currentTime,
+    duration: ui.introVideo.duration,
+    paused: ui.introVideo.paused,
+    videoWidth: ui.introVideo.videoWidth,
+    videoHeight: ui.introVideo.videoHeight,
+    errorCode: ui.introVideo.error?.code,
+  }),
+  configurable: true,
+});
 
 if (debugMode) {
   window.setInterval(() => {
@@ -1161,7 +1316,10 @@ if (debugMode) {
     ui.audioPanel.dataset.queuedSources = String(state.queuedSources);
     ui.audioPanel.dataset.loopIteration = String(state.loopIteration);
     ui.audioPanel.dataset.musicGain = state.musicGain.toFixed(3);
+    ui.audioPanel.dataset.cinematicGain = state.cinematicGain.toFixed(3);
     ui.audioPanel.dataset.voicePlaybackState = state.voicePlaybackState;
+    ui.audioPanel.dataset.radioTrimDb = state.radioTrimDb.toFixed(1);
+    ui.audioPanel.dataset.radioTrimGain = state.radioTrimGain.toFixed(3);
     ui.audioPanel.dataset.voiceAssetsReady = String(state.voiceAssetsReady);
     ui.audioPanel.dataset.voiceAssetsMissing = String(state.voiceAssetsMissing);
     ui.audioPanel.dataset.activeRadioCue = state.activeRadioCue ?? '';

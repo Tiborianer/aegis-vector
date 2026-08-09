@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMusicVoiceSchedule, MUSIC_ASSETS, VOICE_ASSETS } from './SoundEngine';
+import { buildMusicVoiceSchedule, MUSIC_ASSETS, RADIO_TRIM_DB, RADIO_TRIM_GAIN, VOICE_ASSETS } from './SoundEngine';
 
 describe('music asset loop strategy', () => {
   it('uses tail crossfades for every long-form track', () => {
@@ -33,11 +33,15 @@ describe('music asset loop strategy', () => {
 });
 
 describe('radio voice assets', () => {
-  it('maps the three approved production recordings and preserves subtitle fallbacks', () => {
+  it('maps the ten approved production recordings and preserves subtitle fallbacks', () => {
     expect(Object.keys(VOICE_ASSETS)).toHaveLength(10);
     expect(VOICE_ASSETS['shield-down'].file).toBe('audio/voice/shield-down.wav');
     expect(VOICE_ASSETS['hull-critical'].file).toBe('audio/voice/hull-critical.wav');
     expect(VOICE_ASSETS['arc-upgraded'].file).toBe('audio/voice/arc-upgraded.wav');
-    expect(VOICE_ASSETS['shield-restored'].file).toBe('audio/voice/shield-restored.mp3');
+    expect(VOICE_ASSETS['shield-restored'].file).toBe('audio/voice/shield-restored.wav');
+    expect(Object.values(VOICE_ASSETS).every((asset) => asset.file.endsWith('.wav'))).toBe(true);
+    expect(Object.values(VOICE_ASSETS).every((asset) => asset.gain === .52)).toBe(true);
+    expect(RADIO_TRIM_DB).toBe(-6);
+    expect(RADIO_TRIM_GAIN).toBeCloseTo(.501187, 5);
   });
 });

@@ -2,6 +2,9 @@ import type { Difficulty, EnemyKind, WeaponType } from '../simulation/types';
 
 export const WORLD_WIDTH = 1280;
 export const WORLD_HEIGHT = 720;
+export const PLAYER_COMBAT_MIN_Y = WORLD_HEIGHT * 0.29;
+export const STATIONARY_PICKUP_SAFE_Y = PLAYER_COMBAT_MIN_Y + 52;
+export const PICKUP_HORIZONTAL_MARGIN = 64;
 export const SHIELD_RECHARGE_MS = 7_000;
 export const MAX_ACTIVE_ENEMIES = 16;
 export const MAX_HOSTILE_PROJECTILES = 48;

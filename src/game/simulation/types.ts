@@ -59,6 +59,7 @@ export type VoicePlaybackState = 'idle' | 'loading' | 'playing' | 'subtitle-only
 export type WeaponOverdriveState = 'inactive' | 'cell' | 'reactor' | 'stacked';
 export type EnemyHitZoneRole = 'core' | 'wing' | 'weakpoint';
 export type FinalePhase = 'approach' | 'boss' | 'cleared';
+export type MissionWaypointId = 1 | 2;
 
 export interface EnemyHitboxRect {
   role: EnemyHitZoneRole;
@@ -89,6 +90,7 @@ export interface AudioDebugState {
   musicGain: number;
   sfxGain: number;
   voiceGain: number;
+  cinematicGain: number;
   activeRadioCue?: string;
   voicePlaybackState: VoicePlaybackState;
   voiceDurationSeconds?: number;
@@ -97,12 +99,61 @@ export interface AudioDebugState {
   voiceAssetCheckComplete: boolean;
   voiceAssetsReady: number;
   voiceAssetsMissing: number;
+  radioTrimDb: number;
+  radioTrimGain: number;
   positionSeconds: number;
   logicalStartCount: number;
   loopRegion?: { startSeconds: number; endSeconds: number };
   queuedSources: number;
   loopIteration: number;
   lastError?: string;
+}
+
+export interface GameCheckpointSnapshot {
+  stageElapsedMs: number;
+  score: number;
+  kills: number;
+  creditsEarned: number;
+  shotsFired: number;
+  shotsHit: number;
+  damageTaken: number;
+  weapons: WeaponLevels;
+  shieldBaseMax: number;
+  hull: number;
+  shield: number;
+  empCharges: number;
+  phoenixAvailable: boolean;
+  reserveShieldAvailable: boolean;
+  secondWindAvailable: boolean;
+  emergencyCapacitorTriggers: number;
+  naniteLatticeAvailable: boolean;
+  sortieNanitesAvailable: boolean;
+  fortressRamAvailable: boolean;
+  finalePhase?: FinalePhase;
+}
+
+export interface EncounterCheckpointSnapshot {
+  waveIndex: number;
+  nextCarrierIndex: number;
+  killsSinceUtilityDrop: number;
+  armamentOfferHistory: Array<readonly [UpgradeType, UpgradeType]>;
+  minibossSpawned: boolean;
+  commandSpawned: boolean;
+  commandRemaining: number;
+  bulwarkIntroduced: boolean;
+  finaleApproachWave: number;
+  bossSpawned: boolean;
+  lastThreatLevel: ThreatLevel;
+  lastUtility?: UtilityPickupType;
+}
+
+export interface MissionWaypointSnapshot {
+  missionId: MissionId;
+  waypointId: MissionWaypointId;
+  capturedAtMs: number;
+  game: GameCheckpointSnapshot;
+  encounter: EncounterCheckpointSnapshot;
+  bossHealthRatio?: number;
 }
 
 export interface StoryPanel {
@@ -244,6 +295,7 @@ export interface MissionStartConfig {
   modifiers: CombatModifiers;
   campaignSeed: number;
   sortieModule?: SortieModuleId;
+  resumeFrom?: MissionWaypointSnapshot;
   debugDurationMs?: number;
 }
 
@@ -260,7 +312,7 @@ export interface MissionReport {
 }
 
 export interface CampaignSnapshot {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   phase: CampaignPhase;
   difficulty: Difficulty;
   missionIndex: number;
@@ -279,6 +331,7 @@ export interface CampaignSnapshot {
   lastReport?: MissionReport;
   pendingStoryChapter?: StoryChapterId;
   seenStoryChapters?: StoryChapterId[];
+  activeWaypoint?: MissionWaypointSnapshot;
 }
 
 export interface SortieModuleDefinition {
@@ -326,6 +379,7 @@ export interface GameSnapshot {
   chronoRemainingMs: number;
   reserveShieldAvailable: boolean;
   secondWindAvailable: boolean;
+  latestWaypointId?: MissionWaypointId;
 }
 
 export interface MiniBossDefinition {

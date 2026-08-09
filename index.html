@@ -53,7 +53,7 @@
           <div class="mission-track" aria-label="Mission progress">
             <span id="mission-label">SECTOR 01</span>
             <span id="threat-level" class="threat-level" data-level="1">THREAT 1</span>
-            <div class="track"><i id="stage-progress"></i></div>
+            <div class="track"><i id="stage-progress"></i><span id="waypoint-marker-1" class="waypoint-marker waypoint-1" aria-hidden="true"></span><span id="waypoint-marker-2" class="waypoint-marker waypoint-2" aria-hidden="true"></span></div>
             <span id="stage-time">03:15</span>
           </div>
 
@@ -64,7 +64,10 @@
 
           <div id="weapon-rack" class="weapon-rack glass-panel" aria-label="Weapon levels"></div>
           <div class="ability-rack glass-panel">
-            <button id="emp-button" class="emp-button" aria-label="Activate EMP"><kbd>X</kbd><span>EMP</span><b id="emp-count">1 / 2</b></button>
+            <button id="emp-button" class="emp-button" aria-label="Activate EMP with X or Shift">
+              <span class="emp-keys" aria-hidden="true"><kbd>X</kbd><i>OR</i><kbd class="emp-shift-key">SHIFT</kbd></span>
+              <span class="emp-label">EMP</span><b id="emp-count">1 / 2</b>
+            </button>
             <div id="effect-readout" class="effect-readout"></div>
           </div>
           <button id="pause-button" class="icon-button" aria-label="Pause game">Ⅱ</button>
@@ -80,16 +83,22 @@
           </div>
         </section>
 
-        <section id="intro-screen" class="overlay cinematic-overlay hidden" aria-label="Opening cinematic">
+        <section id="intro-screen" class="overlay cinematic-overlay hidden" aria-label="Opening cinematic: Project CROWN awakens" tabindex="-1">
           <div class="cinematic-stage">
             <img id="intro-image" src="cinematics/keyframes/scene-01-start.webp" alt="The moonlit Pelagos Array before the Project CROWN attack" />
-            <video id="intro-video" class="hidden" playsinline muted preload="metadata" poster="cinematics/keyframes/scene-01-start.webp" aria-label="Aegis Vector opening cinematic"></video>
-            <div class="cinematic-vignette" aria-hidden="true"></div>
-            <div id="intro-title" class="cinematic-title hidden" aria-live="polite">
-              <i aria-hidden="true">✦</i><h2><span>AEGIS</span> VECTOR</h2><p>Six vectors. One last line.</p>
+            <video id="intro-video" class="hidden" playsinline preload="metadata" poster="cinematics/keyframes/scene-01-start.webp" aria-label="Aegis Vector opening cinematic"></video>
+            <div id="intro-loading" class="cinematic-message" aria-live="polite">
+              <i aria-hidden="true"></i><strong>PREPARING CINEMATIC</strong><span>PROJECT CROWN // ARCHIVE 00</span>
             </div>
-            <div class="cinematic-meta"><span>PROJECT CROWN // ARCHIVE 00</span><b id="intro-time">00:00 / 00:30</b></div>
-            <button id="intro-skip-button" class="cinematic-skip">SKIP INTRO <span>→</span></button>
+            <div id="intro-fallback" class="cinematic-message hidden" aria-live="assertive"><strong>CINEMATIC UNAVAILABLE</strong><span>Launching Coastal Intercept…</span></div>
+            <div id="intro-caption" class="cinematic-caption hidden" aria-live="polite"><span id="intro-caption-speaker">ROOK</span><p id="intro-caption-text"></p></div>
+            <button id="intro-play-button" class="primary-button cinematic-play hidden">PLAY CINEMATIC <span>→</span></button>
+            <button id="intro-continue-button" class="primary-button cinematic-continue hidden">CONTINUE <span>→</span></button>
+            <div class="cinematic-controls">
+              <button id="intro-pause-button" class="cinematic-control hidden">PAUSE</button>
+              <button id="intro-skip-button" class="cinematic-control">SKIP INTRO <span>→</span></button>
+            </div>
+            <div class="cinematic-meta"><span>PROJECT CROWN // ARCHIVE 00</span><b id="intro-time">00:00 / 00:34</b></div>
           </div>
         </section>
 
@@ -130,7 +139,7 @@
             <div class="controls">
               <span><kbd>WASD</kbd> / <kbd>ARROWS</kbd> Move</span>
               <span><kbd>SPACE</kbd> / <kbd>Z</kbd> Fire</span>
-              <span><kbd>X</kbd> EMP</span>
+              <span><kbd>X</kbd> / <kbd>SHIFT</kbd> EMP</span>
               <span><kbd>P</kbd> / <kbd>ESC</kbd> Pause</span>
             </div>
           </div>
@@ -195,7 +204,7 @@
             <h2 id="pause-title">PAUSED</h2>
             <p class="pause-hint"><kbd>P</kbd> / <kbd>ESC</kbd> TO RESUME</p>
             <button id="resume-button" class="primary-button">RESUME <span>→</span></button>
-            <button id="restart-button" class="secondary-button">RETRY FROM CHECKPOINT</button>
+            <button id="restart-button" class="secondary-button">RETRY MISSION</button>
             <button id="pause-manual-button" class="secondary-button">FLIGHT MANUAL</button>
             <button id="pause-abandon-button" class="text-button">ABANDON CAMPAIGN</button>
           </div>
@@ -235,6 +244,7 @@
           <label><span>MUSIC</span><input id="music-volume" type="range" min="0" max="100" step="1" /></label>
           <label><span>SFX</span><input id="sfx-volume" type="range" min="0" max="100" step="1" /></label>
           <label><span>VOICE</span><input id="voice-volume" type="range" min="0" max="100" step="1" /></label>
+          <label><span>CINEMATIC</span><input id="cinematic-volume" type="range" min="0" max="100" step="1" /></label>
           <label class="subtitle-toggle"><span>RADIO TEXT</span><input id="radio-subtitles" type="checkbox" /></label>
           <div class="audio-footer"><span id="audio-status">AUDIO LOCKED</span><button id="reset-mix-button" type="button">RESET MIX</button></div>
           <small id="audio-error" class="audio-error hidden">MUSIC UNAVAILABLE</small>

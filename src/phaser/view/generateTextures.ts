@@ -91,14 +91,14 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.generateTexture(ASSET_KEYS.boss, 300, 120).clear();
 
   // Projectiles.
-  g.fillStyle(0x35e8ff, 0.2).fillCircle(8, 11, 8);
-  g.fillStyle(0xdfffff, 1).fillPoints(polygon([[8, 0], [13, 10], [8, 22], [3, 10]]), true);
-  g.lineStyle(2, 0x35e8ff, 0.95).lineBetween(1, 11, 15, 11);
-  g.generateTexture(ASSET_KEYS.playerBullet, 16, 22).clear();
-  g.fillStyle(0xffb640, 0.34).fillCircle(8, 11, 8);
-  g.fillStyle(0xfff6cf, 1).fillPoints(polygon([[8, 0], [13, 10], [8, 22], [3, 10]]), true);
-  g.lineStyle(2, 0x35e8ff, 0.9).lineBetween(1, 11, 15, 11);
-  g.generateTexture(ASSET_KEYS.playerBulletOverdrive, 16, 22).clear();
+  g.fillStyle(0x35e8ff, 0.2).fillRoundedRect(0, 0, 12, 30, 6);
+  g.fillStyle(0x7bf3ff, 0.72).fillRoundedRect(2, 1, 8, 28, 4);
+  g.fillStyle(0xf1ffff, 1).fillRoundedRect(4, 1, 4, 28, 2);
+  g.generateTexture(ASSET_KEYS.playerBullet, 12, 30).clear();
+  g.fillStyle(0xffb640, 0.3).fillRoundedRect(0, 0, 12, 30, 6);
+  g.fillStyle(0xffd56a, 0.78).fillRoundedRect(2, 1, 8, 28, 4);
+  g.fillStyle(0xfff6cf, 1).fillRoundedRect(4, 1, 4, 28, 2);
+  g.generateTexture(ASSET_KEYS.playerBulletOverdrive, 12, 30).clear();
 
   g.fillStyle(0x65ffb1, 0.18).fillRoundedRect(0, 0, 12, 20, 5);
   g.fillStyle(0xe8fff3, 1).fillPoints(polygon([[6, 0], [10, 8], [8, 18], [6, 15], [4, 18], [2, 8]]), true);

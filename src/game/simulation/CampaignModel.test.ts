@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CampaignModel } from './CampaignModel';
 import { GameModel } from './GameModel';
-import type { CampaignSnapshot } from './types';
+import type { CampaignSnapshot, MissionWaypointSnapshot } from './types';
 
 const fundedCampaign = (): CampaignSnapshot => ({
   version: 1,
@@ -77,9 +77,47 @@ describe('CampaignModel', () => {
   it('migrates version one campaigns to five-level weapons and ION', () => {
     const legacy = fundedCampaign();
     const campaign = new CampaignModel(legacy);
-    expect(campaign.snapshot().version).toBe(4);
+    expect(campaign.snapshot().version).toBe(5);
     expect(campaign.snapshot().weapons.ion).toBe(0);
     expect(campaign.snapshot().campaignSeed).toBeTypeOf('number');
+  });
+
+  it('persists the latest waypoint and resumes the mission from it after failure', () => {
+    const campaign = new CampaignModel();
+    const config = campaign.beginMission();
+    const battle = new GameModel();
+    battle.start(config);
+    battle.tick(64_000);
+    battle.registerKill(100, 4);
+    const waypoint: MissionWaypointSnapshot = {
+      missionId: 'coastal',
+      waypointId: 1,
+      capturedAtMs: battle.stageElapsedMs,
+      game: battle.exportCheckpoint(),
+      encounter: {
+        waveIndex: 8,
+        nextCarrierIndex: 1,
+        killsSinceUtilityDrop: 3,
+        armamentOfferHistory: [['missile', 'laser']],
+        minibossSpawned: false,
+        commandSpawned: false,
+        commandRemaining: 0,
+        bulwarkIntroduced: false,
+        finaleApproachWave: 0,
+        bossSpawned: false,
+        lastThreatLevel: 2,
+      },
+    };
+    expect(campaign.saveWaypoint(waypoint)).toBe(true);
+    campaign.failMission();
+    expect(campaign.snapshot().phase).toBe('mission');
+    expect(campaign.exportSave().activeWaypoint?.game.creditsEarned).toBe(4);
+    const retryConfig = campaign.beginMission();
+    expect(retryConfig.resumeFrom?.encounter.waveIndex).toBe(8);
+    const retry = new GameModel();
+    retry.start(retryConfig);
+    retry.complete();
+    expect(campaign.completeMission(retry.snapshot()).activeWaypoint).toBeUndefined();
   });
 
   it('requires a complete branch before buying a tier-four capstone', () => {
