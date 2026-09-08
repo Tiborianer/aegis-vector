@@ -1149,7 +1149,7 @@ function renderManual(tab: ManualTab): void {
     const unlocked = unlockedStoryChapters();
     const intro = document.createElement('article');
     intro.dataset.replayIntro = 'true';
-    intro.innerHTML = `<img src="cinematics/keyframes/scene-01-start.webp" alt=""><div><span>OPENING CINEMATIC</span><h3>PROJECT CROWN AWAKENS</h3><p>Replay the complete twenty-six-second Pelagos campaign introduction.</p></div>`;
+    intro.innerHTML = `<img src="cinematics/keyframes/scene-01-start.webp" alt=""><div><span>OPENING CINEMATIC</span><h3>PROJECT CROWN AWAKENS</h3><p>Replay the complete 97-second Pelagos campaign introduction.</p></div>`;
     const chapters = STORY_CHAPTERS.map((chapter) => {
       const article = document.createElement('article');
       const available = unlocked.has(chapter.id);

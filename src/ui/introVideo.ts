@@ -23,32 +23,28 @@ export interface IntroCaption {
 }
 
 export const INTRO_VIDEO: IntroVideoDefinition = {
-  file: 'cinematics/video/aegis-vector-intro-v1.mp4',
+  file: 'cinematics/video/aegis-vector-intro-v2.mp4',
   poster: 'cinematics/keyframes/scene-01-start.webp',
-  expectedDurationSeconds: 34.02,
-  maximumBytes: 50 * 1024 * 1024,
+  expectedDurationSeconds: 96.87,
+  maximumBytes: 95 * 1024 * 1024,
   hasBakedAudio: true,
 };
 
-export const INTRO_CAPTIONS: readonly IntroCaption[] = [
-  {
-    startsAtSeconds: 6.1,
-    endsAtSeconds: 8.8,
-    speaker: 'ROOK',
-    text: 'Vector, CROWN is awake. Launch now.',
-  },
-] as const;
+// The new authored edit contains its own complete dialogue and titles. Add
+// timed DOM captions here only after an exact transcript has been approved.
+export const INTRO_CAPTIONS: readonly IntroCaption[] = [] as const;
 
 export function formatIntroTime(currentSeconds: number, durationSeconds = INTRO_VIDEO.expectedDurationSeconds): string {
   const safeDuration = Number.isFinite(durationSeconds) && durationSeconds > 0
     ? durationSeconds
     : INTRO_VIDEO.expectedDurationSeconds;
   const safeCurrent = Math.min(safeDuration, Math.max(0, Number.isFinite(currentSeconds) ? currentSeconds : 0));
-  const format = (seconds: number): string => {
-    const rounded = Math.floor(seconds);
+  const format = (rounded: number): string => {
     return `${String(Math.floor(rounded / 60)).padStart(2, '0')}:${String(rounded % 60).padStart(2, '0')}`;
   };
-  return `${format(safeCurrent)} / ${format(Math.round(safeDuration))}`;
+  const totalDisplay = Math.round(safeDuration);
+  const currentDisplay = safeCurrent >= safeDuration - 0.5 ? totalDisplay : Math.floor(safeCurrent);
+  return `${format(currentDisplay)} / ${format(totalDisplay)}`;
 }
 
 export function introCaptionAt(seconds: number): IntroCaption | undefined {
@@ -56,8 +52,8 @@ export function introCaptionAt(seconds: number): IntroCaption | undefined {
 }
 
 export function introMetadataIsValid(durationSeconds: number, width: number, height: number): boolean {
-  return durationSeconds >= 33.8
-    && durationSeconds <= 34.3
-    && width >= 1920
-    && height >= 1080;
+  return durationSeconds >= 96.6
+    && durationSeconds <= 97.2
+    && width >= 1280
+    && height >= 720;
 }

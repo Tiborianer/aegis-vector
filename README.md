@@ -35,7 +35,7 @@ Add `?debug=1` to the local URL to enable browser QA controls while preserving f
 
 ## Narrative and radio assets
 
-The game includes the complete 34-second, 1920×1080 authored opening cinematic at `public/cinematics/video/aegis-vector-intro-v1.mp4` plus all 20 motion-comic panels. Start New Campaign always plays the video, Continue resumes immediately, and the Flight Manual Archive can replay it. If the video cannot load, a short branded poster appears before the mission continues; the retired slideshow is never used in production.
+The game includes the complete 97-second, 1280×720 authored opening cinematic at `public/cinematics/video/aegis-vector-intro-v2.mp4` plus all 20 motion-comic panels. Start New Campaign always plays the video, Continue resumes immediately, and the Flight Manual Archive can replay it. The optimized H.264/AAC file preserves the full edit while remaining below GitHub's individual-file limit and supports progressive playback. If the video cannot load, a short branded poster appears before the mission continues; the retired slideshow is never used in production.
 
 Radio subtitles work immediately. Optional ECHO-7 and Rook recordings can be added under `public/audio/voice/` using the filenames in that folder's README. Voice has its own saved volume control, and radio speech ducks the music without restarting it.
 
