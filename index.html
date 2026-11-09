@@ -13,15 +13,15 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Aegis Vector" />
     <meta property="og:title" content="Aegis Vector" />
-    <meta property="og:description" content="Six vectors. One last line. Fight a futuristic top-down arcade campaign above Pelagos." />
+    <meta property="og:description" content="Seven vectors. One last line. Fight a futuristic top-down arcade campaign above Pelagos." />
     <meta property="og:url" content="https://tiborianer.github.io/aegis-vector/" />
     <meta property="og:image" content="https://tiborianer.github.io/aegis-vector/brand/share-card-v1.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="The AV-7 fighter confronts the Dreadnought above the moonlit Pelagos Array." />
+    <meta property="og:image:alt" content="An Aegis fighter confronts the Dreadnought above the moonlit Pelagos Array." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Aegis Vector" />
-    <meta name="twitter:description" content="Six vectors. One last line." />
+    <meta name="twitter:description" content="Seven vectors. One last line." />
     <meta name="twitter:image" content="https://tiborianer.github.io/aegis-vector/brand/share-card-v1.jpg" />
     <title>Aegis Vector</title>
   </head>
@@ -32,7 +32,7 @@
 
         <section id="hud" class="hidden" aria-label="Game status">
           <div class="hud-cluster hud-status glass-panel">
-            <div class="hud-kicker">AV-7 // AEGIS</div>
+            <div class="hud-kicker">KESTREL // AEGIS</div>
             <div class="survival-row">
               <span class="hud-label">HULL</span>
               <div id="hull-pips" class="pip-row"></div>
@@ -91,7 +91,7 @@
               <i aria-hidden="true"></i><strong>PREPARING CINEMATIC</strong><span>PROJECT CROWN // ARCHIVE 00</span>
             </div>
             <div id="intro-fallback" class="cinematic-message hidden" aria-live="assertive"><strong>CINEMATIC UNAVAILABLE</strong><span>Launching Coastal Intercept…</span></div>
-            <div id="intro-caption" class="cinematic-caption hidden" aria-live="polite"><span id="intro-caption-speaker">ROOK</span><p id="intro-caption-text"></p></div>
+            <div id="intro-caption" class="cinematic-caption hidden" aria-live="polite"><span id="intro-caption-speaker">VALE</span><p id="intro-caption-text"></p></div>
             <button id="intro-play-button" class="primary-button cinematic-play hidden">PLAY CINEMATIC <span>→</span></button>
             <button id="intro-continue-button" class="primary-button cinematic-continue hidden">CONTINUE <span>→</span></button>
             <div class="cinematic-controls">
@@ -106,13 +106,16 @@
           <div class="story-stage">
             <header><span id="story-kicker">PELAGOS ARCHIVE // CHAPTER</span><h2 id="story-title">THE FIRST SIGNAL</h2><b id="story-progress">01 / 03</b></header>
             <figure id="story-frame" data-transition="dissolve">
+              <img id="story-previous-image" alt="" aria-hidden="true" />
               <img id="story-image" alt="" />
               <div class="story-shade" aria-hidden="true"></div>
-              <figcaption><span id="story-speaker">MARA</span><p id="story-caption"></p></figcaption>
+              <div id="story-location" class="story-location"></div>
+              <div id="story-image-status" class="story-image-status hidden" role="status"></div>
+              <figcaption aria-live="polite" aria-atomic="true"><span id="story-speaker">HANA // VECTOR</span><p id="story-caption"></p></figcaption>
             </figure>
             <footer>
               <button id="story-back-button" class="secondary-button">← BACK</button>
-              <button id="story-pause-button" class="secondary-button">PAUSE</button>
+              <button id="story-pause-button" class="secondary-button" aria-pressed="false">AUTO PLAY</button>
               <button id="story-skip-button" class="text-button">SKIP CHAPTER</button>
               <button id="story-next-button" class="primary-button">NEXT <span>→</span></button>
             </footer>
@@ -121,11 +124,11 @@
 
         <section id="start-screen" class="overlay active" aria-labelledby="game-title">
           <div class="menu-card start-card">
-            <div class="eyebrow">PELAGOS CAMPAIGN // AV-7 FLIGHT CONTROL</div>
+            <div class="eyebrow">PELAGOS CAMPAIGN // KESTREL FLIGHT CONTROL</div>
             <h1 id="game-title"><span>AEGIS</span><strong>VECTOR</strong></h1>
-            <p class="tagline">Six vectors. One last line.</p>
+            <p class="tagline">Seven vectors. One last line.</p>
             <div class="fighter-mark" aria-hidden="true"><i></i><b></b><i></i></div>
-            <p class="briefing">Fight a branching six-mission campaign, salvage Aegis Credits, and shape a new combat build before the final Dreadnought assault.</p>
+            <p class="briefing">Fight a branching seven-mission campaign, salvage Aegis Credits, and shape your combat build for the Dreadnought assault and the final battle at Last Light.</p>
 
             <div class="difficulty" role="group" aria-label="Difficulty">
               <button data-difficulty="cadet">CADET<small>Relaxed</small></button>
@@ -133,9 +136,12 @@
               <button data-difficulty="ace">ACE<small>Intense</small></button>
             </div>
 
+            <p id="visual-style-status" class="visual-style-status hidden" role="status"></p>
             <button id="launch-button" class="primary-button">START NEW CAMPAIGN <span>→</span></button>
             <button id="continue-button" class="secondary-button hidden">RESUME SAVED CAMPAIGN</button>
+            <button id="mission-lab-button" class="secondary-button">MISSION LAB <small>TEST ANY LEVEL · SAVES OFF</small></button>
             <button id="manual-button" class="secondary-button">FLIGHT MANUAL</button>
+            <button id="start-route-map-button" class="text-button">CAMPAIGN ROUTE MAP</button>
             <div class="controls">
               <span><kbd>WASD</kbd> / <kbd>ARROWS</kbd> Move</span>
               <span><kbd>SPACE</kbd> / <kbd>Z</kbd> Fire</span>
@@ -156,6 +162,7 @@
             </header>
 
             <aside class="hangar-sidebar">
+              <div class="hangar-sidebar-scroll" tabindex="0" aria-label="Mission report and next operation">
               <section id="mission-report" class="hangar-panel">
                 <div class="panel-title">LAST SORTIE</div>
                 <div class="report-grid">
@@ -168,6 +175,7 @@
               </section>
 
               <section id="next-vector-panel" class="hangar-panel next-vector">
+                <p id="hangar-route-reward" class="route-reward-status hidden"></p>
                 <div class="panel-title">NEXT VECTOR</div>
                 <h3 id="next-mission-title">COASTAL INTERCEPT</h3>
                 <p id="next-mission-briefing"></p>
@@ -175,16 +183,20 @@
               </section>
 
               <section id="route-panel" class="hangar-panel route-panel hidden">
-                <div class="panel-title">SELECT FOURTH VECTOR</div>
-                <p>Choose one operation for this campaign. Both routes converge on the Bastion Carrier.</p>
-                <button data-route="storm"><b>STORMBREAK</b><small>Phantom and Artillery squadrons above a violent storm front.</small></button>
-                <button data-route="salvage"><b>GRAVEYARD</b><small>Reclaimers and armored patrols inside a wreckage field.</small></button>
+                <div id="route-panel-title" class="panel-title">FIRST FORK // CHOOSE YOUR ADVANTAGE</div>
+                <p id="route-panel-description">Choose your approach to the fortress. You will make a separate pathway choice after Mission 3.</p>
+                <button data-route="salvage"><b>MINEFIELD // OFFENSE</b><small>Clear the Warden. Earn the ARC Resonator: +12% ARC damage.</small></button>
+                <button data-route="storm"><b>AURORA REACH // DEFENSE</b><small>Recover the shield relay. Earn Aegis Bastion: +1 shield cell.</small></button>
               </section>
+              </div>
 
+              <div class="hangar-actions">
               <button id="hangar-launch-button" class="primary-button">LAUNCH NEXT MISSION <span>→</span></button>
               <button id="respec-button" class="secondary-button">FREE RESPEC AVAILABLE</button>
               <button id="hangar-manual-button" class="secondary-button">FLIGHT MANUAL</button>
+              <button id="hangar-route-map-button" class="secondary-button">CAMPAIGN ROUTE MAP</button>
               <button id="hangar-abandon-button" class="text-button">ABANDON CAMPAIGN</button>
+              </div>
             </aside>
 
             <section class="upgrade-bay" aria-label="Campaign upgrade tree">
@@ -206,7 +218,21 @@
             <button id="resume-button" class="primary-button">RESUME <span>→</span></button>
             <button id="restart-button" class="secondary-button">RETRY MISSION</button>
             <button id="pause-manual-button" class="secondary-button">FLIGHT MANUAL</button>
+            <button id="pause-route-map-button" class="secondary-button">CAMPAIGN ROUTE MAP</button>
             <button id="pause-abandon-button" class="text-button">ABANDON CAMPAIGN</button>
+          </div>
+        </section>
+
+        <section id="route-map-screen" class="overlay route-map-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="route-map-title">
+          <div class="route-map-card">
+            <header><div><div class="eyebrow">AEGIS // CAMPAIGN OPERATIONS</div><h2 id="route-map-title">YOUR FLIGHT PATH</h2></div><button id="route-map-close" class="icon-button" aria-label="Close route map">×</button></header>
+            <p class="route-map-explanation">Choose your advantage after Coastal Intercept, then choose your evidence trail independently after Fortress Approach. Keep your earned reward on either path. All four pathways converge at Carrier Siege.</p>
+            <div id="route-map-content" aria-label="Mission progression"></div>
+            <div class="route-map-rewards">
+              <article><strong>FIRST FORK // EARN YOUR ADVANTAGE</strong><p>Minefield: ARC Resonator, +12% ARC damage. Aurora Reach: Aegis Bastion, +1 shield cell.</p></article>
+              <article><strong>SECOND FORK // CHOOSE YOUR EVIDENCE</strong><p>Graveyard: recover the original command memory. Stormbreak: intercept the live directive. Either path keeps your earned reward.</p></article>
+            </div>
+            <p id="route-reward-status" class="route-reward-status"></p>
           </div>
         </section>
 
@@ -223,10 +249,46 @@
           </div>
         </section>
 
+        <section id="ending-screen" class="ending-screen hidden" aria-labelledby="ending-title" aria-hidden="true" tabindex="-1">
+          <img class="ending-image" data-ending-image alt="" decoding="async" />
+          <div class="ending-vignette" aria-hidden="true"></div>
+          <header class="ending-masthead">
+            <p class="ending-wordmark">AEGIS VECTOR</p>
+            <span class="ending-masthead-rule" aria-hidden="true"></span>
+          </header>
+          <div class="ending-stage">
+            <div class="ending-opening" data-ending-opening>
+              <p class="ending-kicker">MISSION ACCOMPLISHED</p>
+              <h1 id="ending-title">HOMEWARD</h1>
+              <p>Every signal led us home.</p>
+            </div>
+            <div class="ending-credit-page" data-ending-credits aria-live="polite" aria-atomic="true" hidden></div>
+            <div class="ending-closing" data-ending-closing hidden>
+              <p class="ending-kicker">THE FLEET IS HOME</p>
+              <h2>Clear skies, pilot.</h2>
+              <p>Stay a while. Let the music carry you.</p>
+            </div>
+          </div>
+          <dl class="ending-flight-record" aria-label="Campaign flight record">
+            <div><dt>CAMPAIGN SCORE</dt><dd data-ending-score>0</dd></div>
+            <div><dt>HOSTILES DEFEATED</dt><dd data-ending-kills>0</dd></div>
+          </dl>
+          <p class="ending-status" data-ending-status>A MOMENT OF QUIET</p>
+          <footer class="ending-footer">
+            <p class="ending-score-note">ENDING SCORE<span>Homeward Vector</span></p>
+            <div class="ending-controls" aria-label="Ending controls">
+              <button type="button" class="ending-control" data-ending-pause aria-pressed="false">Pause credits</button>
+              <button type="button" class="ending-control" data-ending-replay>Replay credits</button>
+              <button type="button" class="ending-control ending-exit" data-ending-exit>Exit to menu <span aria-hidden="true">→</span></button>
+            </div>
+          </footer>
+          <div class="ending-progress-track" aria-hidden="true"><span class="ending-progress-fill" data-ending-progress></span></div>
+        </section>
+
         <section id="manual-screen" class="overlay manual-overlay hidden" aria-labelledby="manual-title">
           <div class="manual-card">
             <header>
-              <div><div class="eyebrow">AV-7 TACTICAL DATABASE</div><h2 id="manual-title">FLIGHT MANUAL</h2></div>
+              <div><div class="eyebrow">KESTREL TACTICAL DATABASE</div><h2 id="manual-title">FLIGHT MANUAL</h2></div>
               <button id="manual-close-button" class="icon-button" aria-label="Close Flight Manual">×</button>
             </header>
             <nav class="manual-tabs" aria-label="Manual sections">

@@ -5,14 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "node scripts/verify-audio.mjs public && node scripts/verify-radio-audio.mjs public && node scripts/verify-upgrade-icons.mjs public && node scripts/verify-cinematics.mjs public && node scripts/verify-brand.mjs public && tsc -b && vite build && node scripts/verify-audio.mjs dist && node scripts/verify-radio-audio.mjs dist && node scripts/verify-upgrade-icons.mjs dist && node scripts/verify-cinematics.mjs dist && node scripts/verify-brand.mjs dist",
+    "build": "node scripts/verify-graphics.mjs public --runtime-only && node scripts/verify-audio.mjs public --require-mission-scores && node scripts/verify-radio-audio.mjs public && node scripts/verify-upgrade-icons.mjs public && node scripts/verify-cinematics.mjs public && node scripts/verify-brand.mjs public && tsc -b && vite build && node scripts/verify-graphics.mjs dist --runtime-only && node scripts/verify-audio.mjs dist --require-mission-scores && node scripts/verify-radio-audio.mjs dist && node scripts/verify-upgrade-icons.mjs dist && node scripts/verify-cinematics.mjs dist && node scripts/verify-brand.mjs dist",
+    "verify:graphics": "node scripts/verify-graphics.mjs public",
     "test": "vitest run",
+    "desktop:test": "node --test desktop/policy.node-test.mjs desktop/protocol.node-test.mjs scripts/desktop-stage.node-test.mjs",
+    "web:test": "node --test scripts/web-stage.node-test.mjs",
+    "web:stage": "node scripts/web-stage.mjs",
+    "desktop:start": "node scripts/desktop-start.mjs",
+    "desktop:package:windows": "npm run build && node scripts/desktop-package.mjs win32 x64",
+    "desktop:package:mac": "npm run build && node scripts/desktop-package.mjs darwin arm64",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "phaser": "^3.90.0"
   },
   "devDependencies": {
+    "electron": "45.2.1",
+    "@electron/packager": "20.3.0",
     "typescript": "^5.9.2",
     "vite": "^7.0.6",
     "vitest": "^3.2.4"

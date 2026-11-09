@@ -1,0 +1,13 @@
+{
+  "shield-hit": "audio/voice-v5/shield-hit.wav",
+  "shield-down": "audio/voice-v2/shield-down.wav",
+  "hull-critical": "audio/voice-v2/hull-critical.wav",
+  "shield-restored": "audio/voice-v2/shield-restored.wav",
+  "emp-ready": "audio/voice-v2/emp-ready.wav",
+  "arc-upgraded": "audio/voice-v3/arc-upgraded.wav",
+  "nova-upgraded": "audio/voice-v2/nova-upgraded.wav",
+  "lance-upgraded": "audio/voice-v2/lance-upgraded.wav",
+  "wing-upgraded": "audio/voice-v2/wing-upgraded.wav",
+  "ion-upgraded": "audio/voice-v4/ion-upgraded.wav",
+  "aegis-upgraded": "audio/voice-v2/aegis-upgraded.wav"
+}

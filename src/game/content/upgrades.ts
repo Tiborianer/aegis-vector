@@ -14,7 +14,9 @@ const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'resonance-matrix', branch: 'weapons', tier: 5, name: 'RESONANCE MATRIX', description: 'Energy-weapon hits charge an additional chain discharge.', cost: 210 },
   { id: 'helios-battery', branch: 'weapons', tier: 6, name: 'HELIOS BATTERY', description: 'Every eighth ARC volley becomes a powerful white-gold salvo.', cost: 280 },
   { id: 'gravity-payload', branch: 'weapons', tier: 6, name: 'GRAVITY PAYLOAD', description: 'NOVA blasts and final ION discharges pull regular enemies inward.', cost: 280 },
-  { id: 'reinforced-frame', branch: 'defense', tier: 1, name: 'REINFORCED FRAME', description: '+1 maximum hull, capped at five.', cost: 60 },
+  { id: 'precision-feed', branch: 'weapons', tier: 7, name: 'PRECISION FEED', description: 'Every weapon fires 6% faster and deals 8% more damage.', cost: 330 },
+  { id: 'capacitor-reservoir', branch: 'weapons', tier: 7, name: 'CAPACITOR RESERVOIR', description: '+1 EMP capacity; all EMP pulses deal 25% more damage.', cost: 330 },
+  { id: 'reinforced-frame', branch: 'defense', tier: 1, name: 'REINFORCED FRAME', description: 'Gain one permanent maximum-hull pip.', cost: 60 },
   { id: 'aegis-bank', branch: 'defense', tier: 1, name: 'AEGIS BANK', description: 'Store one reserve shield pip per mission.', cost: 60 },
   { id: 'quick-charge-loop', branch: 'defense', tier: 2, name: 'QUICK-CHARGE LOOP', description: 'Shield recharge drops to 5.5 seconds.', cost: 100 },
   { id: 'reactive-armor', branch: 'defense', tier: 2, name: 'REACTIVE ARMOR', description: 'Hull-hit grace increases to two seconds.', cost: 100 },
@@ -23,11 +25,13 @@ const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'second-wind', branch: 'defense', tier: 4, name: 'SECOND WIND', description: 'At one hull, restore shield and clear nearby fire once.', cost: 160 },
   { id: 'kinetic-reversal', branch: 'defense', tier: 4, name: 'KINETIC REVERSAL', description: 'Shield hits reflect fire and grant brief protection.', cost: 160 },
   { id: 'nanite-lattice', branch: 'defense', tier: 5, name: 'NANITE LATTICE', description: 'Restore one hull after 35 seconds without hull damage, once per mission.', cost: 210 },
-  { id: 'aegis-harmonics', branch: 'defense', tier: 5, name: 'AEGIS HARMONICS', description: 'Recharge shield pips individually every 4.5 seconds.', cost: 210 },
+  { id: 'aegis-harmonics', branch: 'defense', tier: 5, name: 'AEGIS HARMONICS', description: 'Recharge pips every 4.5s, or 3.5s with Quick-Charge Loop.', cost: 210 },
   { id: 'guardian-pulse', branch: 'defense', tier: 6, name: 'GUARDIAN PULSE', description: 'Restoring shield energy clears nearby hostile bullets.', cost: 280 },
   { id: 'fortress-frame', branch: 'defense', tier: 6, name: 'FORTRESS FRAME', description: '+1 hull and ignore the first unshielded ram collision.', cost: 280 },
+  { id: 'ablative-frame', branch: 'defense', tier: 7, name: 'ABLATIVE FRAME', description: '+1 maximum hull and 0.25s more hull-hit protection. Hull caps at six.', cost: 330 },
+  { id: 'rapid-recovery', branch: 'defense', tier: 7, name: 'RAPID RECOVERY', description: 'Recharge one shield cell every 4s; with Harmonics, every 2.5s.', cost: 330 },
   { id: 'salvage-protocol', branch: 'systems', tier: 1, name: 'SALVAGE PROTOCOL', description: 'Earn 20% more campaign credits.', cost: 60 },
-  { id: 'tractor-array', branch: 'systems', tier: 1, name: 'TRACTOR ARRAY', description: 'Passively attract pickups within 140px.', cost: 60 },
+  { id: 'tractor-array', branch: 'systems', tier: 1, name: 'TRACTOR ARRAY', description: 'Attract utility pickups within 180px. Armament choices stay fixed.', cost: 60 },
   { id: 'emp-overcharger', branch: 'systems', tier: 2, name: 'EMP OVERCHARGER', description: '+1 EMP capacity and 50% EMP damage.', cost: 100 },
   { id: 'combat-computer', branch: 'systems', tier: 2, name: 'COMBAT COMPUTER', description: '4.2s combo window with a ×6 cap.', cost: 100 },
   { id: 'field-fabricator', branch: 'systems', tier: 3, name: 'FIELD FABRICATOR', description: 'Every 30 kills fabricates a utility pickup.', cost: 140 },
@@ -40,9 +44,17 @@ const UPGRADE_NODE_DEFINITIONS: Array<Omit<UpgradeNode, 'icon'>> = [
   { id: 'fabrication-matrix', branch: 'systems', tier: 6, name: 'FABRICATION MATRIX', description: 'Carriers produce utilities and fabrication triggers more often.', cost: 280 },
 ];
 
+// New refinements deliberately share their parent technology's established art.
+const ICON_SOURCE: Partial<Record<UpgradeNodeId, UpgradeNodeId>> = {
+  'precision-feed': 'rapid-cycling',
+  'capacitor-reservoir': 'emp-overcharger',
+  'ablative-frame': 'reinforced-frame',
+  'rapid-recovery': 'quick-charge-loop',
+};
+
 export const UPGRADE_NODES: UpgradeNode[] = UPGRADE_NODE_DEFINITIONS.map((node) => ({
   ...node,
-  icon: publicAssetUrl(`ui/upgrades/${node.id}.png`),
+  icon: publicAssetUrl(`ui/upgrades/${ICON_SOURCE[node.id] ?? node.id}.png`),
 }));
 
 export const UPGRADE_BRANCHES: UpgradeBranch[] = ['weapons', 'defense', 'systems'];
@@ -50,6 +62,8 @@ export const UPGRADE_BRANCHES: UpgradeBranch[] = ['weapons', 'defense', 'systems
 export const DEFAULT_COMBAT_MODIFIERS: CombatModifiers = {
   fireIntervalMultiplier: 1,
   damageMultiplier: 1,
+  arcDamageMultiplier: 1,
+  shieldCapacityBonus: 0,
   splitCapacitors: false,
   hunterLogic: false,
   overdriveReactor: false,
@@ -105,22 +119,24 @@ export function getSibling(node: UpgradeNode): UpgradeNode {
 export function buildCombatModifiers(purchased: readonly UpgradeNodeId[]): CombatModifiers {
   const owned = new Set(purchased);
   return {
-    fireIntervalMultiplier: owned.has('rapid-cycling') ? 0.9 : 1,
-    damageMultiplier: owned.has('amplified-munitions') ? 1.12 : 1,
+    fireIntervalMultiplier: (owned.has('rapid-cycling') ? 0.9 : 1) * (owned.has('precision-feed') ? 0.94 : 1),
+    damageMultiplier: (owned.has('amplified-munitions') ? 1.12 : 1) * (owned.has('precision-feed') ? 1.08 : 1),
+    arcDamageMultiplier: 1,
+    shieldCapacityBonus: 0,
     splitCapacitors: owned.has('split-capacitors'),
     hunterLogic: owned.has('hunter-logic'),
     overdriveReactor: owned.has('overdrive-reactor'),
     phaseArsenal: owned.has('phase-arsenal'),
-    hullBonus: owned.has('reinforced-frame') ? 1 : 0,
+    hullBonus: (owned.has('reinforced-frame') ? 1 : 0) + (owned.has('ablative-frame') ? 1 : 0),
     reserveShield: owned.has('aegis-bank'),
-    shieldRechargeMs: owned.has('quick-charge-loop') ? 5_500 : 7_000,
-    hullInvulnerabilityMs: owned.has('reactive-armor') ? 2_000 : 1_250,
+    shieldRechargeMs: owned.has('rapid-recovery') ? 4_000 : owned.has('quick-charge-loop') ? 5_500 : 7_000,
+    hullInvulnerabilityMs: (owned.has('reactive-armor') ? 2_000 : 1_250) + (owned.has('ablative-frame') ? 250 : 0),
     phoenixProtocol: owned.has('phoenix-protocol'),
     repulsorShield: owned.has('repulsor-shield'),
     creditMultiplier: owned.has('salvage-protocol') ? 1.2 : 1,
-    passiveTractorRadius: owned.has('tractor-array') ? 140 : 0,
-    empCapacityBonus: owned.has('emp-overcharger') ? 1 : 0,
-    empDamageMultiplier: owned.has('emp-overcharger') ? 1.5 : 1,
+    passiveTractorRadius: owned.has('tractor-array') ? 180 : 0,
+    empCapacityBonus: (owned.has('emp-overcharger') ? 1 : 0) + (owned.has('capacitor-reservoir') ? 1 : 0),
+    empDamageMultiplier: (owned.has('emp-overcharger') ? 1.5 : 1) * (owned.has('capacitor-reservoir') ? 1.25 : 1),
     comboWindowMs: owned.has('combat-computer') ? 4_200 : 2_700,
     comboMax: owned.has('combat-computer') ? 6 : 5,
     fieldFabricator: owned.has('field-fabricator'),

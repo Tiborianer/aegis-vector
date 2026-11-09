@@ -1,0 +1,94 @@
+.mission-lab-overlay {
+  z-index: 34;
+  padding: clamp(10px, 2.7cqh, 24px);
+  background: radial-gradient(ellipse at 30% 35%, #103245bb, #020813f2 76%);
+}
+
+.menu-card.mission-lab-card {
+  width: min(1120px, 100%);
+  height: min(630px, 100%);
+  padding: clamp(16px, 3cqw, 32px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+  text-align: left;
+  clip-path: none;
+  border: 1px solid var(--edge);
+  background: linear-gradient(125deg, #0a1e30f5, #050d19f5 72%);
+  overflow: hidden;
+}
+
+.mission-lab-card::before, .mission-lab-card::after { display: none; }
+.mission-lab-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mission-lab-header h2 { margin: 7px 0 0; font: italic 900 clamp(25px, 3.4cqw, 43px)/1 "Arial Narrow", sans-serif; letter-spacing: .065em; }
+.mission-lab-header .eyebrow { font-size: 9px; }
+.mission-lab-safety { padding: 8px 12px; border: 1px solid #65ffb155; background: #65ffb10b; color: var(--green); font: 800 10px "Arial Narrow", sans-serif; letter-spacing: .18em; white-space: nowrap; }
+.mission-lab-intro { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.mission-lab-content { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(230px, 1fr); gap: 24px; min-height: 0; overflow: auto; scrollbar-color: #2b6376 #081523; }
+.mission-lab-missions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(78px, 1fr)); gap: 10px; }
+.mission-lab-mission { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; padding: 16px 12px; text-align: left; border: 1px solid var(--edge); background: linear-gradient(140deg, #0b2335, #07111e); color: var(--ink); cursor: pointer; }
+.mission-lab-mission::before { content: ""; position: absolute; top: -1px; left: -1px; width: 24px; height: 2px; background: #477f95; }
+.mission-lab-mission span { color: #7aa5b8; font: 800 8px "Arial Narrow", sans-serif; letter-spacing: .09em; }
+.mission-lab-mission strong { font: 900 15px/1.13 "Arial Narrow", sans-serif; letter-spacing: .03em; }
+.mission-lab-mission small { color: #6f94a6; font-size: 9px; line-height: 1.3; text-transform: none; }
+.mission-lab-mission:hover { background: #103248; border-color: #6ab9d0; }
+.mission-lab-mission.selected { border-color: var(--cyan); background: linear-gradient(125deg, #15495b, #092130); box-shadow: inset 3px 0 0 var(--cyan); }
+.mission-lab-mission.selected::before { background: var(--cyan); width: 48px; }
+.mission-lab-mission.selected span, .mission-lab-mission.selected small { color: #b6edf6; }
+.mission-lab-detail { display: flex; flex-direction: column; justify-content: space-between; gap: 18px; min-width: 0; padding-left: 24px; border-left: 1px solid var(--edge); }
+.mission-lab-selection h3 { margin: 9px 0; color: var(--ink); font: 900 22px/1.1 "Arial Narrow", sans-serif; letter-spacing: .03em; }
+.mission-lab-selection p { color: #9fbaca; font-size: 12px; line-height: 1.55; margin: 0; }
+.mission-lab-options { display: grid; gap: 12px; }
+.mission-lab-field { display: grid; gap: 6px; }
+.mission-lab-field > span { color: #88b2c4; font: 800 9px "Arial Narrow", sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.mission-lab-field select { width: 100%; padding: 10px; border: 1px solid #365365; border-radius: 0; background: #071722; color: var(--ink); font-family: inherit; font-size: 12px; cursor: pointer; }
+.mission-lab-field select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.mission-lab-god { display: flex; gap: 10px; align-items: center; cursor: pointer; padding: 10px; border: 1px solid #5d8b8555; background: #65ffb107; }
+.mission-lab-god input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: var(--green); }
+.mission-lab-god strong { display: block; font: 800 10px "Arial Narrow", sans-serif; letter-spacing: .12em; color: var(--green); }
+.mission-lab-god small { display: block; margin-top: 4px; color: #99b7b8; font-size: 10px; line-height: 1.4; }
+.mission-lab-footer { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; border-top: 1px solid var(--edge); padding-top: 14px; }
+.mission-lab-footer button { margin: 0; width: 100%; min-height: 42px; }
+.mission-lab-footer button:disabled { cursor: wait; opacity: .45; box-shadow: none; }
+
+@container (max-width: 960px) {
+  .menu-card.mission-lab-card { padding: 16px; gap: 10px; }
+  .mission-lab-content { gap: 14px; grid-template-columns: minmax(0, 1.6fr) minmax(220px, 1fr); }
+  .mission-lab-detail { padding-left: 14px; gap: 10px; }
+  .mission-lab-missions { gap: 7px; }
+  .mission-lab-mission { padding: 10px; gap: 6px; }
+  .mission-lab-mission strong { font-size: 12px; }
+  .mission-lab-mission span { font-size: 7px; }
+  .mission-lab-mission small { font-size: 8px; }
+  .mission-lab-selection h3 { font-size: 18px; margin: 6px 0; }
+  .mission-lab-selection p { font-size: 10px; line-height: 1.4; }
+  .mission-lab-options { gap: 8px; }
+  .mission-lab-field select { padding: 7px 8px; font-size: 11px; }
+}
+
+@container (max-height: 500px) {
+  .mission-lab-overlay { padding: 10px; }
+  .menu-card.mission-lab-card { gap: 8px; padding: 12px 16px; }
+  .mission-lab-header h2 { font-size: 25px; margin-top: 4px; }
+  .mission-lab-header .eyebrow, .mission-lab-selection .eyebrow { font-size: 8px; }
+  .mission-lab-intro { font-size: 10px; }
+  .mission-lab-missions { grid-template-rows: repeat(3, minmax(67px, 1fr)); }
+  .mission-lab-detail { gap: 8px; }
+  .mission-lab-options { gap: 7px; }
+  .mission-lab-field { gap: 3px; }
+  .mission-lab-field select { padding: 6px 8px; font-size: 10px; }
+  .mission-lab-god { padding: 7px; }
+  .mission-lab-god small { font-size: 9px; margin-top: 2px; }
+  .mission-lab-footer { padding-top: 9px; }
+  .mission-lab-footer button { min-height: 34px; padding-block: 10px; }
+}
+
+@container (max-width: 620px) {
+  .mission-lab-content { grid-template-columns: 1fr; }
+  .mission-lab-detail { padding: 0; border: 0; }
+  .mission-lab-missions { grid-template-rows: repeat(3, minmax(60px, auto)); }
+  .mission-lab-mission { padding: 8px; }
+  .mission-lab-selection p { font-size: 11px; }
+  .mission-lab-footer { gap: 8px; }
+  .mission-lab-footer button { font-size: 9px; letter-spacing: .07em; }
+}

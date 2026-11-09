@@ -1,0 +1,61 @@
+{
+  "model_id": "music_v2_5",
+  "output_format": "mp3_44100_128",
+  "sourceBrief": "ELEVENLABS_PROMPTS.md; owner requests substantially more melodic and compositional variety than the 7 November v1 scores.",
+  "commonPrompt": "Compose an original instrumental sci-fi arcade combat score for Aegis Vector. Energetic synthwave/electro-orchestral identity, clear punchy mix with room for radio and weapon effects. This must be a COMPOSED evolving piece, not an arpeggiator jam or a four-bar loop stretched for minutes. Give it memorable singable lead phrases, answering countermelodies, harmonic journeys, purposeful rests, drum fills and different instrumentation in genuinely contrasting sections. Change the musical idea every 20-35 seconds. Arpeggios may appear as a brief decorative transition only, never as the main repeated texture. No continuous sixteenth-note ostinato. Keep forward momentum during sparse passages. No voice, choir, lyrics, speech, alarms, literal explosions or sound effects. Start with immediate purposeful music, not a long ambient intro. Follow the section directions. The final 40 seconds must be a complete energetic instrumental passage suitable for repeating with a two-second crossfade: maintain level, do not fade out, stop, add a final hit or resolve to silence. No artist imitation or borrowed themes.",
+  "tracks": {
+    "mission-stormbreak": {
+      "title": "Stormbreak · Through the Thunderhead",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-stormbreak-v2.mp3",
+      "loopEndSeconds": 172,
+      "priorFile": "audio/missions/mission-stormbreak-v1.mp3",
+      "reservedCredits": 6500,
+      "direction": "145 BPM, D minor with relative-major lift. A high-speed pursuit through storm clouds. 0-28s: punchy broken-beat drums and warm analogue bass underpin a confident, sustained five-to-eight-note lead melody; leave space between phrases. 28-56s: switch to crisp straight drums, electric-piano chords and an expressive gliding synth countertheme over Bb-F-C-Dm movement. 56-84s: drums fall to half-time, low tom conversation and wide string swells; introduce a new restrained melody, not the opening riff. 84-112s: soaring bright lead answers muted brass, bass rhythm becomes syncopated, rising harmony. 112-140s: dramatic tight string/brass exchanges and short rhythmic breaks, building to a heroic return. 140-180s: complete eight-bar heroic melody and responding variation over driving full drums and evolving chord voicings. Continuous energy at the end, no fade. Exciting, buoyant and melodic, not dark industrial pounding."
+    },
+    "mission-graveyard": {
+      "title": "Graveyard · Signals Among the Fallen",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-graveyard-v2.mp3",
+      "loopEndSeconds": 174,
+      "priorFile": "audio/missions/mission-graveyard-v1.mp3",
+      "reservedCredits": 6500,
+      "direction": "138 BPM with purposeful half-time passages. A dangerous salvage route through ancient wrecked capital ships. 0-30s: deep round bass, sparse snare and brushed-metal percussion; a plaintive electric-piano melody with long notes carries the scene. 30-60s: introduce a nimble low synth lead and full syncopated drums, move through Dm-Gm-Bb-A with genuine harmonic tension. 60-90s: contrasting spacious section of bowed strings, dark chordal pads and a pulsing kick; rising solo cello-like synth melody, no repeating bell or pluck loop. 90-115s: faster-feeling drum breaks and interlocking brass answers, clipped rhythmic accents rather than an arpeggio bed. 115-140s: warmer F-major colour briefly opens into a brave, broad melodic statement, then return to suspense. 140-180s: a composed suspense-action tail with two contrasting melodic phrases and fluid bass movement at steady level. No quiet ending or fade-out. Haunted but alert and propulsive, unlike the buoyant storm music."
+    },
+    "mission-carrier-siege": {
+      "title": "Carrier Siege · Breach the Line",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-carrier-siege-v2.mp3",
+      "priorFile": "audio/missions/mission-carrier-siege-v1.mp3",
+      "reservedCredits": 6500,
+      "direction": "148 BPM. Disciplined assault on a gigantic enemy carrier; martial synthwave with real musical development. 0-25s: a declarative brass-synth melody over dry snare, kick and walking octave bass, short and memorable. 25-55s: answer with a high expressive analogue lead and supporting string chords; move the harmony Dm-Bb-Gm-A. 55-85s: strip to syncopated bass, toms and muted brass in a lean tactical passage; a different rhythmic pattern and melody. 85-115s: broad rising strings and full electronic drums with deliberate off-beat accents, brief major-key hope. 115-140s: call-and-response between low brass and high lead, 2-bar percussion break, then sustained chord lift. 140-180s: forceful developed main theme with answering phrase, varied drum fills and bass turnaround; constant final level without a final cadence. Avoid incessant plucks, arpeggios or machine-gun ostinati. Weighty, controlled, musical momentum."
+    },
+    "mission-dreadnought": {
+      "title": "Dreadnought · The Citadel Answers",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-dreadnought-v2.mp3",
+      "loopEndSeconds": 177,
+      "priorFile": "audio/missions/mission-dreadnought-v1.mp3",
+      "reservedCredits": 6500,
+      "direction": "152 BPM, dark D-minor electro-orchestral confrontation with controlled scale. 0-30s: low brass announces a long stern melodic phrase over pounding half-time drums and sustained sub bass, not a repeated one-note pulse. 30-60s: full-time drums and a sharp analogue lead introduce a new ascending theme; bass moves through Dm-Eb-Bb-A. 60-90s: change to string-led harmonic suspense, sparse kick/tom figures and an isolated high synth answer; create breathing room without becoming ambient. 90-115s: full martial ensemble, dramatic antiphonal brass and string melodies, altered rhythm with urgent syncopations. 115-140s: descending bridge then a defiant melodic response in wider harmony, percussion rolls build tension. 140-180s: steady heavy confrontation groove with a complete theme and countermelody exchanging every eight bars; maintain energy and volume through the last sample. No victory ending, no monotonous arpeggiator, no repeated four-note motif for the whole piece."
+    },
+    "mission-last-light": {
+      "title": "Last Light · A Sky Worth Saving",
+      "music_length_ms": 210000,
+      "file": "audio/missions/mission-last-light-v2.mp3",
+      "loopEndSeconds": 205,
+      "priorFile": "audio/missions/mission-last-light-v1.mp3",
+      "reservedCredits": 7500,
+      "direction": "150 BPM. The final asteroid-field battle: celestial scale, peril, human resolve. 0-30s: a clear lyrical lead over sustained luminous string chords, restrained kick and syncopated bass; immediate flight momentum, no glass arpeggio loop. 30-60s: introduce a darker brass melody and fuller electronic drums in D minor. 60-90s: change texture to spacious piano/synth call-and-response over half-time drums and suspended harmony. 90-120s: hopeful soaring theme in F major, counterpoint in lower strings, bass moves melodically. 120-145s: tense contrasting bridge of irregularly spaced brass accents, reduced instrumentation and rising harmonic pressure. 145-170s: return the heroic melody in a richer orchestration with an answering lead and sweeping strings. 170-210s: a self-contained luminous battle refrain, two eight-bar melodic variants, dynamic but level-consistent drums; keep tension unresolved and energy running at the end. Sound like a journey with distinct memorable sections, not a texture that merely adds layers. No vocals, choir or fade-out."
+    },
+    "mission-aurora": {
+      "title": "Aurora Reach · A Shield of Dawn",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-aurora-v1.mp3",
+      "loopEndSeconds": 176,
+      "priorFile": null,
+      "reservedCredits": 6500,
+      "direction": "142 BPM. A new early-campaign defense route through luminous orbital auroras and the broken ring of a shield station. Fresh blue-green wonder with danger underneath. 0-30s: fluid electric-piano chords and a clear bell-like lead melody of long notes over crisp breakbeat drums, Dm-Bb-F-C; no repeated bell ostinato. 30-60s: a warm singing analogue lead takes a new melody, broad string support and a more driving bass line. 60-90s: lean half-time section, shimmering sustained pads and a low cello-like melodic answer while rhythmic tension remains. 90-115s: brighter Lydian-coloured harmonic opening with restrained brass and sparkling short transition figures. 115-140s: return to D minor, full drums, a determined defensive theme passed between strings and synth. 140-180s: melodic forward-driving refrain, lead/countermelody exchanges and thoughtful drum variation at stable level. Distinct from the storm chase and haunted salvage routes: protective, luminous, optimistic, but active combat music. No long ambient opening, final hit or fade."
+    }
+  }
+}

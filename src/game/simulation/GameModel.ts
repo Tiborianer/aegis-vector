@@ -1,30 +1,52 @@
 import { DEFAULT_COMBAT_MODIFIERS } from '../content/upgrades';
 import { getThreatLevel } from '../content/encounters';
+import {
+  ACTIVE_TRACTOR_CREDIT_MULTIPLIER,
+  ACTIVE_TRACTOR_RADIUS,
+  KINETIC_SHIELD_HIT_GRACE_MS,
+  SHIELD_HIT_GRACE_MS,
+  WEAPON_MAX_LEVEL,
+} from '../content/balance';
+import { isFinaleMission } from '../content/finale';
+import { sanitizeMissionWaypoint } from './checkpoints';
 import type {
   CombatModifiers,
   DamageResult,
   GameMode,
   GameSnapshot,
   KillResult,
-  MissionId,
+  MissionDefinition,
   MissionStartConfig,
   UpgradeResult,
   UpgradeType,
   UtilityPickupType,
   WeaponLevel,
   WeaponLevels,
+  WeaponType,
   WeaponOverdriveState,
   FinalePhase,
+  FinaleBossStage,
   GameCheckpointSnapshot,
   MissionWaypointId,
 } from './types';
 
 const emptyWeapons = (): WeaponLevels => ({ spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 });
 
+const normalizedWeapons = (weapons: WeaponLevels): WeaponLevels => {
+  const result = emptyWeapons();
+  for (const type of Object.keys(result) as WeaponType[]) {
+    const minimum = type === 'spread' ? 1 : 0;
+    result[type] = (Number.isFinite(weapons[type])
+      ? Math.max(minimum, Math.min(WEAPON_MAX_LEVEL[type], Math.floor(weapons[type])))
+      : minimum) as WeaponLevel;
+  }
+  return result;
+};
+
 export class GameModel {
   mode: GameMode = 'briefing';
   difficulty: MissionStartConfig['difficulty'] = 'pilot';
-  mission: { id: MissionId; number: number; title: string } = {
+  mission: Pick<MissionDefinition, 'id' | 'number' | 'title' | 'approachDurationMs'> = {
     id: 'coastal',
     number: 1,
     title: 'COASTAL INTERCEPT',
@@ -51,6 +73,7 @@ export class GameModel {
   bossName = '';
   bossHealthRatio = 1;
   finalePhase?: FinalePhase;
+  finaleBossStage?: FinaleBossStage;
   latestWaypointId?: MissionWaypointId;
   campaignSeed = 1;
   sortieModule: MissionStartConfig['sortieModule'];
@@ -72,6 +95,7 @@ export class GameModel {
   private naniteLatticeAvailable = false;
   private sortieNanitesAvailable = false;
   private fortressRamAvailable = false;
+  private creditRemainder = 0;
 
   constructor(highScore = 0) {
     this.highScore = highScore;
@@ -84,20 +108,22 @@ export class GameModel {
       id: config.mission.id,
       number: config.mission.number,
       title: config.mission.title,
+      approachDurationMs: config.mission.approachDurationMs,
     };
-    this.modifiers = { ...config.modifiers };
+    this.modifiers = { ...DEFAULT_COMBAT_MODIFIERS, ...config.modifiers };
     this.campaignSeed = config.campaignSeed;
     this.sortieModule = config.sortieModule;
     this.hullMax = Math.min(6, 3 + this.modifiers.hullBonus + (this.modifiers.fortressFrame ? 1 : 0));
     this.hull = this.hullMax;
     this.shieldBaseMax = Math.max(1, Math.min(3, config.shieldBaseMax));
-    this.shieldMax = this.shieldBaseMax;
+    this.shieldMax = this.shieldBaseMax + this.modifiers.shieldCapacityBonus;
     this.shield = this.shieldMax;
-    this.weapons = { ...config.weapons };
+    this.weapons = normalizedWeapons(config.weapons);
     this.score = Math.max(0, config.score);
     this.multiplier = 1;
     this.kills = 0;
     this.creditsEarned = 0;
+    this.creditRemainder = 0;
     this.empMax = 2 + this.modifiers.empCapacityBonus;
     this.empCharges = Math.min(this.empMax, 1 + (config.sortieModule === 'reserve-emp' ? 1 : 0));
     this.shotsFired = 0;
@@ -108,7 +134,8 @@ export class GameModel {
     this.bossActive = false;
     this.bossName = '';
     this.bossHealthRatio = 1;
-    this.finalePhase = config.mission.id === 'dreadnought' ? 'approach' : undefined;
+    this.finalePhase = isFinaleMission(config.mission.id) ? 'approach' : undefined;
+    this.finaleBossStage = config.mission.id === 'lastLight' ? 'seraph' : undefined;
     this.latestWaypointId = undefined;
     this.invulnerableUntil = 0;
     this.comboUntil = 0;
@@ -126,7 +153,11 @@ export class GameModel {
     this.naniteLatticeAvailable = this.modifiers.naniteLattice;
     this.sortieNanitesAvailable = config.sortieModule === 'emergency-nanites';
     this.fortressRamAvailable = this.modifiers.fortressFrame;
-    if (config.resumeFrom) this.restoreCheckpoint(config.resumeFrom.game, config.resumeFrom.waypointId);
+    const resume = sanitizeMissionWaypoint(config.resumeFrom, config.mission.id);
+    if (resume) {
+      this.restoreCheckpoint(resume.game, resume.waypointId);
+      if (this.mission.id === 'dreadnought' && resume.bossHealthRatio !== undefined) this.bossHealthRatio = resume.bossHealthRatio;
+    }
   }
 
   exportCheckpoint(): GameCheckpointSnapshot {
@@ -135,11 +166,13 @@ export class GameModel {
       score: this.score,
       kills: this.kills,
       creditsEarned: this.creditsEarned,
+      creditRemainder: this.creditRemainder,
       shotsFired: this.shotsFired,
       shotsHit: this.shotsHit,
       damageTaken: this.damageTaken,
       weapons: { ...this.weapons },
       shieldBaseMax: this.shieldBaseMax,
+      shieldCapacityBonus: this.modifiers.shieldCapacityBonus,
       hull: this.hull,
       shield: this.shield,
       empCharges: this.empCharges,
@@ -151,21 +184,24 @@ export class GameModel {
       sortieNanitesAvailable: this.sortieNanitesAvailable,
       fortressRamAvailable: this.fortressRamAvailable,
       finalePhase: this.finalePhase,
+      finaleBossStage: this.finaleBossStage,
     };
   }
 
   restoreCheckpoint(checkpoint: GameCheckpointSnapshot, waypointId: MissionWaypointId): void {
-    this.stageElapsedMs = Math.max(0, Math.min(this.stageDurationMs, checkpoint.stageElapsedMs));
+    this.stageElapsedMs = Math.max(0, checkpoint.stageElapsedMs);
     this.score = Math.max(0, checkpoint.score);
     this.highScore = Math.max(this.highScore, this.score);
     this.kills = Math.max(0, checkpoint.kills);
     this.creditsEarned = Math.max(0, checkpoint.creditsEarned);
+    this.creditRemainder = Number.isFinite(checkpoint.creditRemainder)
+      ? Math.max(0, Math.min(0.999999999, checkpoint.creditRemainder!)) : 0;
     this.shotsFired = Math.max(0, checkpoint.shotsFired);
     this.shotsHit = Math.max(0, checkpoint.shotsHit);
     this.damageTaken = Math.max(0, checkpoint.damageTaken);
-    this.weapons = { ...checkpoint.weapons };
+    this.weapons = normalizedWeapons(checkpoint.weapons);
     this.shieldBaseMax = Math.max(1, Math.min(3, checkpoint.shieldBaseMax));
-    this.shieldMax = this.shieldBaseMax;
+    this.shieldMax = this.shieldBaseMax + this.modifiers.shieldCapacityBonus;
     this.hull = Math.min(this.hullMax, Math.max(checkpoint.hull, Math.min(2, this.hullMax)));
     this.shield = this.shieldMax;
     this.empCharges = Math.min(this.empMax, Math.max(checkpoint.empCharges, Math.min(1, this.empMax)));
@@ -176,7 +212,10 @@ export class GameModel {
     this.naniteLatticeAvailable = checkpoint.naniteLatticeAvailable;
     this.sortieNanitesAvailable = checkpoint.sortieNanitesAvailable;
     this.fortressRamAvailable = checkpoint.fortressRamAvailable;
-    this.finalePhase = checkpoint.finalePhase;
+    this.finalePhase = isFinaleMission(this.mission.id) ? checkpoint.finalePhase ?? 'approach' : undefined;
+    this.finaleBossStage = this.mission.id === 'lastLight'
+      ? checkpoint.finaleBossStage === 'nullArchitect' ? 'nullArchitect' : 'seraph'
+      : undefined;
     this.latestWaypointId = waypointId;
 
     // Partial service deliberately clears transient combat advantages and hazards.
@@ -192,7 +231,7 @@ export class GameModel {
     this.lastHullDamageAt = Number.NEGATIVE_INFINITY;
     this.bossActive = false;
     this.bossName = '';
-    this.bossHealthRatio = checkpoint.finalePhase === 'boss' ? 0.66 : 1;
+    this.bossHealthRatio = this.mission.id === 'dreadnought' && waypointId === 2 && checkpoint.finalePhase === 'boss' ? 0.66 : 1;
   }
 
   setLatestWaypoint(id: MissionWaypointId): void {
@@ -208,13 +247,10 @@ export class GameModel {
     }
 
     if (this.shield < this.shieldMax && this.stageElapsedMs >= this.nextShieldRechargeAt) {
-      if (this.modifiers.aegisHarmonics) {
-        this.shield += 1;
-        this.nextShieldRechargeAt = this.shield < this.shieldMax ? this.stageElapsedMs + 4_500 : Number.POSITIVE_INFINITY;
-      } else {
-        this.shield = this.shieldMax;
-        this.nextShieldRechargeAt = Number.POSITIVE_INFINITY;
-      }
+      // Every Aegis bank recharges one cell at a time. Harmonics improves cadence,
+      // not the recharge rule; even a delayed frame may restore only one cell.
+      this.shield = Math.min(this.shieldMax, this.shield + 1);
+      this.nextShieldRechargeAt = this.shield < this.shieldMax ? this.stageElapsedMs + this.shieldRechargeIntervalMs : Number.POSITIVE_INFINITY;
       return 'shield';
     }
     if (this.naniteLatticeAvailable && this.hull < this.hullMax && this.stageElapsedMs - this.lastHullDamageAt >= 35_000) {
@@ -232,11 +268,11 @@ export class GameModel {
       this.invulnerableUntil = this.stageElapsedMs + 750;
       return 'fortress';
     }
-    this.nextShieldRechargeAt = this.stageElapsedMs + (this.modifiers.aegisHarmonics ? 4_500 : this.modifiers.shieldRechargeMs);
+    this.nextShieldRechargeAt = this.stageElapsedMs + this.shieldRechargeIntervalMs;
     this.damageTaken += 1;
     if (this.shield > 0) {
       this.shield -= 1;
-      this.invulnerableUntil = this.stageElapsedMs + (this.modifiers.kineticReversal ? 750 : 420);
+      this.invulnerableUntil = this.stageElapsedMs + (this.modifiers.kineticReversal ? KINETIC_SHIELD_HIT_GRACE_MS : SHIELD_HIT_GRACE_MS);
       if (this.shield === 0 && this.reserveShieldAvailable) {
         this.reserveShieldAvailable = false;
         this.shield = 1;
@@ -286,12 +322,12 @@ export class GameModel {
         return { upgraded: false, level: this.shieldMax };
       }
       this.shieldBaseMax += 1;
-      this.shieldMax = this.shieldBaseMax;
+      this.shieldMax = this.shieldBaseMax + this.modifiers.shieldCapacityBonus;
       this.shield = this.shieldMax;
       return { upgraded: true, level: this.shieldMax };
     }
 
-    if (this.weapons[type] >= 5) {
+    if (this.weapons[type] >= WEAPON_MAX_LEVEL[type]) {
       this.addFlatScore(750);
       return { upgraded: false, level: this.weapons[type] };
     }
@@ -302,7 +338,6 @@ export class GameModel {
   collectUtility(type: UtilityPickupType): { applied: boolean; scoreAwarded: number; creditsAwarded: number } {
     if (type === 'repair') {
       if (this.hull >= this.hullMax) {
-        this.addFlatScore(500);
         return this.routeExcessUtility();
       }
       this.hull += 1;
@@ -324,7 +359,6 @@ export class GameModel {
       return { applied: true, scoreAwarded: 0, creditsAwarded: 0 };
     }
     if (this.modifiers.utilityDurationMultiplier > 1) {
-      this.addFlatScore(500);
       return this.routeExcessUtility();
     }
     return this.modifiers.salvageRouter ? this.routeExcessUtility() : { applied: false, scoreAwarded: 0, creditsAwarded: 0 };
@@ -351,16 +385,25 @@ export class GameModel {
     this.multiplier = Math.min(this.modifiers.comboMax, 1 + Math.floor(this.comboKills / 5));
     this.comboUntil = this.stageElapsedMs + this.modifiers.comboWindowMs;
     const points = Math.round(baseScore * this.multiplier * this.difficultyScoreScale() * (specialist && this.modifiers.threatAnalyzer ? 1.1 : 1));
-    const credits = Math.round(baseCredits * this.modifiers.creditMultiplier);
+    // Preserve fractional salvage bonuses across small rewards and waypoint retries.
+    // Tractor also salvages more from kills, so it is useful between utility drops.
+    const tractorSalvage = this.stageElapsedMs < this.tractorUntil ? ACTIVE_TRACTOR_CREDIT_MULTIPLIER : 1;
+    const exactCredits = Math.max(0, baseCredits) * this.modifiers.creditMultiplier * tractorSalvage + this.creditRemainder;
+    const credits = Math.floor(exactCredits + 1e-9);
+    this.creditRemainder = Math.max(0, exactCredits - credits);
     this.creditsEarned += credits;
     this.addFlatScore(points);
 
     const overdriveTriggered = this.modifiers.overdriveReactor && this.comboKills === 10;
     if (overdriveTriggered) this.reactorUntil = this.stageElapsedMs + 6_000;
     const fabricationInterval = this.modifiers.fabricationMatrix ? 24 : 30;
-    const fabricatedPickup = (this.modifiers.fieldFabricator || this.modifiers.fabricationMatrix) && this.kills % fabricationInterval === 0
-      ? this.hull < this.hullMax ? 'repair' : 'overdrive'
-      : undefined;
+    let fabricatedPickup: UtilityPickupType | undefined;
+    if ((this.modifiers.fieldFabricator || this.modifiers.fabricationMatrix) && this.kills % fabricationInterval === 0) {
+      if (this.hull < this.hullMax) fabricatedPickup = 'repair';
+      else if (this.empCharges < this.empMax) fabricatedPickup = 'emp';
+      // A healthy full-capacity fighter receives Overdrive only every third cycle.
+      else fabricatedPickup = Math.floor(this.kills / fabricationInterval) % 3 === 0 ? 'overdrive' : 'tractor';
+    }
     return { points, credits, overdriveTriggered, fabricatedPickup };
   }
 
@@ -388,7 +431,17 @@ export class GameModel {
   }
 
   setFinalePhase(phase: FinalePhase): void {
-    if (this.mission.id === 'dreadnought') this.finalePhase = phase;
+    if (isFinaleMission(this.mission.id)) this.finalePhase = phase;
+  }
+
+  /** Advance the sequence exactly once; Seraph's earned rewards stay in mission totals. */
+  advanceFinaleBoss(): boolean {
+    if (this.mission.id !== 'lastLight' || this.finalePhase !== 'boss' || this.finaleBossStage !== 'seraph' || this.mode !== 'playing') return false;
+    this.finaleBossStage = 'nullArchitect';
+    this.bossActive = false;
+    this.bossName = '';
+    this.bossHealthRatio = 1;
+    return true;
   }
 
   restoreShield(): void {
@@ -396,16 +449,22 @@ export class GameModel {
   }
 
   complete(finalVictory = false): void {
-    this.mode = finalVictory ? 'victory' : 'complete';
+    this.mode = finalVictory && this.mission.id === 'lastLight' ? 'victory' : 'complete';
     this.bossActive = false;
     this.bossHealthRatio = 0;
-    if (finalVictory) this.finalePhase = 'cleared';
+    if (isFinaleMission(this.mission.id)) this.finalePhase = 'cleared';
   }
 
   get fireIntervalMultiplier(): number {
     const pickupBoost = this.stageElapsedMs < this.overdriveUntil ? 0.7 : 1;
     const reactorBoost = this.stageElapsedMs < this.reactorUntil ? 0.75 : 1;
     return this.modifiers.fireIntervalMultiplier * pickupBoost * reactorBoost;
+  }
+
+  private get shieldRechargeIntervalMs(): number {
+    return this.modifiers.aegisHarmonics
+      ? Math.min(4_500, Math.max(2_500, this.modifiers.shieldRechargeMs - 2_000))
+      : this.modifiers.shieldRechargeMs;
   }
 
   get weaponOverdriveState(): WeaponOverdriveState {
@@ -421,8 +480,12 @@ export class GameModel {
     return this.modifiers.damageMultiplier;
   }
 
+  get arcDamageMultiplier(): number {
+    return this.modifiers.damageMultiplier * this.modifiers.arcDamageMultiplier;
+  }
+
   get tractorRadius(): number {
-    return Math.max(this.modifiers.passiveTractorRadius, this.stageElapsedMs < this.tractorUntil ? 220 : 0);
+    return Math.max(this.modifiers.passiveTractorRadius, this.stageElapsedMs < this.tractorUntil ? ACTIVE_TRACTOR_RADIUS : 0);
   }
 
   get empDamageMultiplier(): number {
@@ -468,6 +531,7 @@ export class GameModel {
       bossName: this.bossName,
       bossHealthRatio: this.bossHealthRatio,
       finalePhase: this.finalePhase,
+      finaleBossStage: this.finaleBossStage,
       threatLevel: getThreatLevel(this.stageElapsedMs / Math.max(1, this.stageDurationMs)),
       chronoRemainingMs: Math.max(0, this.chronoUntil - this.stageElapsedMs),
       reserveShieldAvailable: this.reserveShieldAvailable,

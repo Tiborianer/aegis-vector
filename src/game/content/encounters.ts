@@ -19,31 +19,37 @@ export const THREAT_PHASES: readonly ThreatPhase[] = [
 
 export const MISSION_DIFFICULTY: Record<Difficulty, Record<MissionId, MissionDifficultyProfile>> = {
   cadet: {
-    coastal: { healthScale: 0.86, pressureScale: 0.95 },
-    minefield: { healthScale: 1.08, pressureScale: 1 },
-    fortress: { healthScale: 1.3, pressureScale: 1.05 },
-    stormbreak: { healthScale: 1.4, pressureScale: 1.05 },
-    graveyard: { healthScale: 1.4, pressureScale: 1.05 },
-    carrierSiege: { healthScale: 1.58, pressureScale: 1.08 },
-    dreadnought: { healthScale: 1.75, pressureScale: 1.12 },
+    coastal: { healthScale: 0.78, pressureScale: 0.85 },
+    minefield: { healthScale: 1.14, pressureScale: 1 },
+    aurora: { healthScale: 1.14, pressureScale: 1 },
+    fortress: { healthScale: 1.5, pressureScale: 1.05 },
+    stormbreak: { healthScale: 1.7, pressureScale: 1.05 },
+    graveyard: { healthScale: 1.7, pressureScale: 1.05 },
+    carrierSiege: { healthScale: 1.95, pressureScale: 1.08 },
+    dreadnought: { healthScale: 2.25, pressureScale: 1.12 },
+    lastLight: { healthScale: 2.45, pressureScale: 1.12 },
   },
   pilot: {
-    coastal: { healthScale: 0.9, pressureScale: 0.95 },
-    minefield: { healthScale: 1.18, pressureScale: 1.03 },
-    fortress: { healthScale: 1.45, pressureScale: 1.08 },
-    stormbreak: { healthScale: 1.62, pressureScale: 1.1 },
-    graveyard: { healthScale: 1.62, pressureScale: 1.1 },
-    carrierSiege: { healthScale: 1.82, pressureScale: 1.13 },
-    dreadnought: { healthScale: 2.05, pressureScale: 1.17 },
+    coastal: { healthScale: 0.82, pressureScale: 0.88 },
+    minefield: { healthScale: 1.3, pressureScale: 1.03 },
+    aurora: { healthScale: 1.3, pressureScale: 1.03 },
+    fortress: { healthScale: 1.7, pressureScale: 1.08 },
+    stormbreak: { healthScale: 1.95, pressureScale: 1.1 },
+    graveyard: { healthScale: 1.95, pressureScale: 1.1 },
+    carrierSiege: { healthScale: 2.3, pressureScale: 1.13 },
+    dreadnought: { healthScale: 2.65, pressureScale: 1.17 },
+    lastLight: { healthScale: 2.85, pressureScale: 1.17 },
   },
   ace: {
-    coastal: { healthScale: 1, pressureScale: 1 },
-    minefield: { healthScale: 1.32, pressureScale: 1.08 },
-    fortress: { healthScale: 1.65, pressureScale: 1.16 },
-    stormbreak: { healthScale: 1.85, pressureScale: 1.18 },
-    graveyard: { healthScale: 1.85, pressureScale: 1.18 },
-    carrierSiege: { healthScale: 2.12, pressureScale: 1.22 },
-    dreadnought: { healthScale: 2.4, pressureScale: 1.28 },
+    coastal: { healthScale: 0.95, pressureScale: 0.95 },
+    minefield: { healthScale: 1.48, pressureScale: 1.08 },
+    aurora: { healthScale: 1.48, pressureScale: 1.08 },
+    fortress: { healthScale: 1.98, pressureScale: 1.16 },
+    stormbreak: { healthScale: 2.25, pressureScale: 1.18 },
+    graveyard: { healthScale: 2.25, pressureScale: 1.18 },
+    carrierSiege: { healthScale: 2.65, pressureScale: 1.22 },
+    dreadnought: { healthScale: 3.05, pressureScale: 1.28 },
+    lastLight: { healthScale: 3.3, pressureScale: 1.28 },
   },
 };
 
@@ -60,24 +66,36 @@ const WAVE_BUDGETS: Record<Difficulty, readonly number[]> = {
 };
 
 const CARRIER_MILESTONES: Record<MissionId, readonly number[]> = {
-  coastal: [0.2, 0.52, 0.84],
+  coastal: [0.12, 0.52, 0.84],
   minefield: [0.18, 0.42, 0.65],
+  aurora: [0.18, 0.42, 0.65],
   fortress: [0.15, 0.33, 0.51, 0.69],
   stormbreak: [0.18, 0.48, 0.78],
   graveyard: [0.18, 0.48, 0.78],
   carrierSiege: [0.14, 0.36, 0.58, 0.76],
   dreadnought: [],
+  lastLight: [],
 };
 
 const CARRIER_OFFSETS: Record<MissionId, number> = {
   coastal: 0,
   minefield: 3,
+  // Mutually exclusive level-two branches share offer positions, so choosing a
+  // route never rerolls the campaign's deterministic armament progression.
+  aurora: 3,
   fortress: 7,
   stormbreak: 12,
   graveyard: 15,
   carrierSiege: 18,
   dreadnought: 22,
+  lastLight: 22,
 };
+
+export const COASTAL_FIRST_SALVO_WARNING_MS = 700;
+
+export function isCoastalOpening(missionId: MissionId, progress: number): boolean {
+  return missionId === 'coastal' && progress < 0.2;
+}
 
 export function getThreatLevel(progress: number): ThreatLevel {
   const normalized = Math.max(0, Math.min(1, progress));
@@ -89,19 +107,27 @@ export function getThreatLevel(progress: number): ThreatLevel {
 }
 
 export function getThreatTuning(progress: number, difficulty: Difficulty, missionId: MissionId): ThreatTuning {
-  const phase = THREAT_PHASES[getThreatLevel(progress) - 1];
+  const normalized = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+  const phase = THREAT_PHASES[getThreatLevel(normalized) - 1];
   const curve = DIFFICULTY[difficulty].threatCurve;
   const profile = MISSION_DIFFICULTY[difficulty][missionId];
   const scale = (value: number): number => 1 + (value - 1) * curve;
   const phaseIndex = phase.level - 1;
+  const opening = missionId === 'coastal' && normalized < 0.4;
+  // Give new pilots more reading time, then smoothly remove the extra relief
+  // between 20% and 30%. Difficulty's own pressure still applies throughout.
+  const openingBulletScale = missionId === 'coastal'
+    ? 0.9 + 0.1 * Math.max(0, Math.min(1, (normalized - 0.2) / 0.1)) : 1;
   return {
     ...phase,
-    enemyHealth: scale(phase.enemyHealth) * profile.healthScale,
+    // Durability rises continuously with mission time, not in response to the
+    // player's weapon choices. Buying an upgrade still immediately helps.
+    enemyHealth: (1 + normalized * 0.6 * curve) * profile.healthScale,
     movementSpeed: scale(phase.movementSpeed) * (1 + (profile.pressureScale - 1) * 0.45),
     fireRate: scale(phase.fireRate) * profile.pressureScale,
-    bulletSpeed: scale(phase.bulletSpeed) * (1 + (profile.pressureScale - 1) * 0.35),
-    waveIntervalMs: WAVE_INTERVALS[difficulty][phaseIndex],
-    waveBudget: WAVE_BUDGETS[difficulty][phaseIndex],
+    bulletSpeed: scale(phase.bulletSpeed) * (1 + (profile.pressureScale - 1) * 0.35) * openingBulletScale,
+    waveIntervalMs: WAVE_INTERVALS[difficulty][phaseIndex] + (opening ? phaseIndex === 0 ? 1_000 : 600 : 0),
+    waveBudget: Math.max(2, WAVE_BUDGETS[difficulty][phaseIndex] - (opening ? 1 : 0)),
     missionScale: profile.healthScale,
     pressureScale: profile.pressureScale,
   };
@@ -118,6 +144,7 @@ export function globalCarrierIndex(missionId: MissionId, localIndex: number): nu
 export function carrierKind(missionId: MissionId, localIndex: number): EnemyKind {
   if (missionId === 'coastal') return localIndex === 0 ? 'bomber' : localIndex === 1 ? 'charger' : 'elite';
   if (missionId === 'minefield') return localIndex === 0 ? 'mineLayer' : localIndex === 1 ? 'shieldCarrier' : 'elite';
+  if (missionId === 'aurora') return localIndex === 0 ? 'prism' : localIndex === 1 ? 'leech' : 'elite';
   if (missionId === 'fortress') return localIndex % 2 === 0 ? 'elite' : 'shieldCarrier';
   if (missionId === 'stormbreak') return localIndex === 0 ? 'phantom' : localIndex === 1 ? 'artillery' : 'elite';
   if (missionId === 'graveyard') return localIndex === 0 ? 'reclaimer' : localIndex === 1 ? 'bulwark' : 'elite';
@@ -134,6 +161,28 @@ export function seededRandom(seed: number): () => number {
     mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+export interface EncounterSpawn { kind: EnemyKind; x: number; y: number; phase: number }
+
+/** Complete, seeded Aurora formations. The render adapter only spawns these;
+ * cursor restoration recreates precisely the same future wings. */
+export function auroraWave(director: EncounterDirector, waveIndex: number, progress: number): EncounterSpawn[] {
+  const phase = Math.max(0, Math.floor(waveIndex));
+  const center = director.between(phase, 81, 350, 930);
+  const spawn = (kind: EnemyKind, x: number, y: number, offset = 0): EncounterSpawn => ({ kind, x, y, phase: phase + offset });
+  switch (phase % 6) {
+    case 0: return [spawn('scout', center - 100, -70), spawn('scout', center, -110, 1), spawn('scout', center + 100, -150, 2)];
+    case 1: return [spawn('interceptor', -30, 100), spawn('interceptor', 1310, 220, 1)];
+    case 2: return [spawn('prism', center, -85), spawn('scout', 300, -155, 1), spawn('scout', 980, -195, 2)];
+    case 3: return [spawn('leech', center, -90), spawn('scout', center < 640 ? 970 : 310, -175, 1)];
+    case 4: return progress >= .45
+      ? [spawn('prism', 330, -90), spawn('prism', 950, -190, 1)]
+      : [spawn('prism', center, -90), spawn('bomber', center < 640 ? 950 : 330, -180, 1)];
+    default: return progress >= .60
+      ? [spawn('leech', 640, -90), spawn('prism', center < 640 ? 990 : 290, -210, 1)]
+      : [spawn('bomber', center, -90), spawn('scout', 300, -180, 1), spawn('scout', 980, -180, 2)];
+  }
 }
 
 export class EncounterDirector {

@@ -13,13 +13,24 @@ describe('armament and utility drops', () => {
 
   it('never offers a maximized armament', () => {
     const offer = chooseArmamentOffer(
-      { spread: 5, missile: 5, laser: 5, drone: 4, ion: 5 },
+      { spread: 7, missile: 5, laser: 5, drone: 4, ion: 5 },
       3,
       87,
       4,
     );
     expect(offer.options).toContain('drone');
     expect(offer.options).not.toContain('shield');
+  });
+
+  it('continues offering ARC after level five but stops at seven', () => {
+    for (const spread of [5, 6] as const) {
+      const weapons = { spread, missile: 5, laser: 5, drone: 4, ion: 5 } as const;
+      const offer = chooseArmamentOffer(weapons, 3, 87, 4);
+      expect(offer.options).toContain('spread');
+      expect(offer.options).toContain('drone');
+      expect(chooseArmamentOffer(weapons, 3, 87, 4)).toEqual(offer);
+    }
+    expect(chooseArmamentOffer({ spread: 7, missile: 5, laser: 5, drone: 4, ion: 5 }, 3, 87, 4).options).not.toContain('spread');
   });
 
   it('guarantees utility pity after eighteen dry kills', () => {
@@ -60,5 +71,30 @@ describe('armament and utility drops', () => {
   it('keeps paired Armament choices outside Tractor control', () => {
     expect(canTractorPickup(undefined)).toBe(true);
     expect(canTractorPickup(7)).toBe(false);
+  });
+
+  it('makes Overdrive less than a third of full-capacity drops and suppresses active repeats', () => {
+    const counts = { normal: 0, repeated: 0, active: 0, both: 0 };
+    for (let sample = 0; sample < 10_000; sample += 1) {
+      const random = () => (sample + 0.5) / 10_000;
+      if (chooseUtilityPickup(3, 3, 2, 2, random) === 'overdrive') counts.normal += 1;
+      if (chooseUtilityPickup(3, 3, 2, 2, random, 'overdrive') === 'overdrive') counts.repeated += 1;
+      if (chooseUtilityPickup(3, 3, 2, 2, random, undefined, false, { overdrive: true }) === 'overdrive') counts.active += 1;
+      if (chooseUtilityPickup(3, 3, 2, 2, random, 'overdrive', false, { overdrive: true }) === 'overdrive') counts.both += 1;
+    }
+    expect(counts.normal).toBeGreaterThan(2_500);
+    expect(counts.normal).toBeLessThan(3_000);
+    expect(counts.repeated).toBeLessThan(counts.normal / 3);
+    expect(counts.active).toBeLessThan(counts.normal / 4);
+    expect(counts.both).toBeLessThan(150);
+  });
+
+  it('prioritizes needed repairs and EMP rather than flooding the screen with power boosts', () => {
+    const counts = { repair: 0, overdrive: 0, tractor: 0, emp: 0 };
+    for (let sample = 0; sample < 10_000; sample += 1) {
+      counts[chooseUtilityPickup(1, 3, 0, 2, () => (sample + 0.5) / 10_000)] += 1;
+    }
+    expect(counts.repair + counts.emp).toBeGreaterThan(8_000);
+    expect(counts.overdrive).toBeLessThan(800);
   });
 });

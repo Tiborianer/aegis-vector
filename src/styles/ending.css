@@ -1,0 +1,160 @@
+/* Cinematic epilogue: quiet steel-blue depth with the warmth of home. */
+.ending-screen {
+  --ending-gold: #ead6a6;
+  --ending-ice: #c1e5ec;
+  --ending-quiet: #a7b5bd;
+  position: absolute;
+  inset: 0;
+  z-index: 29;
+  isolation: isolate;
+  /* Clip the slow image zoom without creating a focus-scrollable container. */
+  overflow: clip;
+  color: #f7f2e6;
+  background: radial-gradient(ellipse at 62% 64%, #44565b 0, #182b3a 30%, #020916 75%);
+  outline: none;
+}
+.ending-screen [hidden] { display: none !important; }
+/* Existing audio controls stay available, away from the ending footer. These
+   selectors also override gameplay HUD positioning while the ending is open. */
+#ending-screen:not(.hidden) ~ #audio-button {
+  top: 5%;
+  right: 4.5%;
+  bottom: auto;
+}
+#ending-screen:not(.hidden) ~ #audio-panel {
+  top: calc(5% + 36px);
+  right: 4.5%;
+  bottom: auto;
+  width: min(245px, 91%);
+  max-height: calc(90% - 36px);
+  overflow-y: auto;
+}
+.ending-image, .ending-vignette { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ending-image {
+  z-index: -3;
+  object-fit: cover;
+  object-position: center 56%;
+  opacity: 0;
+  filter: saturate(.76);
+  transform-origin: 52% 58%;
+  animation: ending-homeward-drift 180s linear both;
+  transition: opacity 1.6s ease;
+}
+.ending-screen[data-image-state="ready"] .ending-image { opacity: .84; }
+.ending-vignette {
+  z-index: -2;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(2,8,17,.12) 0, rgba(2,8,17,.46) 68%, rgba(1,5,12,.82) 100%),
+    linear-gradient(180deg, rgba(1,7,15,.72), rgba(2,8,17,.18) 28%, rgba(2,8,17,.32) 58%, rgba(1,5,12,.89));
+}
+.ending-masthead { position: absolute; top: 7.2%; left: 15%; width: 70%; text-align: center; }
+.ending-wordmark {
+  margin: 0;
+  color: var(--ending-ice);
+  font-family: "Arial Narrow", "Roboto Condensed", sans-serif;
+  font-size: clamp(15px, 1.8cqw, 24px);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: .38em;
+  text-indent: .38em;
+  text-shadow: 0 2px 18px #020916;
+}
+.ending-masthead-rule { display: block; width: 42px; height: 1px; margin: 18px auto 0; background: var(--ending-gold); opacity: .62; }
+.ending-stage { position: absolute; top: 24%; bottom: 26%; left: 20%; right: 20%; display: grid; place-items: center; text-align: center; }
+.ending-opening, .ending-credit-page, .ending-closing { width: 100%; text-shadow: 0 2px 18px rgba(0,0,0,.75); }
+.ending-opening { animation: ending-arrive 1.8s ease both; }
+.ending-kicker, .ending-chapter {
+  color: var(--ending-ice);
+  font: 600 clamp(10px, .9cqw, 12px)/1.5 "Arial Narrow", "Roboto Condensed", sans-serif;
+  letter-spacing: .25em;
+  margin: 0 0 15px;
+}
+.ending-opening h1, .ending-closing h2 {
+  margin: 0;
+  color: var(--ending-gold);
+  font-family: "Arial Narrow", "Roboto Condensed", sans-serif;
+  font-weight: 400;
+  font-size: clamp(48px, 7.2cqw, 96px);
+  line-height: 1;
+  letter-spacing: .15em;
+  text-indent: .15em;
+}
+.ending-opening p:last-child, .ending-closing p:last-child { margin: 22px 0 0; color: #d2d8d8; font-size: clamp(12px, 1.2cqw, 16px); letter-spacing: .06em; }
+.ending-closing h2 { font-size: clamp(38px, 5.1cqw, 70px); letter-spacing: .08em; text-indent: .08em; }
+.ending-credit-page > * { animation: ending-arrive 1.3s ease both; }
+.ending-chapter { color: var(--ending-gold); margin-bottom: 14px; }
+.ending-credit-title { margin: 0 0 24px; font-weight: 400; font-size: clamp(19px, 2.4cqw, 32px); line-height: 1.3; letter-spacing: .015em; color: #e9efed; }
+.ending-credit-list { display: flex; justify-content: center; gap: 34px; margin: 0; }
+.ending-credit-list > div { min-width: 0; max-width: 100%; }
+.ending-credit-list dt { color: #b3c7cb; font-size: clamp(9px, .8cqw, 11px); font-weight: 600; letter-spacing: .16em; line-height: 1.6; margin-bottom: 8px; }
+.ending-credit-list dd { color: var(--ending-gold); font-size: clamp(20px, 2.45cqw, 33px); line-height: 1.2; margin: 0; font-weight: 400; }
+.ending-credit-note { margin: 26px 0 0; color: #bcc5c7; font-size: clamp(11px, 1cqw, 14px); letter-spacing: .025em; }
+.ending-flight-record { position: absolute; left: 4.5%; top: 43%; margin: 0; text-align: left; }
+.ending-flight-record > div + div { margin-top: 24px; }
+.ending-flight-record dt { color: var(--ending-quiet); font: 600 clamp(9px, .78cqw, 11px)/1.4 "Arial Narrow", sans-serif; letter-spacing: .13em; }
+.ending-flight-record dd { color: #dce8e7; font-size: clamp(18px, 2cqw, 28px); font-weight: 300; font-variant-numeric: tabular-nums; margin: 5px 0 0; letter-spacing: .03em; }
+.ending-footer { position: absolute; left: 4.5%; right: 4.5%; bottom: 7.2%; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.ending-score-note { color: var(--ending-quiet); font-size: clamp(10px, .86cqw, 12px); line-height: 1.6; margin: 0; }
+.ending-score-note span { display: block; color: var(--ending-gold); letter-spacing: .06em; }
+.ending-controls { display: flex; align-items: center; gap: 9px; }
+.ending-control {
+  min-height: 38px;
+  padding: 10px 13px;
+  background: rgba(3,12,22,.52);
+  border: 1px solid rgba(181,208,211,.25);
+  border-radius: 2px;
+  color: #cedce0;
+  font: 600 clamp(10px, .9cqw, 12px)/1.2 "Arial Narrow", "Roboto Condensed", sans-serif;
+  letter-spacing: .055em;
+  cursor: pointer;
+  transition: border-color .2s, background .2s, color .2s;
+}
+.ending-control:hover:not(:disabled) { color: #fff6df; border-color: rgba(234,214,166,.7); background: rgba(68,62,42,.47); }
+.ending-control:focus-visible { outline: 2px solid var(--ending-gold); outline-offset: 4px; }
+.ending-control:disabled { opacity: .35; cursor: default; }
+.ending-exit { color: var(--ending-gold); border-color: rgba(234,214,166,.5); padding-inline: 18px; }
+.ending-exit span { margin-left: 14px; }
+.ending-progress-track { position: absolute; left: 4.5%; right: 4.5%; bottom: 3.7%; height: 1px; background: rgba(178,206,212,.13); }
+.ending-progress-fill { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #7ab6c6, #ead6a6); opacity: .65; transform: scaleX(0); transform-origin: left; }
+.ending-status { position: absolute; bottom: 15.8%; left: 20%; right: 20%; text-align: center; color: #bdced0; font: 600 9px/1.4 "Arial Narrow", sans-serif; letter-spacing: .22em; }
+.ending-paused .ending-image, .ending-tab-hidden .ending-image { animation-play-state: paused; }
+.ending-reduced-motion *, .ending-reduced-motion *::before, .ending-reduced-motion *::after { animation: none !important; transition: none !important; }
+.ending-reduced-motion .ending-image { transform: none; }
+@keyframes ending-homeward-drift { from { transform: scale(1.01); } to { transform: scale(1.07); } }
+@keyframes ending-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@container (max-width: 950px) {
+  .ending-stage { left: 15%; right: 15%; top: 23%; bottom: 28%; }
+  .ending-flight-record { top: auto; bottom: 19%; display: flex; gap: 24px; }
+  .ending-flight-record > div + div { margin-top: 0; }
+  .ending-flight-record dd { margin-top: 2px; font-size: 18px; }
+  .ending-flight-record dt { font-size: 8px; }
+  .ending-status { left: auto; right: 4.5%; bottom: 20%; font-size: 8px; }
+  .ending-footer { bottom: 6.8%; gap: 14px; }
+  .ending-controls { gap: 6px; }
+  .ending-control { min-height: 34px; padding: 8px 9px; }
+  .ending-exit { padding-inline: 12px; }
+  .ending-credit-list { gap: 25px; }
+  .ending-credit-list dd { font-size: 22px; }
+}
+@container (max-height: 500px) {
+  .ending-masthead { top: 6.4%; }
+  .ending-masthead-rule { margin-top: 11px; width: 30px; }
+  .ending-kicker, .ending-chapter { margin-bottom: 9px; }
+  .ending-credit-title { margin-bottom: 17px; font-size: 20px; }
+  .ending-credit-list dt { font-size: 8px; margin-bottom: 4px; }
+  .ending-credit-note { margin-top: 16px; }
+  .ending-opening p:last-child, .ending-closing p:last-child { margin-top: 15px; }
+}
+@container (max-width: 640px) {
+  .ending-score-note { display: none; }
+  .ending-controls { width: 100%; justify-content: space-between; }
+  .ending-stage { left: 10%; right: 10%; }
+  .ending-opening h1 { font-size: 40px; }
+  .ending-credit-title { font-size: 17px; }
+  .ending-credit-list dd { font-size: 18px; }
+  .ending-credit-note { display: none; }
+  .ending-flight-record { gap: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ending-screen *, .ending-screen *::before, .ending-screen *::after { animation: none !important; transition: none !important; }
+}

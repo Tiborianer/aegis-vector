@@ -1,0 +1,55 @@
+.route-map-overlay { z-index: 35; padding: clamp(10px, 2cqh, 20px); background: rgba(1, 7, 15, .91); }
+.route-map-card { width: min(1160px, 100%); height: 100%; max-height: 640px; display: grid; grid-template-rows: auto auto minmax(160px, 1fr) auto auto; gap: 10px; overflow-y: auto; padding: 20px; background: linear-gradient(135deg, #0c2030, #040c17); border: 1px solid #31596a; box-shadow: 0 20px 80px #000b; }
+.route-map-card header { display: flex; justify-content: space-between; align-items: start; }
+.route-map-card h2 { margin: 8px 0 0; font-size: 29px; }
+.route-map-card header button { position: static; }
+.route-map-explanation { max-width: 860px; margin: 0; color: #a4beca; font-size: 12px; line-height: 1.6; }
+/* Let the path take the remaining vertical space, keeping rewards in view. */
+#route-map-content { min-height: 160px; }
+.campaign-map { position: relative; height: calc(100% - 40px); margin-bottom: 40px; }
+.campaign-map svg { position: absolute; width: 100%; height: 100%; overflow: visible; }
+.map-edge { fill: none; stroke: #427484; stroke-width: 2; }
+.map-edge.bypassed { stroke: #27333f; stroke-dasharray: 5 6; }
+/* Coordinates describe the circle centre, not the taller label group's centre.
+ * The reserved lower space keeps the bottom lane's labels inside the map row. */
+.map-node { position: absolute; transform: translate(-50%, -19px); width: 13%; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 5px; }
+.map-node-number { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #091620; border: 1px solid #456979; font: 900 14px monospace; color: #9db9c4; }
+.map-node strong { font-size: clamp(9px, 1.1vw, 13px); text-transform: uppercase; color: #bed4df; background: #07131c; padding: 2px 3px; }
+.map-node small { font: 9px monospace; color: #718b98; letter-spacing: .06em; }
+.map-node.current .map-node-number, .map-node.choice .map-node-number { color: #05151d; background: var(--cyan); box-shadow: 0 0 18px #35e8ff45; border-color: #c1faff; }
+.map-node.current small, .map-node.choice small { color: var(--cyan); }
+.map-node.complete .map-node-number { border-color: #64bfa8; color: #8eeed3; }
+.map-node.bypassed { opacity: .40; }
+.route-map-rewards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.route-map-rewards article { border-left: 2px solid #ad8a54; padding: 9px 13px; background: #cba76a09; }
+.route-map-rewards article:last-child { border-color: #59bdca; background: #59bdca09; }
+.route-map-rewards strong { display: block; color: #e0bf85; font-size: 12px; }
+.route-map-rewards article:last-child strong { color: #9ae4ee; }
+.route-map-rewards p { color: #a4beca; font-size: 11px; line-height: 1.5; margin: 5px 0 0; }
+.route-reward-status { color: var(--amber); font: 11px monospace; margin: 0; }
+/* Route selection is a primary decision, not a clipped panel beneath upgrades. */
+.choosing-route .hangar-card { grid-template-columns: minmax(0, 1fr); }
+.choosing-route .upgrade-bay, .choosing-route #mission-report, .choosing-route #respec-button { display: none; }
+.choosing-route .hangar-sidebar { grid-template-rows: minmax(0, 1fr) auto; }
+.choosing-route .route-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.choosing-route #route-panel-title, .choosing-route #route-panel-description { grid-column: 1 / -1; margin: 0; }
+.choosing-route .route-panel button { min-height: 110px; margin: 0; padding: 22px; border-color: #3a6475; }
+.choosing-route .route-panel button:first-of-type { border-color: #a88953; background: #d4a25e0d; }
+.choosing-route .route-panel button b { font-size: 18px; }
+.choosing-route .route-panel button small { margin-top: 10px; font-size: 13px; line-height: 1.6; }
+.choosing-route .hangar-actions { grid-template-columns: 1fr 1fr 1fr; align-items: center; }
+@media (max-width: 850px), (max-height: 500px) {
+  .route-map-card { padding: 12px; gap: 8px; }
+  .route-map-card h2 { font-size: 22px; }
+  .route-map-explanation { font-size: 10px; }
+  .map-node-number { width: 26px; height: 26px; font-size: 11px; }
+  .map-node { gap: 2px; transform: translate(-50%, -13px); }
+  .map-node small { font-size: 7px; }
+  .route-map-rewards article { padding: 7px 9px; }
+  .route-map-rewards strong { font-size: 10px; }
+  .route-map-rewards p { font-size: 10px; }
+  .choosing-route .route-panel { gap: 8px; }
+  .choosing-route .route-panel button { min-height: 110px; padding: 14px; }
+  .choosing-route .route-panel button b { font-size: 14px; }
+  .choosing-route .route-panel button small { font-size: 11px; }
+}

@@ -1,12 +1,16 @@
 import { getMissionById, MISSIONS, nextMissionId, routeMissionId } from '../content/missions';
-import { getSortieModule } from '../content/sortieModules';
-import { STORY_CHAPTER_IDS, storyChapterForMission } from '../content/story';
+import { getSortieModule, SORTIE_MODULES } from '../content/sortieModules';
+import { getStoryChapter, STORY_CHAPTER_IDS, storyChapterForMission } from '../content/story';
 import { buildCombatModifiers, getSibling, getUpgradeNode, UPGRADE_NODES } from '../content/upgrades';
+import { ENEMIES, WEAPON_MAX_LEVEL } from '../content/balance';
+import { applyRouteReward, ROUTE_REWARDS, routeRewardForClear } from '../content/routeRewards';
+import { cloneMissionWaypoint, sanitizeMissionWaypoint } from './checkpoints';
 import type {
   CampaignRoute,
   CampaignSnapshot,
   Difficulty,
   EnemyKind,
+  GameCheckpointSnapshot,
   GameSnapshot,
   MissionDefinition,
   MissionId,
@@ -21,6 +25,8 @@ import type {
 
 const INITIAL_WEAPONS: WeaponLevels = { spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 };
 const LEGACY_MISSIONS: MissionId[] = ['coastal', 'minefield', 'fortress', 'dreadnought'];
+const nonnegativeInteger = (value: unknown, fallback = 0): number => typeof value === 'number' && Number.isFinite(value)
+  ? Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value))) : fallback;
 
 export interface PurchaseResult {
   ok: boolean;
@@ -36,7 +42,7 @@ export class CampaignModel {
 
   static fresh(difficulty: Difficulty): CampaignSnapshot {
     return {
-      version: 5,
+      version: 8,
       phase: 'briefing',
       difficulty,
       missionIndex: 0,
@@ -63,9 +69,12 @@ export class CampaignModel {
   }
 
   selectRoute(route: CampaignRoute): boolean {
-    if (this.state.phase !== 'route') return false;
-    this.state.route = route;
-    this.state.currentMissionId = routeMissionId(route);
+    if (this.state.phase !== 'route' || (route !== 'storm' && route !== 'salvage')) return false;
+    const afterMission = this.currentMission().id;
+    if (afterMission === 'coastal' && !this.state.earlyRoute) this.state.earlyRoute = route;
+    else if (afterMission === 'fortress' && !this.state.route) this.state.route = route;
+    else return false;
+    this.state.currentMissionId = routeMissionId(route, afterMission);
     this.state.missionIndex = MISSIONS.findIndex((mission) => mission.id === this.state.currentMissionId);
     this.state.phase = 'hangar';
     return true;
@@ -95,10 +104,10 @@ export class CampaignModel {
       score: this.state.score,
       weapons: { ...this.state.weapons },
       shieldBaseMax: this.state.shieldBaseMax,
-      modifiers: buildCombatModifiers(this.state.purchased),
+      modifiers: applyRouteReward(buildCombatModifiers(this.state.purchased), this.state.routeReward),
       campaignSeed: this.state.campaignSeed ?? CampaignModel.makeSeed(),
       sortieModule: this.state.sortieModule,
-      resumeFrom: this.state.activeWaypoint ? CampaignModel.cloneWaypoint(this.state.activeWaypoint) : undefined,
+      resumeFrom: this.state.activeWaypoint ? cloneMissionWaypoint(this.state.activeWaypoint) : undefined,
       debugDurationMs,
     };
   }
@@ -112,14 +121,46 @@ export class CampaignModel {
   saveWaypoint(waypoint: MissionWaypointSnapshot): boolean {
     if (this.state.phase !== 'mission' || waypoint.missionId !== this.currentMission().id) return false;
     if (this.state.activeWaypoint && this.state.activeWaypoint.waypointId >= waypoint.waypointId) return false;
-    this.state.activeWaypoint = CampaignModel.cloneWaypoint(waypoint);
+    const validated = sanitizeMissionWaypoint(waypoint, this.currentMission().id);
+    if (!validated || validated.game.score < this.state.score) return false;
+    this.state.activeWaypoint = validated;
     return true;
+  }
+
+  /** Only consumed protections cross the retry boundary; post-waypoint earnings never do. */
+  recordConsumedDefenses(current: GameCheckpointSnapshot, missionId: MissionId): boolean {
+    const waypoint = this.state.activeWaypoint;
+    if (this.state.phase !== 'mission' || !waypoint || waypoint.missionId !== missionId || !Number.isFinite(current.stageElapsedMs) || current.stageElapsedMs < waypoint.game.stageElapsedMs) return false;
+    const saved = waypoint.game;
+    let changed = false;
+    for (const key of ['phoenixAvailable', 'reserveShieldAvailable', 'secondWindAvailable', 'naniteLatticeAvailable', 'sortieNanitesAvailable', 'fortressRamAvailable'] as const) {
+      if (saved[key] && current[key] === false) {
+        saved[key] = false;
+        changed = true;
+      }
+    }
+    if (counterWithin(current.emergencyCapacitorTriggers, 2) && current.emergencyCapacitorTriggers > saved.emergencyCapacitorTriggers) {
+      saved.emergencyCapacitorTriggers = current.emergencyCapacitorTriggers;
+      changed = true;
+    }
+    return changed;
+  }
+
+  abandonMission(): void {
+    if (this.state.phase !== 'mission') return;
+    this.state.activeWaypoint = undefined;
+    this.state.phase = this.currentMission().id === 'coastal' ? 'briefing' : 'hangar';
   }
 
   completeMission(result: GameSnapshot): CampaignSnapshot {
     const mission = this.currentMission();
+    if (this.state.phase !== 'mission') throw new Error('This mission is not awaiting a result.');
     if (result.missionId !== mission.id) throw new Error('Mission result does not match the active campaign mission.');
     if (result.mode !== 'complete' && result.mode !== 'victory') throw new Error('Only successful missions can be committed.');
+    if (mission.id === 'lastLight' && (result.finaleBossStage !== 'nullArchitect' || result.finalePhase !== 'cleared')) {
+      throw new Error('Both Last Light command targets must be defeated before completing the mission.');
+    }
+    const chapter = storyChapterForMission(mission.id);
 
     const completionCredits = Math.round(mission.completionCredits * buildCombatModifiers(this.state.purchased).creditMultiplier);
     const missionScore = Math.max(0, result.score - this.state.score);
@@ -129,6 +170,7 @@ export class CampaignModel {
     this.state.campaignKills += result.kills;
     this.state.weapons = { ...result.weapons };
     this.state.shieldBaseMax = result.shieldBaseMax;
+    this.state.routeReward ??= routeRewardForClear(mission.id, this.state.earlyRoute);
     this.state.sortieModule = undefined;
     this.state.activeWaypoint = undefined;
     this.state.lastReport = {
@@ -143,7 +185,7 @@ export class CampaignModel {
       accuracy: shotsFired === 0 ? 0 : Math.min(100, Math.round((result.shotsHit / shotsFired) * 100)),
     };
 
-    this.state.pendingStoryChapter = storyChapterForMission(mission.id);
+    this.state.pendingStoryChapter = chapter;
     this.state.phase = 'story';
     return this.snapshot();
   }
@@ -154,7 +196,7 @@ export class CampaignModel {
     const seen = this.state.seenStoryChapters ?? [];
     if (!seen.includes(pending)) this.state.seenStoryChapters = [...seen, pending];
     this.state.pendingStoryChapter = undefined;
-    const next = nextMissionId(this.currentMission().id, this.state.route);
+    const next = nextMissionId(this.currentMission().id, this.state.route, this.state.earlyRoute);
     if (next === 'victory') this.state.phase = 'victory';
     else if (next === 'route') this.state.phase = 'route';
     else {
@@ -206,7 +248,7 @@ export class CampaignModel {
       discoveredEnemies: [...(this.state.discoveredEnemies ?? [])],
       seenStoryChapters: [...(this.state.seenStoryChapters ?? [])],
       lastReport: this.state.lastReport ? { ...this.state.lastReport } : undefined,
-      activeWaypoint: this.state.activeWaypoint ? CampaignModel.cloneWaypoint(this.state.activeWaypoint) : undefined,
+      activeWaypoint: this.state.activeWaypoint ? cloneMissionWaypoint(this.state.activeWaypoint) : undefined,
     };
   }
 
@@ -219,41 +261,67 @@ export class CampaignModel {
   private static sanitize(candidate: CampaignSnapshot): CampaignSnapshot {
     const validDifficulty: Difficulty = ['cadet', 'pilot', 'ace'].includes(candidate.difficulty) ? candidate.difficulty : 'pilot';
     const validNodes = new Set(UPGRADE_NODES.map((node) => node.id));
-    const purchased = Array.isArray(candidate.purchased) ? candidate.purchased.filter((id): id is UpgradeNodeId => validNodes.has(id)) : [];
-    const legacyIndex = Math.max(0, Math.min(LEGACY_MISSIONS.length - 1, Math.floor(candidate.missionIndex ?? 0)));
+    const purchased = Array.isArray(candidate.purchased) ? [...new Set(candidate.purchased.filter((id): id is UpgradeNodeId => validNodes.has(id)))] : [];
+    const legacyIndex = Math.min(LEGACY_MISSIONS.length - 1, nonnegativeInteger(candidate.missionIndex));
     const candidateMission = (candidate.version ?? 1) >= 3 ? candidate.currentMissionId : LEGACY_MISSIONS[legacyIndex];
     const currentMissionId = MISSIONS.some((mission) => mission.id === candidateMission) ? candidateMission! : 'coastal';
     const missionIndex = MISSIONS.findIndex((mission) => mission.id === currentMissionId);
+    const seenChapters = Array.isArray(candidate.seenStoryChapters) ? candidate.seenStoryChapters : [];
+    const validRoute = (route: unknown): CampaignRoute | undefined => route === 'storm' || route === 'salvage' ? route : undefined;
+    const legacyRoute = validRoute(candidate.route);
+    // V7 coupled the two forks. Retain the first decision, but do not silently
+    // make the second one until its mission has actually been entered. V1–6
+    // always flew Minefield; their late Stormbreak choice is not an Aurora visit.
+    const earlyRoute: CampaignRoute | undefined = currentMissionId === 'coastal' ? undefined
+      : currentMissionId === 'aurora' || seenChapters.includes('aurora-key') ? 'storm'
+        : currentMissionId === 'minefield' || seenChapters.includes('warden-key') ? 'salvage'
+          : candidate.version >= 8 ? validRoute(candidate.earlyRoute) ?? 'salvage'
+            : candidate.version === 7 ? legacyRoute ?? 'salvage' : 'salvage';
+    const beyondSecondFork = ['stormbreak', 'graveyard', 'carrierSiege', 'dreadnought', 'lastLight'].includes(currentMissionId);
+    const route: CampaignRoute | undefined = !beyondSecondFork ? undefined
+      : currentMissionId === 'stormbreak' ? 'storm'
+        : currentMissionId === 'graveyard' ? 'salvage'
+          : legacyRoute ?? (seenChapters.includes('stillwater-directive') ? 'storm'
+            : seenChapters.includes('project-crown') ? 'salvage' : undefined);
     const validStoryIds = new Set<StoryChapterId>(STORY_CHAPTER_IDS);
-    const pendingStoryChapter = validStoryIds.has(candidate.pendingStoryChapter as StoryChapterId)
-      ? candidate.pendingStoryChapter
-      : undefined;
-    const activeWaypoint = CampaignModel.sanitizeWaypoint(candidate.activeWaypoint, currentMissionId);
+    // A stale chapter field must never reopen a completed campaign or skip a mission.
+    const pendingStoryChapter = candidate.phase === 'story'
+      && validStoryIds.has(candidate.pendingStoryChapter as StoryChapterId)
+      && getStoryChapter(candidate.pendingStoryChapter!).afterMission === currentMissionId
+      ? candidate.pendingStoryChapter : undefined;
+    const waypoint = sanitizeMissionWaypoint(candidate.activeWaypoint, currentMissionId);
+    const activeWaypoint = candidate.phase === 'mission' && waypoint && waypoint.game.score >= nonnegativeInteger(candidate.score) ? waypoint : undefined;
     const phase = pendingStoryChapter ? 'story'
       : candidate.phase === 'victory' ? 'victory'
-        : candidate.phase === 'route' ? 'route'
+        : candidate.phase === 'route' && (currentMissionId === 'fortress' || (candidate.version >= 7 && currentMissionId === 'coastal')) ? 'route'
           : candidate.phase === 'mission' && activeWaypoint ? 'mission'
           : candidate.phase === 'hangar' || currentMissionId !== 'coastal' ? 'hangar' : 'briefing';
     return {
-      version: 5,
+      version: 8,
       phase,
       difficulty: validDifficulty,
       missionIndex,
       currentMissionId,
-      route: candidate.route,
-      sortieModule: candidate.sortieModule,
-      discoveredEnemies: Array.isArray(candidate.discoveredEnemies) ? [...new Set(candidate.discoveredEnemies)] : [],
-      credits: Math.max(0, Math.floor(candidate.credits ?? 0)),
-      score: Math.max(0, Math.floor(candidate.score ?? 0)),
-      campaignKills: Math.max(0, Math.floor(candidate.campaignKills ?? 0)),
+      earlyRoute,
+      route,
+      // Version-six saves never held an earned reward. Do not infer one from a
+      // route selection, nor grant a reward for a mission that is still pending.
+      routeReward: candidate.version >= 7 && earlyRoute
+        && candidate.routeReward === ROUTE_REWARDS[earlyRoute].id
+        ? candidate.routeReward : undefined,
+      sortieModule: SORTIE_MODULES.some(({ id }) => id === candidate.sortieModule) ? candidate.sortieModule : undefined,
+      discoveredEnemies: Array.isArray(candidate.discoveredEnemies) ? [...new Set(candidate.discoveredEnemies.filter((kind) => Object.hasOwn(ENEMIES, kind)))] : [],
+      credits: nonnegativeInteger(candidate.credits),
+      score: nonnegativeInteger(candidate.score),
+      campaignKills: nonnegativeInteger(candidate.campaignKills),
       weapons: {
-        spread: CampaignModel.weaponLevel(candidate.weapons?.spread, 1),
+        spread: CampaignModel.weaponLevel(candidate.weapons?.spread, 1, WEAPON_MAX_LEVEL.spread),
         missile: CampaignModel.weaponLevel(candidate.weapons?.missile, 0),
         laser: CampaignModel.weaponLevel(candidate.weapons?.laser, 0),
         drone: CampaignModel.weaponLevel(candidate.weapons?.drone, 0),
         ion: CampaignModel.weaponLevel(candidate.weapons?.ion, 0),
       },
-      shieldBaseMax: Math.max(1, Math.min(3, Math.floor(candidate.shieldBaseMax ?? 1))),
+      shieldBaseMax: Math.max(1, Math.min(3, nonnegativeInteger(candidate.shieldBaseMax, 1))),
       purchased,
       respecAvailable: candidate.respecAvailable !== false,
       campaignSeed: Number.isFinite(candidate.campaignSeed) ? Math.max(1, Math.floor(candidate.campaignSeed!)) : CampaignModel.makeSeed(),
@@ -266,30 +334,15 @@ export class CampaignModel {
     };
   }
 
-  private static sanitizeWaypoint(candidate: MissionWaypointSnapshot | undefined, missionId: MissionId): MissionWaypointSnapshot | undefined {
-    if (!candidate || candidate.missionId !== missionId || (candidate.waypointId !== 1 && candidate.waypointId !== 2)) return undefined;
-    const game = candidate.game;
-    const encounter = candidate.encounter;
-    if (!game || !encounter || !Number.isFinite(game.stageElapsedMs) || !Number.isFinite(encounter.waveIndex)) return undefined;
-    return CampaignModel.cloneWaypoint(candidate);
-  }
-
-  private static cloneWaypoint(waypoint: MissionWaypointSnapshot): MissionWaypointSnapshot {
-    return {
-      ...waypoint,
-      game: { ...waypoint.game, weapons: { ...waypoint.game.weapons } },
-      encounter: {
-        ...waypoint.encounter,
-        armamentOfferHistory: waypoint.encounter.armamentOfferHistory.map((pair) => [pair[0], pair[1]] as const),
-      },
-    };
-  }
-
-  private static weaponLevel(value: number | undefined, fallback: WeaponLevel): WeaponLevel {
-    return (Number.isFinite(value) ? Math.max(0, Math.min(5, Math.floor(value!))) : fallback) as WeaponLevel;
+  private static weaponLevel(value: number | undefined, fallback: WeaponLevel, maximum: WeaponLevel = 5): WeaponLevel {
+    return (Number.isFinite(value) ? Math.max(fallback, Math.min(maximum, Math.floor(value!))) : fallback) as WeaponLevel;
   }
 
   private static makeSeed(): number {
     return Math.max(1, Math.floor(Math.random() * 0x7fffffff));
   }
+}
+
+function counterWithin(value: number, maximum: number): boolean {
+  return Number.isInteger(value) && value >= 0 && value <= maximum;
 }

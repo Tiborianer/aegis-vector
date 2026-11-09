@@ -18,7 +18,7 @@ export type IntroPlaybackState =
 export interface IntroCaption {
   startsAtSeconds: number;
   endsAtSeconds: number;
-  speaker: 'ROOK';
+  speaker: 'VALE';
   text: string;
 }
 

@@ -6,6 +6,12 @@ import type {
   MusicTrack,
   VoicePlaybackState,
 } from '../game/simulation/types';
+import storyScores from './story-scores.json';
+import missionScores from './mission-scores.json';
+import radioFiles from './radio-files.json';
+
+export const STORY_SCORE_STATUS = storyScores;
+export const MISSION_SCORE_STATUS = missionScores;
 
 export type SoundCue =
   | 'fire'
@@ -47,6 +53,7 @@ export interface AudioSettings {
 }
 
 export type RadioCue =
+  | 'shield-hit'
   | 'shield-down'
   | 'hull-critical'
   | 'shield-restored'
@@ -60,24 +67,27 @@ export type RadioCue =
 
 export interface VoiceAssetDefinition {
   file: string;
-  speaker: 'ECHO-7' | 'Rook';
+  speaker: 'ECHO-7' | 'Vale';
   subtitle: string;
-  priority: 'critical' | 'tactical' | 'upgrade';
+  priority: 'critical' | 'tactical' | 'upgrade' | 'status';
+  /** Short-lived observations should never wait behind another transmission. */
+  transient?: boolean;
   cooldownMs: number;
   gain: number;
 }
 
 export const VOICE_ASSETS: Record<RadioCue, VoiceAssetDefinition> = {
-  'shield-down': { file: 'audio/voice/shield-down.wav', speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: .52 },
-  'hull-critical': { file: 'audio/voice/hull-critical.wav', speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: .52 },
-  'shield-restored': { file: 'audio/voice/shield-restored.wav', speaker: 'ECHO-7', subtitle: 'Shields restored.', priority: 'tactical', cooldownMs: 8_000, gain: .52 },
-  'emp-ready': { file: 'audio/voice/emp-ready.wav', speaker: 'ECHO-7', subtitle: 'EMP ready.', priority: 'tactical', cooldownMs: 8_000, gain: .52 },
-  'arc-upgraded': { file: 'audio/voice/arc-upgraded.wav', speaker: 'Rook', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
-  'nova-upgraded': { file: 'audio/voice/nova-upgraded.wav', speaker: 'Rook', subtitle: 'NOVA missiles upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
-  'lance-upgraded': { file: 'audio/voice/lance-upgraded.wav', speaker: 'Rook', subtitle: 'LANCE laser upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
-  'wing-upgraded': { file: 'audio/voice/wing-upgraded.wav', speaker: 'Rook', subtitle: 'WING drones upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
-  'ion-upgraded': { file: 'audio/voice/ion-upgraded.wav', speaker: 'Rook', subtitle: 'ION conductor upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
-  'aegis-upgraded': { file: 'audio/voice/aegis-upgraded.wav', speaker: 'Rook', subtitle: 'Aegis capacity upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'shield-hit': { file: radioFiles['shield-hit'], speaker: 'ECHO-7', subtitle: 'Shield hit.', priority: 'status', transient: true, cooldownMs: 6_000, gain: .52 },
+  'shield-down': { file: radioFiles['shield-down'], speaker: 'ECHO-7', subtitle: 'Shield down.', priority: 'critical', cooldownMs: 10_000, gain: .52 },
+  'hull-critical': { file: radioFiles['hull-critical'], speaker: 'ECHO-7', subtitle: 'Hull critical.', priority: 'critical', cooldownMs: 20_000, gain: .52 },
+  'shield-restored': { file: radioFiles['shield-restored'], speaker: 'ECHO-7', subtitle: 'Shields restored.', priority: 'tactical', cooldownMs: 8_000, gain: .52 },
+  'emp-ready': { file: radioFiles['emp-ready'], speaker: 'ECHO-7', subtitle: 'EMP ready.', priority: 'tactical', cooldownMs: 8_000, gain: .52 },
+  'arc-upgraded': { file: radioFiles['arc-upgraded'], speaker: 'Vale', subtitle: 'ARC cannon upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'nova-upgraded': { file: radioFiles['nova-upgraded'], speaker: 'Vale', subtitle: 'NOVA missiles upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'lance-upgraded': { file: radioFiles['lance-upgraded'], speaker: 'Vale', subtitle: 'LANCE laser upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'wing-upgraded': { file: radioFiles['wing-upgraded'], speaker: 'Vale', subtitle: 'WING drones upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'ion-upgraded': { file: radioFiles['ion-upgraded'], speaker: 'Vale', subtitle: 'ION conductor upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
+  'aegis-upgraded': { file: radioFiles['aegis-upgraded'], speaker: 'Vale', subtitle: 'Aegis capacity upgraded.', priority: 'upgrade', cooldownMs: 1_000, gain: .52 },
 };
 
 interface ActiveMusic {
@@ -102,9 +112,15 @@ interface DesiredMusic {
   variantIndex: number;
 }
 
+interface ActiveRadio {
+  cue: RadioCue;
+  source?: AudioBufferSourceNode;
+  timer?: number;
+}
+
 const AUDIO_SETTINGS_KEY = 'aegis-vector-audio-v1';
 const DEFAULT_SETTINGS: AudioSettings = { music: 0.5, sfx: 0.7, voice: 0.9, cinematic: 0.8, radioSubtitles: true };
-const RADIO_PRIORITY = { upgrade: 1, tactical: 2, critical: 3 } as const;
+const RADIO_PRIORITY = { status: 0, upgrade: 1, tactical: 2, critical: 3 } as const;
 export const RADIO_TRIM_DB = -6;
 export const RADIO_TRIM_GAIN = 10 ** (RADIO_TRIM_DB / 20);
 const CUE_INTERVALS: Partial<Record<SoundCue, number>> = {
@@ -121,31 +137,46 @@ export interface MusicVoiceSchedule {
   iteration: number;
 }
 
+function musicPlaybackEndSeconds(bufferDuration: number, loop: MusicLoopStrategy): number {
+  if (!Number.isFinite(bufferDuration) || bufferDuration <= 0) return 0;
+  const requestedEnd = loop.mode === 'tail' ? loop.endSeconds : undefined;
+  return typeof requestedEnd === 'number' && Number.isFinite(requestedEnd) && requestedEnd > 0
+    ? Math.min(bufferDuration, requestedEnd) : bufferDuration;
+}
+
+function musicTailSeconds(duration: number, loop: Exclude<MusicLoopStrategy, { mode: 'none' }>): number {
+  return loop.mode === 'tail' && Number.isFinite(loop.tailSeconds) && loop.tailSeconds > 0
+    ? Math.min(duration, loop.tailSeconds) : duration;
+}
+
 export function buildMusicVoiceSchedule(
   bufferDuration: number,
   loop: MusicLoopStrategy,
   repeats = 48,
 ): MusicVoiceSchedule[] {
-  const crossfade = loop.mode === 'none' ? 0 : Math.min(loop.crossfadeSeconds, bufferDuration * 0.45);
+  const duration = musicPlaybackEndSeconds(bufferDuration, loop);
+  if (duration <= 0) return [];
+  const tailSeconds = loop.mode === 'none' ? duration : musicTailSeconds(duration, loop);
+  const crossfade = loop.mode === 'none' || !Number.isFinite(loop.crossfadeSeconds)
+    ? 0 : Math.max(0, Math.min(loop.crossfadeSeconds, tailSeconds * 0.45));
   const schedule: MusicVoiceSchedule[] = [{
     startSeconds: 0,
     offsetSeconds: 0,
-    durationSeconds: bufferDuration,
+    durationSeconds: duration,
     crossfadeSeconds: crossfade,
     iteration: 0,
   }];
   if (loop.mode === 'none') return schedule;
-  const tailSeconds = loop.mode === 'full' ? bufferDuration : Math.min(bufferDuration, loop.tailSeconds);
-  const tailCrossfade = Math.min(loop.crossfadeSeconds, tailSeconds * 0.45);
-  const offset = loop.mode === 'full' ? 0 : Math.max(0, bufferDuration - tailSeconds);
-  const step = Math.max(0.1, tailSeconds - tailCrossfade);
-  let startSeconds = bufferDuration - tailCrossfade;
-  for (let iteration = 1; iteration <= repeats; iteration += 1) {
+  const offset = loop.mode === 'full' ? 0 : Math.max(0, duration - tailSeconds);
+  const step = Math.max(0.1, tailSeconds - crossfade);
+  let startSeconds = duration - crossfade;
+  const repeatCount = Number.isFinite(repeats) ? Math.max(0, Math.floor(repeats)) : 0;
+  for (let iteration = 1; iteration <= repeatCount; iteration += 1) {
     schedule.push({
       startSeconds,
       offsetSeconds: offset,
       durationSeconds: tailSeconds,
-      crossfadeSeconds: tailCrossfade,
+      crossfadeSeconds: crossfade,
       iteration,
     });
     startSeconds += step;
@@ -153,12 +184,45 @@ export function buildMusicVoiceSchedule(
   return schedule;
 }
 
+/** Approved playback endpoints preserve source recordings while avoiding ending fades. */
+export function missionScoreLoop(track: keyof typeof missionScores): MusicLoopStrategy {
+  const score = missionScores[track];
+  const endSeconds = 'loopEndSeconds' in score ? score.loopEndSeconds : undefined;
+  return {
+    mode: 'tail', tailSeconds: 40, crossfadeSeconds: 2,
+    ...(typeof endSeconds === 'number' && Number.isFinite(endSeconds) && endSeconds > 0 ? { endSeconds } : {}),
+  };
+}
+
+function missionScoreAsset(track: keyof typeof missionScores): MusicAssetDefinition {
+  const score = missionScores[track];
+  const active = score.status === 'reviewed' && score.file;
+  return {
+    files: [active ? score.file : score.fallback],
+    loop: active ? missionScoreLoop(track) : { mode: 'tail', tailSeconds: 40, crossfadeSeconds: 2 },
+    gain: 0.73,
+    preloadNext: 'hangar',
+  };
+}
+
 export const MUSIC_ASSETS: Record<MusicTrack, MusicAssetDefinition> = {
   menu: { files: ['audio/menu.mp3'], loop: { mode: 'tail', tailSeconds: 24, crossfadeSeconds: 1.5 }, gain: 0.88, preloadNext: 'mission-coastal' },
   hangar: { files: ['audio/hangar.mp3'], loop: { mode: 'tail', tailSeconds: 24, crossfadeSeconds: 1.5 }, gain: 0.9 },
+  // Existing licensed soundtrack is an explicit temporary bed until API generation.
+  // Never request a missing score or substitute synthetic music as ElevenLabs output.
+  'story-discovery': { files: [storyScores['story-discovery'].file ?? 'audio/hangar.mp3'], loop: { mode: 'tail', tailSeconds: 44, crossfadeSeconds: 3 }, gain: 0.65 },
+  'story-revelation': { files: [storyScores['story-revelation'].file ?? 'audio/hangar.mp3'], loop: { mode: 'tail', tailSeconds: 44, crossfadeSeconds: 3 }, gain: 0.65 },
   'mission-coastal': { files: ['audio/mission-coastal.mp3'], loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1 }, gain: 0.76, preloadNext: 'hangar' },
   'mission-minefield': { files: ['audio/mission-minefield.mp3'], loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1 }, gain: 0.76, preloadNext: 'hangar' },
+  // Aurora has its own owner-approved score, using the shared mission loop contract.
+  'mission-aurora': missionScoreAsset('mission-aurora'),
   'mission-fortress': { files: ['audio/mission-fortress.mp3'], loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1 }, gain: 0.73, preloadNext: 'hangar' },
+  // Each mission has its own identity; the production verifier requires all six reviewed scores.
+  'mission-stormbreak': missionScoreAsset('mission-stormbreak'),
+  'mission-graveyard': missionScoreAsset('mission-graveyard'),
+  'mission-carrier-siege': missionScoreAsset('mission-carrier-siege'),
+  'mission-dreadnought': missionScoreAsset('mission-dreadnought'),
+  'mission-last-light': missionScoreAsset('mission-last-light'),
   boss: {
     files: ['audio/boss.mp3', 'audio/boss-mech-tyrants.mp3'],
     loop: { mode: 'tail', tailSeconds: 32, crossfadeSeconds: 1.2 },
@@ -176,6 +240,7 @@ export const MUSIC_ASSETS: Record<MusicTrack, MusicAssetDefinition> = {
     gain: 0.88,
   },
   defeat: { files: ['audio/defeat-signal.mp3', 'audio/defeat-debrief.mp3'], loop: { mode: 'none' }, gain: 0.84 },
+  ending: { files: ['audio/ending/homeward-vector-v1.mp3'], loop: { mode: 'none' }, gain: 0.72 },
 };
 
 export class SoundEngine {
@@ -202,7 +267,7 @@ export class SoundEngine {
   private voiceAssetsMissing = 0;
   private source?: AudioDebugState['source'];
   private logicalStartCount = 0;
-  private activeRadio?: { cue: RadioCue; source?: AudioBufferSourceNode; timer?: number };
+  private activeRadio?: ActiveRadio;
   private pendingRadio?: RadioCue;
   private readonly voiceBuffers = new Map<string, AudioBuffer | null>();
   private readonly radioCooldowns = new Map<RadioCue, number>();
@@ -315,6 +380,8 @@ export class SoundEngine {
     const definition = VOICE_ASSETS[cue];
     const now = performance.now();
     if ((this.radioCooldowns.get(cue) ?? 0) > now) return;
+    // A queued impact report would be stale after a shield-down/restored warning.
+    if (definition.transient && this.activeRadio) return;
     this.radioCooldowns.set(cue, now + definition.cooldownMs);
     if (this.activeRadio) {
       const activePriority = RADIO_PRIORITY[VOICE_ASSETS[this.activeRadio.cue].priority];
@@ -465,7 +532,8 @@ export class SoundEngine {
 
   private async startRadio(cue: RadioCue): Promise<void> {
     const definition = VOICE_ASSETS[cue];
-    this.activeRadio = { cue };
+    const playback: ActiveRadio = { cue };
+    this.activeRadio = playback;
     this.voiceDurationSeconds = undefined;
     this.voiceGainCorrection = undefined;
     this.voicePlaybackState = this.context && this.settings.voice > 0 ? 'loading' : 'subtitle-only';
@@ -475,7 +543,9 @@ export class SoundEngine {
     this.emitState();
 
     const buffer = this.context && this.settings.voice > 0 ? await this.loadVoice(definition.file) : null;
-    if (!this.activeRadio || this.activeRadio.cue !== cue) return;
+    // The same cue may be requested again while an interrupted fetch is pending.
+    // Only this exact transmission owns its continuation and completion events.
+    if (this.activeRadio !== playback) return;
     if (buffer && this.context && this.voiceBus) {
       const source = this.context.createBufferSource();
       const gain = this.context.createGain();
@@ -483,27 +553,27 @@ export class SoundEngine {
       source.buffer = buffer;
       gain.gain.value = definition.gain * correction * RADIO_TRIM_GAIN;
       source.connect(gain).connect(this.voiceBus);
-      source.addEventListener('ended', () => this.finishRadio(cue));
-      this.activeRadio.source = source;
+      source.addEventListener('ended', () => this.finishRadio(playback));
+      playback.source = source;
       this.voicePlaybackState = 'playing';
       this.voiceDurationSeconds = buffer.duration;
       this.voiceGainCorrection = correction;
       this.lastVoiceError = undefined;
       source.start();
-      this.activeRadio.timer = window.setTimeout(() => this.finishRadio(cue), Math.max(2_200, buffer.duration * 1_000 + 100));
+      playback.timer = window.setTimeout(() => this.finishRadio(playback), Math.max(2_200, buffer.duration * 1_000 + 100));
     } else {
       this.voicePlaybackState = 'subtitle-only';
-      this.activeRadio.timer = window.setTimeout(() => this.finishRadio(cue), 2_200);
+      playback.timer = window.setTimeout(() => this.finishRadio(playback), 2_200);
     }
     this.emitState();
   }
 
-  private finishRadio(cue: RadioCue): void {
-    if (!this.activeRadio || this.activeRadio.cue !== cue) return;
-    if (this.activeRadio.timer !== undefined) window.clearTimeout(this.activeRadio.timer);
+  private finishRadio(playback: ActiveRadio): void {
+    if (this.activeRadio !== playback) return;
+    if (playback.timer !== undefined) window.clearTimeout(playback.timer);
     this.activeRadio = undefined;
     this.voicePlaybackState = 'idle';
-    window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue } }));
+    window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue: playback.cue } }));
     this.emitState();
     const pending = this.pendingRadio;
     this.pendingRadio = undefined;
@@ -512,12 +582,12 @@ export class SoundEngine {
 
   private stopRadio(): void {
     if (!this.activeRadio) return;
-    const cue = this.activeRadio.cue;
-    if (this.activeRadio.timer !== undefined) window.clearTimeout(this.activeRadio.timer);
-    try { this.activeRadio.source?.stop(); } catch { /* already ended */ }
+    const playback = this.activeRadio;
     this.activeRadio = undefined;
+    if (playback.timer !== undefined) window.clearTimeout(playback.timer);
+    try { playback.source?.stop(); } catch { /* already ended */ }
     this.voicePlaybackState = 'idle';
-    window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue } }));
+    window.dispatchEvent(new CustomEvent('aegis:radio-state', { detail: { active: false, cue: playback.cue } }));
     this.emitState();
   }
 
@@ -615,15 +685,22 @@ export class SoundEngine {
     const trackGain = context.createGain();
     const measuredGain = SoundEngine.measuredGain(buffer);
     const startedAt = context.currentTime + 0.025;
-    trackGain.gain.setValueAtTime(0.0001, context.currentTime);
-    trackGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, definition.gain * measuredGain), context.currentTime + fadeSeconds);
+    const targetGain = Math.max(0.0001, definition.gain * measuredGain);
+    if (this.activeMusic) {
+      // Complement the outgoing curve: simultaneous exponential fades nearly
+      // silence both tracks at the midpoint instead of making a crossfade.
+      trackGain.gain.setValueCurveAtTime(SoundEngine.equalPowerIn(targetGain), context.currentTime, fadeSeconds);
+    } else {
+      trackGain.gain.setValueAtTime(0.0001, context.currentTime);
+      trackGain.gain.exponentialRampToValueAtTime(targetGain, context.currentTime + fadeSeconds);
+    }
     trackGain.connect(this.musicBus!);
     const active: ActiveMusic = {
       track: desired.track,
       gain: trackGain,
       voices: [],
       startedAt,
-      bufferDuration: buffer.duration,
+      bufferDuration: musicPlaybackEndSeconds(buffer.duration, definition.loop),
       loop: definition.loop,
     };
 
@@ -649,7 +726,9 @@ export class SoundEngine {
     }
     const primary = active.voices[0].source;
     primary.addEventListener('ended', () => {
-      if (this.currentTrack === desired.track && definition.loop.mode === 'none' && !desired.nextTrack) {
+      // A faded-out earlier instance may end after replay has started the same
+      // track again. Only the current voice is allowed to clear playback state.
+      if (this.activeMusic === active && this.currentTrack === desired.track && definition.loop.mode === 'none' && !desired.nextTrack) {
         this.currentTrack = undefined;
         this.activeMusic = undefined;
         this.playbackState = 'locked';
@@ -711,15 +790,18 @@ export class SoundEngine {
     if (!this.context) return;
     const now = this.context.currentTime;
     if (music.transitionTimer !== undefined) window.clearTimeout(music.transitionTimer);
-    music.gain.gain.cancelScheduledValues(now);
-    music.gain.gain.setValueAtTime(Math.max(0.0001, music.gain.gain.value), now);
-    music.gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+    const currentGain = Math.max(0, music.gain.gain.value);
+    // Capture the current value before cancelling an in-flight fade. Clear its
+    // whole curve so a rapid second transition cannot overlap automation events.
+    music.gain.gain.cancelScheduledValues(0);
+    music.gain.gain.setValueCurveAtTime(SoundEngine.equalPowerOut(currentGain), now, seconds);
     music.voices.forEach((voice) => {
       try { voice.source.stop(now + seconds + 0.03); } catch { /* already ended */ }
     });
   }
 
   private crossfadeSeconds(from: MusicTrack, to: MusicTrack): number {
+    if (from.startsWith('story-') || to.startsWith('story-')) return 1.6;
     if (from.startsWith('mission-') && to === 'boss') return 1.2;
     if (from === 'victory' && to === 'hangar') return 1.2;
     return 0.8;
@@ -727,18 +809,19 @@ export class SoundEngine {
 
   private static loopRegion(bufferDuration: number, loop: MusicLoopStrategy): { startSeconds: number; endSeconds: number } | undefined {
     if (loop.mode === 'none') return undefined;
+    const endSeconds = musicPlaybackEndSeconds(bufferDuration, loop);
     return {
-      startSeconds: loop.mode === 'full' ? 0 : Math.max(0, bufferDuration - loop.tailSeconds),
-      endSeconds: bufferDuration,
+      startSeconds: loop.mode === 'full' ? 0 : Math.max(0, endSeconds - musicTailSeconds(endSeconds, loop)),
+      endSeconds,
     };
   }
 
-  private static equalPowerIn(): Float32Array {
-    return Float32Array.from({ length: 48 }, (_, index) => Math.sin((index / 47) * Math.PI * 0.5));
+  private static equalPowerIn(gain = 1): Float32Array {
+    return Float32Array.from({ length: 48 }, (_, index) => gain * Math.sin((index / 47) * Math.PI * 0.5));
   }
 
-  private static equalPowerOut(): Float32Array {
-    return Float32Array.from({ length: 48 }, (_, index) => Math.cos((index / 47) * Math.PI * 0.5));
+  private static equalPowerOut(gain = 1): Float32Array {
+    return Float32Array.from({ length: 48 }, (_, index) => gain * Math.cos((index / 47) * Math.PI * 0.5));
   }
 
   private trimBufferCache(activeFile: string): void {

@@ -1,0 +1,56 @@
+{
+  "version": 3,
+  "status": "complete-owner-approved-arc-v3-ion-v4",
+  "provider": "ElevenLabs",
+  "model_id": "eleven_multilingual_v2",
+  "output_format": "mp3_44100_128",
+  "speaker": "Vale",
+  "voiceLabel": "Sarah - Mature, Reassuring, Confident",
+  "voiceId": "EXAVITQu4vr4xnSDxMaL",
+  "voiceIdRequirement": "Supply an observed Sarah voice ID with --voice-id. The v2 evidence did not expose an ID; do not guess it.",
+  "voice_settings": {
+    "stability": 0.7,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1
+  },
+  "settingsEvidence": "docs/audio/radio-v2-production.json",
+  "purpose": "Correct acronym pronunciation using sentence-case words, preserving the existing speaker and radio treatment. Audition is required; spelling alone is not proof of correct pronunciation.",
+  "cues": {
+    "arc-upgraded": { "phrase": "Arc cannon upgraded.", "noiseSeed": 7201 },
+    "ion-upgraded": { "phrase": "Ion conductor upgraded.", "noiseSeed": 7205 }
+  },
+  "retakes": {
+    "ion-v4": { "cue": "ion-upgraded", "phrase": "Eye-on conductor upgraded.", "version": 4, "noiseSeed": 7205 }
+  },
+  "processing": {
+    "sampleRate": 22050,
+    "channels": 1,
+    "encoding": "PCM_16",
+    "resampling": "Same 129-tap windowed-sinc anti-alias filter and exact 2:1 decimation as prepare-radio-v2.py; average stereo channels first.",
+    "script": "scripts/process-radio-voice.py",
+    "runtimeTrim": "Unchanged; do not apply the existing -6dB radio trim again during processing."
+  },
+  "safety": {
+    "default": "Dry run: no credential access, network call, or asset writes.",
+    "live": "One explicit --generate --cue=<cue> --voice-id=<observed Sarah ID> per invocation, only after owner go-ahead and credit review.",
+    "originals": "Never overwrite v2 sources, WAV files, provenance, or runtime mappings.",
+    "retry": "Skip any existing v3 output, request receipt, or success receipt. A request-started receipt is written before HTTP. An uncertain outcome requires manual provider-history review, never an automatic retry.",
+    "review": "Generated is not approved. Decode, audition each entire clip against the phrase and Sarah v2, check loudness/subtitles, then separately authorize runtime mapping."
+  },
+  "commands": [
+    "node scripts/generate-radio-corrections.mjs",
+    "node scripts/generate-radio-corrections.mjs --generate --cue=arc-upgraded --voice-id=<observed-Sarah-ID>",
+    "node scripts/generate-radio-corrections.mjs --generate --cue=ion-upgraded --voice-id=<observed-Sarah-ID>",
+    "python scripts/prepare-radio-corrections.py",
+    "python scripts/prepare-radio-corrections.py --prepare --cue=arc-upgraded",
+    "python scripts/prepare-radio-corrections.py --prepare --cue=ion-upgraded",
+    "node scripts/generate-radio-corrections.mjs --generate --cue=ion-upgraded --take=ion-v4 --voice-id=<observed-Sarah-ID>",
+    "python scripts/prepare-radio-corrections.py --prepare --cue=ion-upgraded --take=ion-v4"
+  ],
+  "officialReferences": [
+    "https://elevenlabs.io/docs/api-reference/text-to-speech/convert",
+    "https://elevenlabs.io/docs/api-reference/voices/settings/get-default"
+  ]
+}

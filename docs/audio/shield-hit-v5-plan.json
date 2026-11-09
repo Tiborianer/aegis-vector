@@ -1,0 +1,32 @@
+{
+  "version": 5,
+  "cue": "shield-hit",
+  "phrase": "Shield hit.",
+  "speaker": "ECHO-7",
+  "provider": "ElevenLabs",
+  "voiceLabel": "Alice - Clear, Engaging Educator",
+  "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
+  "voiceVerifiedVia": "Read-only GET /v2/voices?search=Alice&page_size=100 on 2026-11-08; premade voice matching the production v2 ECHO-7 label.",
+  "model_id": "eleven_multilingual_v2",
+  "output_format": "mp3_44100_128",
+  "voice_settings": {
+    "stability": 0.8,
+    "similarity_boost": 0.75,
+    "style": 0,
+    "use_speaker_boost": true,
+    "speed": 1
+  },
+  "noiseSeed": 7105,
+  "authorizationApproved": true,
+  "maximumCredits": 200,
+  "authorization": "Owner explicitly approved up to 200 existing ElevenLabs credits for Shield Hit on 2026-11-08. One generation only. No purchases, top-ups, subscription changes or publication.",
+  "processing": "Reuse scripts/process-radio-voice.py via scripts/prepare-radio-corrections.py --prepare --cue=shield-hit: mono 22050Hz PCM16, anti-alias resampling, 140Hz high-pass, 6200Hz low-pass, presence, compression, mild saturation, seeded transmission noise and short edge fades. Runtime -6dB trim is not baked a second time.",
+  "source": "assets/audio/voice-v5/shield-hit.mp3",
+  "file": "audio/voice-v5/shield-hit.wav",
+  "safety": "Dry run by default. Exact phrase, voice, settings and version are bounded in code. Live balance check before and after one POST; permanent exclusive request marker prevents retries. Metering lag requires read-only reconciliation. Preserve all prior recordings.",
+  "references": [
+    "https://elevenlabs.io/docs/api-reference/text-to-speech/convert",
+    "https://elevenlabs.io/docs/api-reference/voices/search",
+    "https://elevenlabs.io/docs/api-reference/user/subscription/get"
+  ]
+}

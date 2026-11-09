@@ -1,0 +1,43 @@
+{
+  "model_id": "music_v2_5",
+  "output_format": "mp3_44100_128",
+  "sourceBrief": "ELEVENLABS_PROMPTS.md — original Missions and Boss briefs",
+  "commonPrompt": "Original instrumental futuristic arcade combat soundtrack for Aegis Vector. Match the established energetic synthwave and electro-orchestral hybrid: D minor, sidechained analogue bass, tight electronic drums, urgent glassy arpeggios, nocturnal pads, restrained cinematic percussion and a concise heroic four-note synth motif. Clear punchy mix with uncluttered midrange for laser, explosion and radio effects. No vocals, choir, speech, alarms or sound effects. Begin the rhythmic groove within two seconds, no long intro. Develop through contrasting sections without losing the arcade pulse. End with at least 40 seconds of stable energetic groove, no terminal cadence, fade-out, silence or final hit, for a tail-crossfaded loop. Do not imitate or quote any existing artist or composition.",
+  "tracks": {
+    "mission-stormbreak": {
+      "title": "Lightning Pursuit",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-stormbreak-v1.mp3",
+      "fallback": "audio/mission-coastal.mp3",
+      "direction": "145 BPM. A fast pursuit through towering storm clouds. Use rippling high arpeggios, syncopated tom accents, bright electric-blue synth plucks and rolling low strings. The four-note hero motif should climb and answer itself. 0-40 seconds forward momentum, 40-85 a tense airy break over continuing bass/drums, 85-140 renewed chasing energy, then an even propulsive 40-second tail. Urgent and buoyant rather than heavy industrial dread."
+    },
+    "mission-graveyard": {
+      "title": "Echoes in the Wreckage",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-graveyard-v1.mp3",
+      "fallback": "audio/mission-minefield.mp3",
+      "direction": "138 BPM, the same arcade hybrid palette with a heavier half-time counter-rhythm. A haunted fleet graveyard and a dangerous salvage run. Hollow metallic synth plucks, restrained detuned bass, distant bell-like motif fragments, granular pads and crisp drums. Ominous but mobile, never sleepy ambient music. 0-45 cautious momentum, 45-95 interlocking salvage rhythms, 95-140 a warm heroic lead against dark harmony, final 40 seconds a steady suspense groove."
+    },
+    "mission-carrier-siege": {
+      "title": "Bastion Breaker",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-carrier-siege-v1.mp3",
+      "fallback": "audio/mission-fortress.mp3",
+      "direction": "148 BPM. A deliberate assault on a gigantic enemy carrier. Muscular staccato brass synth, precise gated bass, clipped industrial percussion and interwoven strings. Heavy machinery expressed musically, no literal effects. Develop the four-note motif as a bold call-and-response. 0-45 disciplined approach, 45-95 wider harmonic lift, 95-140 concentrated assault, last 40 seconds stable combat drive. More martial and grounded than the storm pursuit."
+    },
+    "mission-dreadnought": {
+      "title": "The Black Citadel",
+      "music_length_ms": 180000,
+      "file": "audio/missions/mission-dreadnought-v1.mp3",
+      "fallback": "audio/mission-fortress.mp3",
+      "direction": "152 BPM. Approaching and battling the Dreadnought fortress. Dark towering analogue bass pulses, low string ostinati, weighty but controlled cinematic drums and short warning-like brass synth phrases. Transform the established four-note motif into a tense minor inversion. Start with immediate gravity and rhythm; build in three readable waves across the first 140 seconds. The final 40 seconds hold a powerful steady confrontation groove, no victory resolution."
+    },
+    "mission-last-light": {
+      "title": "Beyond the Last Star",
+      "music_length_ms": 210000,
+      "file": "audio/missions/mission-last-light-v1.mp3",
+      "fallback": "audio/mission-fortress.mp3",
+      "direction": "150 BPM. The super-finale in a silent asteroid field, confronting an articulated guardian and then a vast modular cathedral warship. Combine broad celestial glass arpeggios and luminous sustained strings with determined bass and intricate electronic percussion. Start with awe and forward motion, grow darker at 45 seconds, recover the hero motif at 95 seconds, reach controlled final-battle intensity around 140 seconds. Final 45 seconds maintain the urgent luminous combat groove without a climax or ending cadence. Epic scale with melodic hope, distinct from the Dreadnought's low industrial menace."
+    }
+  }
+}

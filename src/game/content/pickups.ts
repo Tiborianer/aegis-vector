@@ -1,4 +1,5 @@
 import { seededRandom } from './encounters';
+import { WEAPON_MAX_LEVEL } from './balance';
 import type {
   ArmamentOffer,
   Difficulty,
@@ -30,7 +31,7 @@ export function chooseArmamentOffer(
   }
 
   const eligible = PERMANENT_TYPES.filter((type) => isPermanentEligible(type, weapons, shieldBaseMax));
-  const minimumWeaponLevel = Math.min(...WEAPON_TYPES.filter((type) => weapons[type] < 5).map((type) => weapons[type]));
+  const minimumWeaponLevel = Math.min(...WEAPON_TYPES.filter((type) => weapons[type] < WEAPON_MAX_LEVEL[type]).map((type) => weapons[type]));
   const strategy = carrierIndex % 2 === 0 ? 'growth' : 'diversity';
   const shieldWasRecent = previousPair?.includes('shield') ?? false;
 
@@ -79,15 +80,19 @@ export function chooseUtilityPickup(
   random: () => number = Math.random,
   lastUtility?: UtilityPickupType,
   allowExcessEmpScore = false,
+  activeEffects: { overdrive?: boolean; tractor?: boolean } = {},
 ): UtilityPickupType {
   const weights: Record<UtilityPickupType, number> = {
     repair: hull <= hullMax / 2 ? 5 : hull < hullMax ? 3 : 0.75,
     emp: empCharges <= 0 ? 4 : empCharges < empMax ? 2 : allowExcessEmpScore ? 0.75 : 0,
-    overdrive: 2,
-    tractor: 2,
+    overdrive: 0.8,
+    tractor: 1.25,
   };
-  if (lastUtility) weights[lastUtility] *= 0.4;
-  return weightedPick(UTILITY_TYPES, (type) => weights[type], random) ?? 'overdrive';
+  if (lastUtility) weights[lastUtility] *= lastUtility === 'overdrive' ? 0.2 : 0.4;
+  // Avoid spending a rare utility drop on a temporary effect already running.
+  if (activeEffects.overdrive) weights.overdrive *= 0.15;
+  if (activeEffects.tractor) weights.tractor *= 0.15;
+  return weightedPick(UTILITY_TYPES, (type) => weights[type], random) ?? 'repair';
 }
 
 export function isUtilityPickup(type: UpgradeType | UtilityPickupType): type is UtilityPickupType {
@@ -99,7 +104,7 @@ export function canTractorPickup(pairId: number | undefined): boolean {
 }
 
 function isPermanentEligible(type: UpgradeType, weapons: WeaponLevels, shieldBaseMax: number): boolean {
-  return type === 'shield' ? shieldBaseMax < 3 : weapons[type] < 5;
+  return type === 'shield' ? shieldBaseMax < 3 : weapons[type] < WEAPON_MAX_LEVEL[type];
 }
 
 function weightedPick<T>(items: readonly T[], weightFor: (item: T) => number, random: () => number): T | undefined {

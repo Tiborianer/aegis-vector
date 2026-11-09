@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ASSET_KEYS } from '../../game/assets/manifest';
+import { HOSTILE_PROJECTILE_ART } from '../../game/assets/hostileProjectiles';
 import { WEAPON_LABELS } from '../../game/content/balance';
 import type { PickupType, WeaponType } from '../../game/simulation/types';
 
@@ -65,6 +66,96 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawEnemy(g, ASSET_KEYS.pursuer, 158, 96, 0xc66cff, [[79, 4], [98, 24], [151, 32], [137, 72], [103, 65], [91, 92], [67, 92], [55, 65], [21, 72], [7, 32], [60, 24]]);
   drawCarrierBoss(g);
   drawEnemy(g, ASSET_KEYS.warden, 190, 104, 0xf06cff, [[95, 99], [12, 67], [5, 30], [66, 42], [95, 4], [124, 42], [185, 30], [178, 67]]);
+  // Expansion craft have their own readable Classic silhouettes, too.
+  drawEnemy(g, ASSET_KEYS.skimmer, 100, 76, 0x64efe0,
+    [[13, 9], [43, 18], [80, 7], [95, 30], [78, 60], [52, 72], [59, 44], [32, 42], [6, 56], [21, 29]]);
+  drawEnemy(g, ASSET_KEYS.seraph, 320, 164, 0xffcc80,
+    [[160, 132], [150, 104], [145, 74], [149, 44], [160, 40], [171, 44], [175, 74], [170, 104]]);
+  // Always keep complete Classic modules under separate keys. Classic mode and
+  // load-failure fallback must not combine a vector core with detailed PNG wings.
+  for (const side of [-1, 1]) {
+    const key = `classic-seraph-wing-${side < 0 ? 'left' : 'right'}`;
+    if (scene.textures.exists(key)) continue;
+    const outline = [[17,-14],[37,-28],[75,-36],[91,-27],[98,-8],[92,20],
+      [60,50],[68,28],[79,11],[80,-13],[57,-25],[20,-5]];
+    const wing = polygon(outline.map(([x,y]) => [160 + side*x,82+y] as [number,number]));
+    g.fillStyle(0x231d31, 1).fillPoints(wing, true);
+    g.lineStyle(2, 0xffcc80, .95).strokePoints(wing, true);
+    g.lineStyle(2, 0xffcc80, .8).lineBetween(160+side*22,68,160+side*60,54);
+    g.fillStyle(0xffe9b0, 1).fillRect(160+side*72-2,94,4,3);
+    g.generateTexture(key,320,164).clear();
+  }
+  // The Weaver's central opening stays genuinely transparent.
+  for (const points of [
+    [[9, 15], [32, 5], [44, 28], [32, 53], [7, 58]],
+    [[99, 15], [76, 5], [64, 28], [76, 53], [101, 58]],
+    [[35, 60], [54, 44], [73, 60], [64, 84], [44, 84]],
+  ] as Array<Array<[number, number]>>) {
+    g.fillStyle(0x241b38, 1).fillPoints(polygon(points), true);
+    g.lineStyle(3, 0xc6a0ff, .9).strokePoints(polygon(points), true);
+  }
+  g.lineStyle(3, 0x785e9a, 1).lineBetween(27, 50, 39, 64).lineBetween(81, 50, 69, 64);
+  g.fillStyle(0xffe1ff, 1).fillCircle(25, 29, 4).fillCircle(83, 29, 4).fillCircle(54, 67, 4);
+  g.generateTexture(ASSET_KEYS.weaver, 108, 90).clear();
+  // Prism keeps three sharp optical lobes rather than Weaver's round emitters.
+  for (const points of [
+    [[48, 79], [34, 43], [37, 14], [48, 8], [59, 14], [62, 43]],
+    [[18, 65], [5, 34], [10, 10], [23, 5], [33, 19], [30, 44]],
+    [[78, 65], [66, 44], [63, 19], [73, 5], [86, 10], [91, 34]],
+  ] as Array<Array<[number, number]>>) {
+    g.fillStyle(0x202537, 1).fillPoints(polygon(points), true);
+    g.lineStyle(2, 0x99a8cb, .9).strokePoints(polygon(points), true);
+  }
+  g.lineStyle(4, 0x414861, 1).lineBetween(24, 26, 42, 36).lineBetween(72, 26, 54, 36);
+  g.lineStyle(2, 0x9871ff, 1).lineBetween(18, 19, 18, 34).lineBetween(78, 19, 78, 34).lineBetween(48, 22, 48, 41);
+  for (const [x, y] of [[18, 47], [78, 47], [48, 61]]) {
+    g.fillStyle(0xb7ffff, 1).fillPoints(polygon([[x, y + 7], [x - 4, y], [x, y - 5], [x + 4, y]]), true);
+  }
+  g.generateTexture(ASSET_KEYS.prism, 96, 84).clear();
+  // Leech's two hooked jaws leave the lower pressure mouth genuinely open.
+  const leechHull: Array<[number, number]> = [[49, 5], [21, 10], [5, 28], [7, 51], [24, 76], [39, 82],
+    [26, 61], [23, 47], [30, 35], [68, 35], [75, 47], [72, 61], [59, 82], [74, 76], [91, 51], [93, 28], [77, 10]];
+  g.fillStyle(0x30242e, 1).fillPoints(polygon(leechHull), true);
+  g.lineStyle(3, 0x906a7e, 1).strokePoints(polygon(leechHull), true);
+  g.lineStyle(2, 0x67778c, 1).lineBetween(20, 17, 33, 31).lineBetween(78, 17, 65, 31).lineBetween(13, 29, 24, 40).lineBetween(85, 29, 74, 40);
+  g.fillStyle(0x151c2a, 1).fillCircle(49, 43, 14);
+  g.lineStyle(3, 0xff4967, 1).strokeCircle(49, 43, 12);
+  g.fillStyle(0xffc1b9, 1).fillCircle(49, 43, 5);
+  g.lineStyle(2, 0xff4967, .9).lineBetween(25, 48, 30, 61).lineBetween(73, 48, 68, 61);
+  g.generateTexture(ASSET_KEYS.leech, 98, 88).clear();
+  // Selected Obsidian Crown: a continuous keel and six diagonal outriggers.
+  // Only circular sockets live on the hull; rotating guns are separate sprites.
+  const crownPoints = (p: Array<[number, number]>): Phaser.Geom.Point[] =>
+    polygon(p.map(([x, y]) => [130 - x * 15.7284, 105 + y * 14.8453]));
+  g.fillStyle(0x2b3544, 1).fillPoints(crownPoints([[0, 5.9], [-.6, 3.9], [-1.12, 1.4], [-1.18, -1.4], [-.68, -4.4],
+    [-.48, -5], [.48, -5], [.68, -4.4], [1.18, -1.4], [1.12, 1.4], [.6, 3.9]]), true);
+  for (const side of [-1, 1]) {
+    for (const [y, span] of [[2.55, 3.45], [.18, 4.7], [-2.2, 3.9]]) {
+      const platePoints: Array<[number, number]> = [[side * .68, y - .40], [side * 1.4, y + .25], [side * span, y + 1.35],
+        [side * (span + .45), y + .84], [side * (span - .20), y - .2], [side * 1.15, y - .92]];
+      g.fillStyle(side < 0 ? 0x596779 : 0x435267, 1).fillPoints(crownPoints(platePoints), true);
+      g.lineStyle(1, 0x8d99a8, .8).strokePoints(crownPoints(platePoints), true);
+      g.fillStyle(0x313d4e, 1).fillPoints(crownPoints([[side * (span - .3), y + .5], [side * (span + .52), y + 2],
+        [side * (span + .62), y + .51], [side * (span + .2), y - .22]]), true);
+    }
+  }
+  g.fillStyle(0x424f62, 1).fillPoints(crownPoints([[-.15, 5.4], [-.65, 1], [-.55, -3.8], [.55, -3.8], [.65, 1], [.15, 5.4]]), true);
+  for (const [x, y] of [[47.4997, 41.1217], [67.1602, 5.9382], [54.5775, -29.3938],
+    [-47.4997, 41.1217], [-67.1602, 5.9382], [-54.5775, -29.3938]]) {
+    g.fillStyle(0x111b2b, 1).fillEllipse(130 + x, 105 + y, 13, 12);
+    g.lineStyle(1, 0x85909b, .7).strokeEllipse(130 + x, 105 + y, 13, 12);
+  }
+  g.fillStyle(0x111825, 1).fillCircle(130, 107, 16);
+  g.lineStyle(2, 0xed7066, 1).strokeCircle(130, 107, 13);
+  g.fillStyle(0xffb08c, 1).fillCircle(130, 107, 3);
+  g.generateTexture(ASSET_KEYS.nullArchitect, 260, 210).clear();
+  if (!scene.textures.exists('crown-turret')) {
+    g.fillStyle(0x657284, 1).fillPoints(polygon([[19, 20], [29, 20], [30, 25], [27, 28], [21, 28], [18, 25]]), true);
+    g.fillStyle(0x14202e, 1).fillRect(21, 26, 2, 10).fillRect(25, 26, 2, 10);
+    g.lineStyle(1, 0xb0b8c1, .9).lineBetween(21, 26, 21, 35).lineBetween(25, 26, 25, 35);
+    g.fillStyle(0xff8a70, 1).fillCircle(24, 23, 1.2);
+    g.generateTexture('crown-turret', 48, 48).clear();
+  }
 
   g.fillStyle(0xffb640, 0.14).fillCircle(28, 28, 27);
   g.fillStyle(0x2b1724, 1).fillCircle(28, 28, 17);
@@ -128,14 +219,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   g.fillStyle(0xfff6cf, 1).fillRoundedRect(7, 0, 4, 86, 2);
   g.generateTexture(ASSET_KEYS.laserOverdrive, 18, 86).clear();
 
-  g.fillStyle(0xff6f61, 0.18).fillCircle(11, 11, 11);
-  g.fillStyle(0xffdfad, 1).fillCircle(11, 11, 5);
-  g.generateTexture(ASSET_KEYS.enemyBullet, 22, 22).clear();
-
-  g.fillStyle(0xf06cff, 0.2).fillCircle(16, 16, 16);
-  g.lineStyle(3, 0xf06cff, 0.9).strokeCircle(16, 16, 11);
-  g.fillStyle(0xffffff, 1).fillCircle(16, 16, 5);
-  g.generateTexture(ASSET_KEYS.enemyBulletHeavy, 32, 32).clear();
+  generateHostileProjectileTextures(g);
 
   g.fillStyle(0xffffff, 1).fillCircle(4, 4, 4);
   g.generateTexture(ASSET_KEYS.spark, 8, 8).clear();
@@ -144,6 +228,7 @@ export function generateTextures(scene: Phaser.Scene): void {
   drawCloudTexture(g);
   drawAtmosphereTextures(g);
   drawMissionEnvironment(g, ASSET_KEYS.coastal, 'coastal');
+  drawMissionEnvironment(g, ASSET_KEYS.aurora, 'aurora');
   drawMissionEnvironment(g, ASSET_KEYS.minefield, 'minefield');
   drawMissionEnvironment(g, ASSET_KEYS.fortress, 'fortress');
   drawMissionEnvironment(g, ASSET_KEYS.stormbreak, 'stormbreak');
@@ -154,6 +239,28 @@ export function generateTextures(scene: Phaser.Scene): void {
   (['spread', 'missile', 'laser', 'drone', 'ion', 'shield', 'repair', 'overdrive', 'tractor', 'emp'] as PickupType[])
     .forEach((type) => drawPickup(g, type));
   g.destroy();
+}
+
+/** One directional family for every graphics mode; legacy keys cannot revive the old orbs. */
+export function generateHostileProjectileTextures(g: Phaser.GameObjects.Graphics): void {
+  for (const [kind, art] of Object.entries(HOSTILE_PROJECTILE_ART)) {
+    const { width: w, height: h, edge, shade, core } = art;
+    const shape = (points: Array<[number, number]>): Phaser.Geom.Point[] =>
+      polygon(points.map(([x, y]) => [x * w, y * h]));
+    // Tapered, translucent wake above a nose-down faceted shard. No circular halos.
+    g.fillStyle(edge, .07).fillPoints(shape([[.5, .015], [.84, .46], [.76, .68], [.5, .985], [.24, .68], [.16, .46]]), true);
+    g.fillStyle(edge, .13).fillPoints(shape([[.5, .06], [.72, .43], [.69, .64], [.5, .94], [.31, .64], [.28, .43]]), true);
+    g.fillStyle(shade, .95).fillPoints(shape([[.29, .34], [.71, .34], [.76, .55], [.5, .9], [.24, .55]]), true);
+    g.fillStyle(edge, .95).fillPoints(shape([[.32, .32], [.5, .42], [.5, .9], [.25, .55]]), true);
+    g.fillStyle(edge, .64).fillPoints(shape([[.68, .32], [.75, .55], [.5, .9], [.5, .42]]), true);
+    g.fillStyle(core, 1).fillPoints(shape([[.46, .26], [.54, .26], [.59, .57], [.5, .84], [.41, .57]]), true);
+    g.lineStyle(1, core, .82).lineBetween(w * .32, h * .38, w * .29, h * .53);
+    // Preserve stable Classic asset keys for any external consumers, with identical art.
+    g.generateTexture(art.key, w, h);
+    if (kind === 'standard') g.generateTexture(ASSET_KEYS.enemyBullet, w, h);
+    if (kind === 'heavy') g.generateTexture(ASSET_KEYS.enemyBulletHeavy, w, h);
+    g.clear();
+  }
 }
 
 function drawBulwark(g: Phaser.GameObjects.Graphics): void {
@@ -287,13 +394,22 @@ function drawAtmosphereTextures(g: Phaser.GameObjects.Graphics): void {
 function drawMissionEnvironment(
   g: Phaser.GameObjects.Graphics,
   key: string,
-  profile: 'coastal' | 'minefield' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought',
+  profile: 'coastal' | 'aurora' | 'minefield' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought',
 ): void {
   if (profile === 'coastal') {
     g.fillStyle(0x07191e, 0.72).fillEllipse(115, 150, 220, 76).fillEllipse(505, 440, 300, 92);
     g.lineStyle(2, 0x33d9cc, 0.3).strokeEllipse(115, 150, 235, 85).strokeEllipse(505, 440, 318, 102);
     g.fillStyle(0x8defff, 0.13).fillTriangle(625, 40, 560, 310, 690, 310);
     g.fillStyle(0xeaffff, 0.7).fillCircle(625, 58, 4);
+  } else if (profile === 'aurora') {
+    // Legacy layer initializes before ClassicSpaceEnvironment takes over.
+    // A subdued matching fallback prevents a missing-texture flash or warning.
+    g.fillStyle(0x090e27, .9).fillRect(0, 0, 768, 720);
+    for (let index = 0; index < 7; index += 1) {
+      const x = 60 + index * 108;
+      g.lineStyle(18, index % 2 ? 0x6a53b5 : 0x2bbcac, .06)
+        .lineBetween(x, 0, x + 105, 720);
+    }
   } else if (profile === 'minefield') {
     g.lineStyle(1, 0x55ff9c, 0.13);
     for (let x = 25; x < 768; x += 72) g.lineBetween(x, 0, x, 720);
@@ -382,8 +498,17 @@ function drawPickup(g: Phaser.GameObjects.Graphics, type: PickupType): void {
   } else if (type === 'overdrive') {
     g.strokePoints(polygon([[34, 10], [20, 31], [30, 31], [25, 50], [42, 25], [31, 25]]), true);
   } else if (type === 'tractor') {
-    g.strokeCircle(30, 30, 14).strokeCircle(30, 30, 6);
-    g.lineBetween(30, 8, 30, 16).lineBetween(30, 44, 30, 52).lineBetween(8, 30, 16, 30).lineBetween(44, 30, 52, 30);
+    g.lineStyle(1, 0x65ffb1, .5).strokeCircle(30, 30, 20);
+    g.lineStyle(2, 0xffffff, .95).strokeCircle(30, 30, 7);
+    // Four inward salvage arrows read as collection rather than a targeting reticle.
+    for (let i = 0; i < 4; i++) {
+      const angle = i * Math.PI / 2;
+      const dx = Math.cos(angle), dy = Math.sin(angle);
+      const tipX = 30 + dx * 12, tipY = 30 + dy * 12;
+      g.lineBetween(30 + dx * 25, 30 + dy * 25, tipX, tipY);
+      g.lineBetween(tipX, tipY, 30 + dx * 18 - dy * 5, 30 + dy * 18 + dx * 5);
+      g.lineBetween(tipX, tipY, 30 + dx * 18 + dy * 5, 30 + dy * 18 - dx * 5);
+    }
   } else {
     g.strokeCircle(30, 30, 15);
     g.lineBetween(22, 21, 38, 39).lineBetween(38, 21, 22, 39);

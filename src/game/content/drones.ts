@@ -1,6 +1,8 @@
 import type { DroneFormationSlot, WeaponLevel } from '../simulation/types';
 
-const LEVEL_FORMATIONS: Record<WeaponLevel, readonly Omit<DroneFormationSlot, 'variant'>[]> = {
+type DroneLevel = Exclude<WeaponLevel, 6 | 7>;
+
+const LEVEL_FORMATIONS: Record<DroneLevel, readonly Omit<DroneFormationSlot, 'variant'>[]> = {
   0: [],
   1: [{ x: -64, y: 18 }],
   2: [{ x: -64, y: 18 }, { x: 64, y: 18 }],
@@ -10,10 +12,12 @@ const LEVEL_FORMATIONS: Record<WeaponLevel, readonly Omit<DroneFormationSlot, 'v
 };
 
 export function droneFormation(level: WeaponLevel, wingmanBeacon = false): DroneFormationSlot[] {
-  const variant = level >= 3 ? 'mk2' : 'standard';
-  const slots: DroneFormationSlot[] = LEVEL_FORMATIONS[level].map((slot) => ({ ...slot, variant }));
+  // ARC has seven levels; WING remains capped at five, including legacy/debug input.
+  const droneLevel = Math.min(5, level) as DroneLevel;
+  const variant = droneLevel >= 3 ? 'mk2' : 'standard';
+  const slots: DroneFormationSlot[] = LEVEL_FORMATIONS[droneLevel].map((slot) => ({ ...slot, variant }));
   if (wingmanBeacon) {
-    const beacon = level === 4 ? { x: 0, y: -62 } : { x: 0, y: 92 };
+    const beacon = droneLevel === 4 ? { x: 0, y: -62 } : { x: 0, y: 92 };
     slots.push({ ...beacon, variant: 'beacon' });
   }
   return slots;

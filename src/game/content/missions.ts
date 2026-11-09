@@ -28,6 +28,19 @@ export const MISSIONS: MissionDefinition[] = [
     visualProfile: 'minefield',
   },
   {
+    id: 'aurora',
+    number: 2,
+    music: 'mission-aurora',
+    sector: 'VECTOR 02-A',
+    title: 'AURORA REACH',
+    durationMs: 210_000,
+    briefing: 'Escort the shield research convoy through Vesper’s polar aurora. Break the Prism patrols and Leech batteries before they seal the ion corridor. Recover the Aegis Bastion: one permanent additional shield cell.',
+    newThreats: ['PRISM // LOCKED THREE-BOLT FAN', 'LEECH // TELEGRAPHED PRESSURE BURST'],
+    completionCredits: 35,
+    finale: false,
+    visualProfile: 'aurora',
+  },
+  {
     id: 'fortress',
     number: 3,
     music: 'mission-fortress',
@@ -43,7 +56,7 @@ export const MISSIONS: MissionDefinition[] = [
   {
     id: 'stormbreak',
     number: 4,
-    music: 'mission-coastal',
+    music: 'mission-stormbreak',
     sector: 'ROUTE 04-A',
     title: 'STORMBREAK PURSUIT',
     durationMs: 210_000,
@@ -56,7 +69,7 @@ export const MISSIONS: MissionDefinition[] = [
   {
     id: 'graveyard',
     number: 4,
-    music: 'mission-minefield',
+    music: 'mission-graveyard',
     sector: 'ROUTE 04-B',
     title: 'GRAVEYARD SALVAGE',
     durationMs: 210_000,
@@ -69,7 +82,7 @@ export const MISSIONS: MissionDefinition[] = [
   {
     id: 'carrierSiege',
     number: 5,
-    music: 'mission-fortress',
+    music: 'mission-carrier-siege',
     sector: 'SECTOR 05',
     title: 'CARRIER SIEGE',
     durationMs: 225_000,
@@ -82,16 +95,30 @@ export const MISSIONS: MissionDefinition[] = [
   {
     id: 'dreadnought',
     number: 6,
-    music: 'mission-fortress',
-    sector: 'FINAL VECTOR',
+    music: 'mission-dreadnought',
+    sector: 'SECTOR 06',
     title: 'DREADNOUGHT',
     durationMs: 150_000,
     approachDurationMs: 30_000,
     briefing: 'Break through the final escort screen, close on the fortress core, and bring down the Dreadnought.',
     newThreats: ['FINAL ESCORT APPROACH', 'THREE-PHASE FORTRESS ASSAULT'],
-    completionCredits: 0,
+    completionCredits: 95,
     finale: true,
     visualProfile: 'dreadnought',
+  },
+  {
+    id: 'lastLight',
+    number: 7,
+    music: 'mission-last-light',
+    sector: 'FINAL VECTOR',
+    title: 'LAST LIGHT',
+    durationMs: 210_000,
+    approachDurationMs: 35_000,
+    briefing: 'Follow the exposed Crown signal beyond the Dreadnought. Break the Seraph guardian, then silence Obsidian Crown before its command net closes over Vesper.',
+    newThreats: ['SKIMMER // BANKING INTERCEPTOR', 'WEAVER // STAGGERED ENERGY LATTICE', 'SERAPH // SPLIT-RING GUARDIAN', 'OBSIDIAN CROWN // SIX-GUN COMMAND CRAFT'],
+    completionCredits: 0,
+    finale: true,
+    visualProfile: 'lastLight',
   },
 ];
 
@@ -107,16 +134,19 @@ export function getMissionById(id: MissionId): MissionDefinition {
   return mission;
 }
 
-export function nextMissionId(current: MissionId, route?: CampaignRoute): MissionId | 'route' | 'victory' {
-  if (current === 'coastal') return 'minefield';
-  if (current === 'minefield') return 'fortress';
-  if (current === 'fortress') return 'route';
+export function nextMissionId(current: MissionId, route?: CampaignRoute, earlyRoute?: CampaignRoute): MissionId | 'route' | 'victory' {
+  if (current === 'coastal') return earlyRoute ? routeMissionId(earlyRoute, 'coastal') : 'route';
+  if (current === 'minefield' || current === 'aurora') return 'fortress';
+  // The reward route never selects the later evidence trail for the player.
+  if (current === 'fortress') return route ? routeMissionId(route, 'fortress') : 'route';
   if (current === 'stormbreak' || current === 'graveyard') return 'carrierSiege';
   if (current === 'carrierSiege') return 'dreadnought';
-  if (current === 'dreadnought') return 'victory';
+  if (current === 'dreadnought') return 'lastLight';
+  if (current === 'lastLight') return 'victory';
   return route === 'storm' ? 'stormbreak' : 'graveyard';
 }
 
-export function routeMissionId(route: CampaignRoute): MissionId {
+export function routeMissionId(route: CampaignRoute, afterMission: MissionId = 'coastal'): MissionId {
+  if (afterMission === 'coastal') return route === 'storm' ? 'aurora' : 'minefield';
   return route === 'storm' ? 'stormbreak' : 'graveyard';
 }

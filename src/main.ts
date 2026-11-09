@@ -1,13 +1,20 @@
 import Phaser from 'phaser';
 import './styles.css';
-import { SoundEngine, type RadioCue, type SoundCue, type SoundRequest } from './audio/SoundEngine';
+import './styles/campaignMap.css';
+import './styles/missionLab.css';
+import { mountMissionLab } from './ui/missionLab';
+import { createMissionLabCampaign, isMissionLab, missionLabUrl, readMissionLabOptions } from './game/testing/missionLab';
+import { renderCampaignMap } from './ui/campaignMap';
+import { campaignResumeLabel, missionLaunchLabel } from './ui/campaignResume';
+import { SoundEngine, STORY_SCORE_STATUS, MISSION_SCORE_STATUS, type RadioCue, type SoundCue, type SoundRequest } from './audio/SoundEngine';
 import { UPGRADE_BRANCHES, UPGRADE_NODES } from './game/content/upgrades';
 import { SORTIE_MODULES } from './game/content/sortieModules';
-import { WEAPON_LABELS, WORLD_HEIGHT, WORLD_WIDTH } from './game/content/balance';
+import { WEAPON_LABELS, WEAPON_MAX_LEVEL, WORLD_HEIGHT, WORLD_WIDTH } from './game/content/balance';
 import { chooseArmamentOffer } from './game/content/pickups';
 import { globalCarrierIndex } from './game/content/encounters';
+import { finaleProgress, finaleWaypointPosition, isFinaleMission } from './game/content/finale';
 import { CampaignModel } from './game/simulation/CampaignModel';
-import { getStoryChapter, STORY_CHAPTERS } from './game/content/story';
+import { getStoryChapter, STORY_CHAPTERS, STORY_SPEAKER_LABELS, storyAdvanceGuardMs } from './game/content/story';
 import { droneStatus } from './game/content/drones';
 import type {
   CampaignSnapshot,
@@ -23,9 +30,15 @@ import type {
   WeaponType,
   StoryChapter,
   StoryChapterId,
+  GameCheckpointSnapshot,
+  MissionId,
 } from './game/simulation/types';
 import { BootScene } from './phaser/scenes/BootScene';
 import { BattleScene } from './phaser/scenes/BattleScene';
+import { isGraphicsPreview } from './game/assets/visuals';
+import { MISSIONS } from './game/content/missions';
+import { ENEMIES } from './game/content/balance';
+import { EndingSequence } from './ui/EndingSequence';
 import {
   INTRO_VIDEO,
   formatIntroTime,
@@ -36,6 +49,11 @@ import {
 
 const CAMPAIGN_SAVE_KEY = 'aegis-vector-campaign-v1';
 const STORY_ARCHIVE_KEY = 'aegis-vector-story-archive-v1';
+const endingPreview = !isMissionLab(window.location.search) && new URLSearchParams(window.location.search).get('debug') === '1' && new URLSearchParams(window.location.search).get('ending') === '1';
+const graphicsPreview = isGraphicsPreview(window.location.search) || endingPreview;
+const missionLab = isMissionLab(window.location.search);
+let labOptions = readMissionLabOptions(window.location.search);
+let isolatedCraftPreview = false;
 
 const required = <T extends HTMLElement>(id: string): T => {
   const element = document.getElementById(id);
@@ -116,6 +134,9 @@ const ui = {
   storyTitle: required<HTMLElement>('story-title'),
   storyProgress: required<HTMLElement>('story-progress'),
   storyImage: required<HTMLImageElement>('story-image'),
+  storyPreviousImage: required<HTMLImageElement>('story-previous-image'),
+  storyLocation: required<HTMLElement>('story-location'),
+  storyImageStatus: required<HTMLElement>('story-image-status'),
   storySpeaker: required<HTMLElement>('story-speaker'),
   storyCaption: required<HTMLElement>('story-caption'),
   storyBack: required<HTMLButtonElement>('story-back-button'),
@@ -135,6 +156,9 @@ const ui = {
   upgradeTree: required<HTMLElement>('upgrade-tree'),
   sortieModules: required<HTMLElement>('sortie-modules'),
   routePanel: required<HTMLElement>('route-panel'),
+  routeMap: required<HTMLElement>('route-map-screen'),
+  routeMapContent: required<HTMLElement>('route-map-content'),
+  routeMapClose: required<HTMLButtonElement>('route-map-close'),
   nextVectorPanel: required<HTMLElement>('next-vector-panel'),
   manual: required<HTMLElement>('manual-screen'),
   manualContent: required<HTMLElement>('manual-content'),
@@ -149,6 +173,8 @@ const ui = {
 };
 
 let difficulty: Difficulty = 'pilot';
+const ending = new EndingSequence();
+let selectedUpgradeBranch: UpgradeBranch = 'weapons';
 let latestSnapshot: GameSnapshot | undefined;
 let ready = false;
 let announceTimer = 0;
@@ -157,8 +183,11 @@ let defeatStingIndex = 0;
 let storyChapter: StoryChapter | undefined;
 let storyPanelIndex = 0;
 let storyTimer = 0;
-let storyPaused = false;
+let storyAdvanceGuardTimer = 0;
+let storyPaused = true;
 let storyReplay = false;
+let storyImageRequest = 0;
+let storyImageLoading = false;
 let introTimer = 0;
 let introSequenceToken = 0;
 let introCompletion: (() => void) | undefined;
@@ -166,24 +195,48 @@ let introPlaybackState: IntroPlaybackState = 'preloading';
 let introEnding = false;
 let introVisibilityPaused = false;
 let replayReturnScreen: HTMLElement = ui.start;
+let routeMapOpener: HTMLElement | undefined;
 const GAMEPLAY_KEY_CODES = new Set([
   'Space', 'KeyZ', 'KeyW', 'KeyA', 'KeyS', 'KeyD',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyX', 'ShiftLeft', 'ShiftRight', 'KeyP', 'Escape',
 ]);
 const heldGameplayKeys = new Set<string>();
 let transitionInputLatched = false;
-let savedCampaign = loadCampaign();
+let savedCampaign = graphicsPreview ? undefined : loadCampaign();
 let campaign = new CampaignModel(savedCampaign);
-const debugMode = new URLSearchParams(window.location.search).get('debug') === '1';
-const quickDebugMode = debugMode && new URLSearchParams(window.location.search).get('quick') === '1';
+const debugMode = missionLab || new URLSearchParams(window.location.search).get('debug') === '1';
+const quickDebugMode = !missionLab && debugMode && new URLSearchParams(window.location.search).get('quick') === '1';
 const collisionDebugMode = debugMode && new URLSearchParams(window.location.search).get('collisionDebug') === '1';
 const requestedDebugTrack = new URLSearchParams(window.location.search).get('audioTrack');
 const debugInitialTrack = debugMode && [
-  'menu', 'hangar', 'mission-coastal', 'mission-minefield', 'mission-fortress', 'boss', 'victory', 'defeat',
+  'menu', 'hangar', 'mission-coastal', 'mission-minefield', 'mission-aurora', 'mission-fortress',
+  'mission-stormbreak', 'mission-graveyard', 'mission-carrier-siege', 'mission-dreadnought', 'mission-last-light',
+  'boss', 'victory', 'defeat',
 ].includes(requestedDebugTrack ?? '')
   ? requestedDebugTrack as MusicTrack
   : 'menu';
 const audio = new SoundEngine();
+
+required<HTMLButtonElement>('mission-lab-button').addEventListener('click', () => {
+  window.location.assign(missionLabUrl(window.location.href));
+});
+const labLauncher = missionLab ? mountMissionLab(required<HTMLElement>('game-shell'), labOptions, (options) => {
+  if (!ready || !options.mission) return;
+  labOptions = options;
+  // Preserve the user gesture for audio instead of reloading to start a test.
+  history.replaceState(null, '', missionLabUrl(window.location.href, options));
+  campaign = new CampaignModel(createMissionLabCampaign(options));
+  labLauncher?.classList.add('hidden');
+  startCurrentMission();
+  mountGraphicsPreviewControls(options.mission);
+}, () => window.location.assign(window.location.pathname)) : undefined;
+if (labLauncher) {
+  ui.start.classList.add('hidden');
+  labLauncher.classList.toggle('hidden', Boolean(labOptions.mission));
+  labLauncher.querySelector<HTMLButtonElement>('[data-lab-launch]')?.setAttribute('disabled', '');
+  ui.pauseAbandon.textContent = 'CHOOSE ANOTHER MISSION';
+  ui.resultAbandon.textContent = 'CHOOSE ANOTHER MISSION';
+}
 
 ui.launch.disabled = true;
 ui.launch.textContent = 'INITIALIZING…';
@@ -317,17 +370,20 @@ ui.manualContent.addEventListener('click', (raw) => {
 
 ui.storyBack.addEventListener('click', () => setStoryPanel(storyPanelIndex - 1));
 ui.storyNext.addEventListener('click', () => {
-  if (!storyChapter) return;
+  if (!storyChapter || ui.storyNext.disabled) return;
   if (storyPanelIndex >= storyChapter.panels.length - 1) finishStory();
   else setStoryPanel(storyPanelIndex + 1);
 });
 ui.storyPause.addEventListener('click', () => {
   storyPaused = !storyPaused;
-  ui.storyPause.textContent = storyPaused ? 'RESUME' : 'PAUSE';
+  ui.storyPause.textContent = storyPaused ? 'AUTO PLAY' : 'PAUSE AUTO';
+  ui.storyPause.setAttribute('aria-pressed', String(!storyPaused));
   if (storyPaused) window.clearTimeout(storyTimer);
   else scheduleStoryAdvance();
 });
-ui.storySkip.addEventListener('click', finishStory);
+ui.storySkip.addEventListener('click', () => {
+  if (!ui.storySkip.disabled) finishStory();
+});
 ui.introSkip.addEventListener('click', () => { void finishIntro(true); });
 ui.introPlay.addEventListener('click', () => { void startIntroPlayback(introSequenceToken); });
 ui.introContinue.addEventListener('click', () => { void finishIntro(false); });
@@ -337,7 +393,21 @@ ui.introPause.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if ((labLauncher && !labLauncher.classList.contains('hidden'))
+    || (event.target instanceof HTMLElement && event.target.closest('.graphics-preview-tools'))) {
+    // Let native form controls use arrows/Space without steering/firing the ship.
+    event.stopImmediatePropagation();
+    return;
+  }
   if (GAMEPLAY_KEY_CODES.has(event.code)) heldGameplayKeys.add(event.code);
+  if (!ui.routeMap.classList.contains('hidden')) {
+    if (event.code === 'Escape' && !event.repeat) closeRouteMap();
+    if (GAMEPLAY_KEY_CODES.has(event.code)) {
+      event.preventDefault(); event.stopImmediatePropagation();
+    }
+    if (event.key === 'Tab') { event.preventDefault(); ui.routeMapClose.focus(); }
+    return;
+  }
   if (!ui.intro.classList.contains('hidden')) {
     if (event.key === 'Escape' && !event.repeat && !transitionInputLatched) {
       event.preventDefault();
@@ -365,7 +435,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     event.preventDefault();
     event.stopImmediatePropagation();
-    finishStory();
+    ui.storySkip.click();
   } else if (event.key === 'Enter') {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -384,6 +454,12 @@ window.addEventListener('blur', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !ui.story.classList.contains('hidden')) {
+    storyPaused = true;
+    window.clearTimeout(storyTimer);
+    ui.storyPause.textContent = 'AUTO PLAY';
+    ui.storyPause.setAttribute('aria-pressed', 'false');
+  }
   if (ui.intro.classList.contains('hidden')) return;
   if (document.hidden && !ui.introVideo.paused) {
     introVisibilityPaused = true;
@@ -397,6 +473,24 @@ document.addEventListener('visibilitychange', () => {
 ui.hangarAbandon.addEventListener('click', abandonCampaign);
 ui.pauseAbandon.addEventListener('click', abandonCampaign);
 ui.resultAbandon.addEventListener('click', abandonCampaign);
+
+for (const id of ['start-route-map-button', 'hangar-route-map-button', 'pause-route-map-button']) {
+  required<HTMLButtonElement>(id).addEventListener('click', (event) => {
+    routeMapOpener = event.currentTarget as HTMLElement;
+    const state = campaign.snapshot();
+    renderCampaignMap(ui.routeMapContent, state);
+    required<HTMLElement>('route-reward-status').textContent = state.routeReward === 'arc-resonator'
+      ? 'SECURED // ARC RESONATOR · +12% ARC DAMAGE' : state.routeReward === 'aegis-bastion'
+        ? 'SECURED // AEGIS BASTION · +1 SHIELD CELL' : 'ROUTE REWARD // AWARDED ON SUCCESSFUL MISSION COMPLETION';
+    ui.routeMap.classList.remove('hidden');
+    ui.routeMapClose.focus();
+  });
+}
+ui.routeMapClose.addEventListener('click', closeRouteMap);
+function closeRouteMap(): void {
+  ui.routeMap.classList.add('hidden');
+  routeMapOpener?.focus();
+}
 
 ui.audioButton.addEventListener('click', () => {
   void audio.unlock();
@@ -458,6 +552,38 @@ window.addEventListener('aegis:ready', () => {
   ui.launch.disabled = false;
   ui.launch.innerHTML = 'START NEW CAMPAIGN <span>→</span>';
   refreshContinueButton();
+  labLauncher?.querySelector<HTMLButtonElement>('[data-lab-launch]')?.removeAttribute('disabled');
+  if (endingPreview) {
+    showVictory({ ...CampaignModel.fresh('pilot'), score: 286400, campaignKills: 387 });
+    return;
+  }
+  if (document.documentElement.dataset.visualFallback === 'true') {
+    const status = required<HTMLElement>('visual-style-status');
+    status.classList.remove('hidden');
+    status.textContent = 'Some artwork could not load. Recovery graphics are active; reload to retry.';
+  }
+  if (missionLab) {
+    if (labOptions.mission) {
+      campaign = new CampaignModel(createMissionLabCampaign(labOptions));
+      startCurrentMission();
+      mountGraphicsPreviewControls(labOptions.mission);
+    }
+    return;
+  }
+  // Read-only chapter preview: no campaign writes, awards or archive unlocks.
+  const previewChapter = new URLSearchParams(window.location.search).get('story');
+  if (debugMode && STORY_CHAPTERS.some((chapter) => chapter.id === previewChapter)) {
+    replayReturnScreen = ui.start;
+    openStory(previewChapter as StoryChapterId, true);
+  }
+  if (graphicsPreview) {
+    const missionId = new URLSearchParams(window.location.search).get('mission') ?? 'coastal';
+    const mission = MISSIONS.find((entry) => entry.id === missionId) ?? MISSIONS[0];
+    const fresh = CampaignModel.fresh('pilot');
+    campaign = new CampaignModel({ ...fresh, currentMissionId: mission.id, missionIndex: MISSIONS.indexOf(mission), campaignSeed: 73101 });
+    startCurrentMission();
+    mountGraphicsPreviewControls(mission.id);
+  }
 });
 
 window.addEventListener('aegis:state', (raw) => {
@@ -484,7 +610,9 @@ window.addEventListener('aegis:announce', (raw) => {
 
 if (debugMode) {
   window.addEventListener('aegis:debug-combat', (raw) => {
-    ui.hud.dataset.enemies = JSON.stringify((raw as CustomEvent<unknown>).detail);
+    const detail = (raw as CustomEvent<{ graphics?: { isolatedCraftPreview?: boolean } }>).detail;
+    isolatedCraftPreview = graphicsPreview && detail.graphics?.isolatedCraftPreview === true;
+    ui.hud.dataset.enemies = JSON.stringify(detail);
   });
 }
 
@@ -506,7 +634,12 @@ window.addEventListener('aegis:radio-state', (raw) => {
   ui.radioSubtitle.classList.remove('hidden');
 });
 window.addEventListener('aegis:music', (raw) => {
-  const track = (raw as CustomEvent<MusicTrack>).detail;
+  let track = (raw as CustomEvent<MusicTrack>).detail;
+  const missionTrack = MISSIONS.find(({ id }) => id === latestSnapshot?.missionId)?.music;
+  // The two finale scores span approach and bosses without losing their identity.
+  // Keep the established boss bed until a real replacement has been generated.
+  if (track === 'boss' && (missionTrack === 'mission-dreadnought' || missionTrack === 'mission-last-light')
+    && MISSION_SCORE_STATUS[missionTrack].status === 'reviewed') track = missionTrack;
   const variant = track === 'boss' ? campaign.snapshot().campaignSeed ?? 0 : 0;
   void audio.playMusic(track, undefined, variant);
 });
@@ -538,6 +671,11 @@ window.addEventListener('aegis:waypoint-secured', (raw) => {
   saveCampaign();
 });
 
+window.addEventListener('aegis:defense-consumed', (raw) => {
+  const detail = (raw as CustomEvent<{ missionId: MissionId; game: GameCheckpointSnapshot }>).detail;
+  if (detail && campaign.recordConsumedDefenses(detail.game, detail.missionId)) saveCampaign();
+});
+
 window.addEventListener('aegis:mission-ended', (raw) => {
   const snapshot = (raw as CustomEvent<GameSnapshot>).detail;
   latestSnapshot = snapshot;
@@ -546,6 +684,27 @@ window.addEventListener('aegis:mission-ended', (raw) => {
   ui.missionClear.classList.add('hidden');
   ui.missionClear.classList.remove('show', 'finale');
   ui.hud.classList.add('hidden');
+  if (missionLab) {
+    campaign.failMission();
+    const passed = snapshot.mode === 'complete' || snapshot.mode === 'victory';
+    if (!passed) showFailure(snapshot);
+    else {
+      resultIsVictory = false;
+      // A completed standalone test never enters a campaign story or next level.
+      campaign = new CampaignModel(createMissionLabCampaign(labOptions));
+      ui.result.classList.remove('hidden');
+      ui.resultKicker.textContent = 'MISSION LAB // TEST COMPLETE · SAVES OFF';
+      ui.resultTitle.textContent = 'MISSION CLEARED';
+      ui.resultTitle.style.color = 'var(--cyan)';
+      ui.resultScore.textContent = formatScore(snapshot.score);
+      ui.resultScoreLabel.textContent = 'TEST SCORE';
+      ui.resultKills.textContent = String(snapshot.kills);
+      ui.resultAction.textContent = 'REPLAY THIS MISSION';
+      ui.resultAbandon.classList.remove('hidden');
+      void audio.playMusic('victory');
+    }
+    return;
+  }
   if (snapshot.mode === 'complete' || snapshot.mode === 'victory') {
     const state = campaign.completeMission(snapshot);
     saveCampaign();
@@ -750,11 +909,18 @@ function bindIntroVideoEvents(): void {
 }
 
 function openStory(id: StoryChapterId, replay = false): void {
-  storyChapter = getStoryChapter(id);
+  const requestedRoute = new URLSearchParams(window.location.search).get('route');
+  const previewRoute = debugMode && (requestedRoute === 'storm' || requestedRoute === 'salvage') ? requestedRoute : undefined;
+  const storyCampaign = campaign.snapshot();
+  storyChapter = getStoryChapter(id, previewRoute ?? {
+    earlyRoute: storyCampaign.routeReward ? storyCampaign.earlyRoute : undefined,
+    evidenceRoute: storyCampaign.route,
+  });
   storyReplay = replay;
-  storyPaused = false;
+  storyPaused = true;
   storyPanelIndex = 0;
-  ui.storyPause.textContent = 'PAUSE';
+  ui.storyPause.textContent = 'AUTO PLAY';
+  ui.storyPause.setAttribute('aria-pressed', 'false');
   ui.start.classList.add('hidden');
   ui.hangar.classList.add('hidden');
   ui.pause.classList.add('hidden');
@@ -762,45 +928,107 @@ function openStory(id: StoryChapterId, replay = false): void {
   ui.hud.classList.add('hidden');
   ui.manual.classList.add('hidden');
   ui.story.classList.remove('hidden');
+  ui.story.dataset.presentation = storyChapter.presentation ?? 'comic';
+  ui.storyPreviousImage.removeAttribute('src');
+  ui.storyPreviousImage.classList.add('hidden');
+  ui.storyImage.classList.add('hidden');
+  ui.storyCaption.textContent = '';
+  ui.storySpeaker.textContent = '';
+  ui.storyLocation.textContent = '';
   transitionInputLatched = transitionInputLatched || heldGameplayKeys.size > 0;
   ui.storyTitle.textContent = storyChapter.title;
-  ui.storyKicker.textContent = `PELAGOS ARCHIVE // ${storyChapter.afterMission.toUpperCase()}`;
-  if (!replay) {
+  ui.storyProgress.textContent = `01 / ${String(storyChapter.panels.length).padStart(2, '0')}`;
+  const storyMission = MISSIONS.find((mission) => mission.id === storyChapter!.afterMission);
+  ui.storyKicker.textContent = `PELAGOS ARCHIVE // ${storyMission?.title ?? storyChapter.afterMission.toUpperCase()}`;
+  if (storyChapter.musicTrack) {
+    ui.story.dataset.scoreStatus = storyChapter.musicTrack === 'ending' ? 'generated' : STORY_SCORE_STATUS[storyChapter.musicTrack].status;
+    void audio.playMusic(storyChapter.musicTrack);
+  } else if (!replay) {
+    ui.story.dataset.scoreStatus = 'legacy';
     const variant = storyChapter.afterMission === 'dreadnought' ? 3 : Math.max(0, (campaign.currentMission().number - 1) % 3);
-    void audio.playMusic('victory', undefined, variant);
+    void audio.playMusic('victory', 'hangar', variant);
   }
   setStoryPanel(0);
   ui.story.focus({ preventScroll: true });
 }
 
-function setStoryPanel(index: number): void {
+async function setStoryPanel(index: number): Promise<void> {
   if (!storyChapter) return;
+  const request = ++storyImageRequest;
   storyPanelIndex = Math.max(0, Math.min(storyChapter.panels.length - 1, index));
   const panel = storyChapter.panels[storyPanelIndex];
   window.clearTimeout(storyTimer);
+  window.clearTimeout(storyAdvanceGuardTimer);
+  ui.storyBack.disabled = true;
+  ui.storyNext.disabled = true;
+  ui.storySkip.disabled = true;
+  storyImageLoading = true;
+  ui.storyFrame.setAttribute('aria-busy', 'true');
+  ui.storyImageStatus.textContent = 'LOADING FRAME';
+  ui.storyImageStatus.classList.remove('hidden');
+  const incoming = new Image();
+  incoming.src = `${import.meta.env.BASE_URL}${panel.image}`;
+  let deadline = 0;
+  let failed = false;
+  try {
+    await Promise.race([
+      incoming.decode(),
+      new Promise<never>((_, reject) => { deadline = window.setTimeout(() => reject(new Error('Frame timeout')), 8_000); }),
+    ]);
+  } catch { failed = true; }
+  finally { window.clearTimeout(deadline); }
+  if (request !== storyImageRequest || !storyChapter) return;
+  storyImageLoading = false;
+  ui.storyFrame.setAttribute('aria-busy', 'false');
+  ui.storyImageStatus.textContent = failed ? 'IMAGE UNAVAILABLE // DIALOGUE REMAINS AVAILABLE' : '';
+  ui.storyImageStatus.classList.toggle('hidden', !failed);
+  // Retain the decoded previous frame beneath the new one; no black flash on load.
+  const previous = ui.storyImage.getAttribute('src');
+  if (previous && !ui.storyImage.classList.contains('hidden') && !failed) {
+    ui.storyPreviousImage.src = previous;
+    ui.storyPreviousImage.classList.remove('hidden');
+  } else ui.storyPreviousImage.classList.add('hidden');
+  ui.storyImage.classList.toggle('hidden', failed);
   ui.storyFrame.dataset.transition = panel.transition;
   ui.storyFrame.dataset.speaker = panel.speaker;
-  ui.storyImage.src = panel.image;
+  ui.storyFrame.dataset.motion = panel.motion ?? 'drift-right';
+  ui.storyFrame.dataset.bubbleSide = panel.bubbleSide ?? 'left';
+  ui.storyFrame.style.setProperty('--story-duration', `${panel.durationMs}ms`);
+  ui.storyFrame.style.setProperty('--story-focal-point', panel.focalPoint ?? '50% 50%');
+  if (!failed) ui.storyImage.src = incoming.src;
   ui.storyImage.alt = panel.alt;
-  const speakerLabels = { Mara: 'MARA // VECTOR', Rook: 'COMMANDER ROOK', 'ECHO-7': 'ECHO-7 // AV-7' } as const;
-  ui.storySpeaker.textContent = speakerLabels[panel.speaker];
+  ui.storyLocation.textContent = panel.location ?? '';
+  ui.storySpeaker.textContent = STORY_SPEAKER_LABELS[panel.speaker];
   ui.storyCaption.textContent = panel.caption;
   ui.storyProgress.textContent = `${String(storyPanelIndex + 1).padStart(2, '0')} / ${String(storyChapter.panels.length).padStart(2, '0')}`;
-  ui.storyBack.disabled = storyPanelIndex === 0;
+  ui.storyBack.disabled = true;
   ui.storyNext.innerHTML = storyPanelIndex === storyChapter.panels.length - 1 ? 'COMPLETE CHAPTER <span>→</span>' : 'NEXT <span>→</span>';
+  ui.storyNext.disabled = true;
+  ui.storySkip.disabled = true;
+  storyAdvanceGuardTimer = window.setTimeout(() => {
+    if (!storyChapter || request !== storyImageRequest) return;
+    ui.storyBack.disabled = storyPanelIndex === 0;
+    ui.storyNext.disabled = false;
+    ui.storySkip.disabled = false;
+  }, storyAdvanceGuardMs(storyPanelIndex));
+  ui.storyFrame.style.animation = 'none';
+  ui.storyImage.style.animation = 'none';
+  void ui.storyFrame.offsetWidth;
   void ui.storyImage.offsetWidth;
+  ui.storyFrame.style.animation = '';
+  ui.storyImage.style.animation = '';
   const next = storyChapter.panels[storyPanelIndex + 1];
   if (next) {
     const image = new Image();
     image.decoding = 'async';
-    image.src = next.image;
+    image.src = `${import.meta.env.BASE_URL}${next.image}`;
   }
   scheduleStoryAdvance();
 }
 
 function scheduleStoryAdvance(): void {
   window.clearTimeout(storyTimer);
-  if (!storyChapter || storyPaused) return;
+  if (!storyChapter || storyPaused || storyImageLoading || document.hidden) return;
   storyTimer = window.setTimeout(() => {
     if (!storyChapter || storyPanelIndex >= storyChapter.panels.length - 1) return;
     setStoryPanel(storyPanelIndex + 1);
@@ -809,12 +1037,16 @@ function scheduleStoryAdvance(): void {
 
 function finishStory(): void {
   if (!storyChapter) return;
+  storyImageRequest += 1;
+  storyImageLoading = false;
   window.clearTimeout(storyTimer);
+  window.clearTimeout(storyAdvanceGuardTimer);
   ui.story.classList.add('hidden');
   if (storyReplay) {
     storyChapter = undefined;
     storyReplay = false;
     replayReturnScreen.classList.remove('hidden');
+    void audio.playMusic(replayReturnScreen === ui.start ? 'menu' : 'hangar');
     openManualAt('archive');
     return;
   }
@@ -836,6 +1068,7 @@ function startCurrentMission(): void {
   saveCampaign();
   resultIsVictory = false;
   ui.start.classList.add('hidden');
+  labLauncher?.classList.add('hidden');
   ui.hangar.classList.add('hidden');
   ui.pause.classList.add('hidden');
   ui.result.classList.add('hidden');
@@ -864,7 +1097,23 @@ function renderHangar(): void {
   const mission = campaign.currentMission();
   ui.hangarKicker.textContent = state.lastReport ? 'AEGIS HANGAR // MISSION REPORT' : 'AEGIS HANGAR // CAMPAIGN CHECKPOINT';
   ui.hangarCredits.textContent = String(state.credits);
+  const rewardBadge = required<HTMLElement>('hangar-route-reward');
+  rewardBadge.classList.toggle('hidden', !state.routeReward);
+  rewardBadge.textContent = state.routeReward === 'arc-resonator' ? 'SECURED // ARC RESONATOR · +12% ARC DAMAGE'
+    : state.routeReward === 'aegis-bastion' ? 'SECURED // AEGIS BASTION · +1 SHIELD CELL' : '';
   const choosingRoute = state.phase === 'route';
+  ui.hangar.classList.toggle('choosing-route', choosingRoute);
+  const secondChoice = state.currentMissionId === 'fortress';
+  required<HTMLElement>('route-panel-title').textContent = secondChoice ? 'SECOND FORK // CHOOSE YOUR EVIDENCE' : 'FIRST FORK // CHOOSE YOUR ADVANTAGE';
+  required<HTMLElement>('route-panel-description').textContent = secondChoice
+    ? 'Both paths are open. Choose the evidence trail to the carrier; keep the reward you already earned.'
+    : 'Choose your approach to the fortress. You will make a separate pathway choice after Mission 3.';
+  ui.routePanel.querySelector<HTMLButtonElement>('[data-route="salvage"]')!.innerHTML = secondChoice
+    ? '<b>GRAVEYARD</b><small>Recover the original command memory.</small>'
+    : '<b>MINEFIELD // OFFENSE</b><small>Clear the Warden. Earn ARC Resonator: +12% ARC damage.</small>';
+  ui.routePanel.querySelector<HTMLButtonElement>('[data-route="storm"]')!.innerHTML = secondChoice
+    ? '<b>STORMBREAK</b><small>Intercept the live containment directive.</small>'
+    : '<b>AURORA REACH // DEFENSE</b><small>Recover the shield relay. Earn Aegis Bastion: +1 shield cell.</small>';
   ui.routePanel.classList.toggle('hidden', !choosingRoute);
   ui.nextVectorPanel.classList.toggle('hidden', choosingRoute);
   ui.hangarLaunch.classList.toggle('hidden', choosingRoute);
@@ -875,7 +1124,7 @@ function renderHangar(): void {
     chip.textContent = threat;
     return chip;
   }));
-  ui.hangarLaunch.innerHTML = `${mission.finale ? 'BEGIN FINAL ASSAULT' : `LAUNCH MISSION ${mission.number}`} <span>→</span>`;
+  ui.hangarLaunch.innerHTML = `${missionLaunchLabel(mission)} <span>→</span>`;
   ui.respec.disabled = !state.respecAvailable;
   ui.respec.textContent = state.respecAvailable ? 'FREE RESPEC AVAILABLE' : 'RESPEC USED';
 
@@ -907,13 +1156,33 @@ function renderSortieModules(state: CampaignSnapshot): void {
 }
 
 function renderUpgradeTree(state: CampaignSnapshot): void {
-  ui.upgradeTree.replaceChildren(...UPGRADE_BRANCHES.map((branch) => {
+  const oldScroll = ui.upgradeTree.querySelector<HTMLElement>('.upgrade-branch')?.scrollTop ?? 0;
+  const navigation = document.createElement('nav');
+  navigation.className = 'upgrade-branch-tabs';
+  navigation.setAttribute('aria-label', 'Upgrade categories');
+  for (const branch of UPGRADE_BRANCHES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `branch-${branch}`;
+    button.textContent = `${branchIcon(branch)} ${branch.toUpperCase()}`;
+    button.setAttribute('aria-pressed', String(branch === selectedUpgradeBranch));
+    button.addEventListener('click', () => {
+      selectedUpgradeBranch = branch;
+      renderUpgradeTree(campaign.snapshot());
+      const content = ui.upgradeTree.querySelector<HTMLElement>('.upgrade-branch');
+      if (content) content.scrollTop = 0;
+      ui.upgradeTree.querySelector<HTMLButtonElement>(`nav .branch-${branch}`)?.focus();
+    });
+    navigation.append(button);
+  }
+  ui.upgradeTree.replaceChildren(navigation, ...UPGRADE_BRANCHES.filter((branch) => branch === selectedUpgradeBranch).map((branch) => {
     const column = document.createElement('section');
     column.className = `upgrade-branch branch-${branch}`;
     const heading = document.createElement('h3');
     heading.innerHTML = `<span>${branchIcon(branch)}</span>${branch.toUpperCase()}`;
     column.append(heading);
-    for (const tier of [1, 2, 3, 4, 5, 6] as const) {
+    const tiers = [...new Set(UPGRADE_NODES.filter((node) => node.branch === branch).map((node) => node.tier))].sort((a,b) => a-b);
+    for (const tier of tiers) {
       const tierElement = document.createElement('div');
       tierElement.className = 'upgrade-tier';
       tierElement.dataset.tier = String(tier);
@@ -954,6 +1223,8 @@ function renderUpgradeTree(state: CampaignSnapshot): void {
     }
     return column;
   }));
+  const content = ui.upgradeTree.querySelector<HTMLElement>('.upgrade-branch');
+  if (content) content.scrollTop = oldScroll;
 }
 
 function showFailure(snapshot: GameSnapshot): void {
@@ -963,6 +1234,7 @@ function showFailure(snapshot: GameSnapshot): void {
   ui.resultKicker.textContent = waypoint
     ? `MISSION FAILED // WAYPOINT ${waypoint} RESTORED`
     : 'MISSION FAILED // SORTIE RESET';
+  if (missionLab) ui.resultKicker.textContent += ' · SAVES OFF';
   ui.resultTitle.textContent = 'FIGHTER DOWN';
   ui.resultTitle.style.color = 'var(--danger)';
   ui.resultScore.textContent = formatScore(snapshot.score);
@@ -979,20 +1251,23 @@ function showFailure(snapshot: GameSnapshot): void {
 function showVictory(state: CampaignSnapshot, snapshot?: GameSnapshot): void {
   resultIsVictory = true;
   clearCampaignSave();
-  ui.result.classList.remove('hidden');
-  ui.resultKicker.textContent = 'CAMPAIGN COMPLETE // PELAGOS ARRAY';
-  ui.resultTitle.textContent = 'SKY SECURED';
-  ui.resultTitle.style.color = 'var(--cyan)';
-  ui.resultScore.textContent = formatScore(state.score);
-  ui.resultScoreLabel.textContent = 'CAMPAIGN SCORE';
-  ui.resultKills.textContent = String(state.campaignKills);
-  ui.resultAction.innerHTML = 'NEW CAMPAIGN <span>→</span>';
-  ui.resultAbandon.classList.add('hidden');
+  for (const overlay of [ui.start, ui.hangar, ui.pause, ui.result, ui.hud, ui.story, ui.intro, ui.manual, ui.missionClear, ui.routeMap]) overlay.classList.add('hidden');
   if (snapshot) latestSnapshot = snapshot;
-  void audio.playMusic('victory', undefined, 3);
+  ending.show(state, {
+    onExit: showStart,
+    onReplay: () => {
+      audio.stopMusic(0.6);
+      // Also unlock for keyboard / assistive activation in the direct preview.
+      void audio.unlock().then(() => audio.playMusic('ending'));
+    },
+  });
+  // Same track continues seamlessly from Homeward's final story panel.
+  void audio.playMusic('ending');
 }
 
 function showStart(): void {
+  ending.hide();
+  ui.routeMap.classList.add('hidden');
   ui.start.classList.remove('hidden');
   ui.hangar.classList.add('hidden');
   ui.pause.classList.add('hidden');
@@ -1005,6 +1280,10 @@ function showStart(): void {
 }
 
 function abandonCampaign(): void {
+  if (missionLab) {
+    window.location.assign(missionLabUrl(window.location.href, { ...labOptions, mission: undefined }));
+    return;
+  }
   if (!window.confirm('Abandon this campaign and reset all campaign upgrades and credits?')) return;
   clearCampaignSave();
   campaign.startNew(difficulty);
@@ -1022,24 +1301,33 @@ function updateHud(snapshot: GameSnapshot): void {
   ui.credits.textContent = String(campaign.snapshot().credits + snapshot.creditsEarned);
   ui.multiplier.textContent = `×${snapshot.multiplier}`;
   ui.highScore.textContent = `BEST ${formatScore(snapshot.highScore)}`;
-  const finaleApproach = snapshot.missionId === 'dreadnought' && snapshot.finalePhase === 'approach';
-  const finaleBoss = snapshot.missionId === 'dreadnought' && snapshot.finalePhase === 'boss';
+  const finaleApproach = isFinaleMission(snapshot.missionId) && snapshot.finalePhase === 'approach';
+  const finaleBoss = isFinaleMission(snapshot.missionId) && snapshot.finalePhase === 'boss';
   ui.missionLabel.textContent = finaleApproach
-    ? 'FINAL VECTOR // APPROACH'
+    ? `${snapshot.missionTitle} // APPROACH`
     : finaleBoss
-      ? 'FINAL VECTOR // DREADNOUGHT'
+      ? `${snapshot.missionTitle} // ${snapshot.bossName || (snapshot.finaleBossStage === 'nullArchitect' ? 'OBSIDIAN CROWN' : snapshot.missionId === 'lastLight' ? 'SERAPH' : 'CORE')}`
       : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
   ui.threatLevel.textContent = finaleApproach ? 'ESCORT' : finaleBoss ? 'CORE' : `THREAT ${snapshot.threatLevel}`;
   ui.threatLevel.dataset.level = String(snapshot.threatLevel);
 
-  const timedDuration = finaleApproach ? 30_000 : snapshot.stageDurationMs;
-  const timedElapsed = finaleBoss ? Math.max(0, snapshot.stageElapsedMs - 30_000) : snapshot.stageElapsedMs;
-  const progress = finaleApproach ? Math.min(1, timedElapsed / timedDuration) : Math.min(1, snapshot.stageElapsedMs / snapshot.stageDurationMs);
+  const timedDuration = finaleApproach ? (MISSIONS.find((mission) => mission.id === snapshot.missionId)?.approachDurationMs ?? 30_000) : snapshot.stageDurationMs;
+  const progress = finaleProgress(snapshot) ?? Math.min(1, snapshot.stageElapsedMs / snapshot.stageDurationMs);
   ui.stageProgress.style.width = `${progress * 100}%`;
   ui.waypointMarker1.classList.toggle('secured', (snapshot.latestWaypointId ?? 0) >= 1);
   ui.waypointMarker2.classList.toggle('secured', (snapshot.latestWaypointId ?? 0) >= 2);
-  const remainingSeconds = Math.max(0, Math.ceil(((finaleApproach ? 30_000 : snapshot.stageDurationMs) - (finaleApproach ? timedElapsed : snapshot.stageElapsedMs)) / 1_000));
-  ui.stageTime.textContent = `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`;
+  ui.waypointMarker1.style.left = `${finaleWaypointPosition(snapshot.missionId, 1) * 100}%`;
+  ui.waypointMarker2.style.left = `${finaleWaypointPosition(snapshot.missionId, 2) * 100}%`;
+  const remainingSeconds = Math.max(0, Math.ceil((timedDuration - snapshot.stageElapsedMs) / 1_000));
+  ui.stageTime.textContent = finaleBoss ? (snapshot.missionId === 'lastLight' ? (snapshot.finaleBossStage === 'nullArchitect' ? '02 / 02' : '01 / 02') : 'CORE') : `${String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:${String(remainingSeconds % 60).padStart(2, '0')}`;
+  ui.waypointMarker1.classList.toggle('hidden', isolatedCraftPreview);
+  ui.waypointMarker2.classList.toggle('hidden', isolatedCraftPreview);
+  if (isolatedCraftPreview) {
+    ui.missionLabel.textContent = `${snapshot.missionTitle} // CRAFT TEST`;
+    ui.threatLevel.textContent = 'ISOLATED';
+    ui.stageTime.textContent = 'NO SAVES';
+    ui.stageProgress.style.width = '0%';
+  }
 
   ui.bossHud.classList.toggle('hidden', !snapshot.bossActive);
   ui.bossName.textContent = snapshot.bossName || 'COMMAND TARGET';
@@ -1057,7 +1345,7 @@ function updateHud(snapshot: GameSnapshot): void {
     const remaining = Math.max(snapshot.overdriveRemainingMs, snapshot.reactorOverdriveRemainingMs);
     effects.push(`${label} ${(remaining / 1_000).toFixed(1)}s`);
   }
-  if (snapshot.tractorRemainingMs > 0) effects.push(`TRACTOR ${(snapshot.tractorRemainingMs / 1_000).toFixed(1)}s`);
+  if (snapshot.tractorRemainingMs > 0) effects.push(`TRACTOR +25% SALVAGE · ${(snapshot.tractorRemainingMs / 1_000).toFixed(1)}s`);
   if (snapshot.chronoRemainingMs > 0) effects.push(`CHRONO ${(snapshot.chronoRemainingMs / 1_000).toFixed(1)}s`);
   if (snapshot.reserveShieldAvailable) effects.push('RESERVE SHIELD');
   ui.effectReadout.replaceChildren(...effects.map((effect) => {
@@ -1092,7 +1380,7 @@ function renderWeapons(snapshot: GameSnapshot): void {
     chip.style.setProperty('--weapon', data.css);
     const status = type === 'drone' && level > 0 ? droneStatus(level) : '';
     chip.title = status || `${data.name} level ${level}`;
-    chip.innerHTML = `<b>${data.short}</b><span>${[1, 2, 3, 4, 5].map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>${status ? `<em>${status}</em>` : ''}`;
+    chip.innerHTML = `<b>${data.short}</b><span>${Array.from({ length: WEAPON_MAX_LEVEL[type] }, (_, index) => index + 1).map((dot) => `<i class="level-dot${dot <= level ? ' on' : ''}"></i>`).join('')}</span>${status ? `<em>${status}</em>` : ''}`;
     return chip;
   }));
 }
@@ -1109,13 +1397,15 @@ type ManualTab = 'weapons' | 'enemies' | 'systems' | 'archive';
 
 const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; description: string }>> = {
   weapons: [
-    { name: 'ARC CANNON', tag: 'SPREAD', description: 'Your rapid primary gun. Higher levels add bolts, tighten the fan, and raise damage. Best against close formations.' },
+    { name: 'ARC CANNON', tag: 'SPREAD', description: 'Your rapid primary gun. Start with one bolt; every battlefield upgrade adds exactly one, up to seven. Later levels also improve cadence and damage. Best against close formations.' },
     { name: 'NOVA MISSILES', tag: 'HOMING', description: 'Tracks priority targets and weak points. Advanced warheads add extra missiles and blast damage.' },
     { name: 'LANCE LASER', tag: 'PRECISION', description: 'Straight, high-speed pulses that reward lining up enemies. Later levels add wider triple beams.' },
     { name: 'WING DRONES', tag: 'SUPPORT', description: 'L1: one escort. L2: two escorts. L3: two Mk II drones with rapid volleys. L4: three-drone triangle. L5: four-drone chevron.' },
     { name: 'ION CONDUCTOR', tag: 'CHAIN', description: 'Electrical discharge jumps to different nearby enemies. Against bosses it concentrates into one fair damage strike.' },
   ],
   enemies: [
+    { name: 'PRISM', tag: 'AURORA INTERCEPTOR', description: 'Advances diagonally, then marks a three-bolt fan. Its aim locks during the warning: move sideways after the mark rather than chasing its bank.' },
+    { name: 'LEECH', tag: 'PRESSURE BATTERY', description: 'A slower, heavily telegraphed burst aims to alternating sides of your position. Leave the marked lane; its heavy bolts do not drain shields or EMP invisibly.' },
     { name: 'CHARGER', tag: 'RAMMER', description: 'Marks a narrow lane, then dives. Leave the warning lane before it commits.' },
     { name: 'SNIPER', tag: 'BEAM', description: 'Tracks briefly, freezes its aim line, then fires. The locked line no longer follows you—sidestep during the final warning.' },
     { name: 'MINE LAYER', tag: 'AREA DENIAL', description: 'Drops destructible mines. They flash as they arm and disappear after six seconds.' },
@@ -1130,10 +1420,12 @@ const MANUAL_ENTRIES: Record<ManualTab, Array<{ name: string; tag: string; descr
     { name: 'CROWN PURSUER', tag: 'ROUTE COMMAND', description: 'Adapts to the chosen fourth vector with marked storm passes or warned debris and mine volleys.' },
   ],
   systems: [
-    { name: 'AEGIS SHIELD', tag: 'DEFENSE', description: 'Absorbs hits before hull and recharges after avoiding damage. Battlefield shield cores increase capacity up to three.' },
+    { name: 'AEGIS SHIELD', tag: 'DEFENSE', description: 'Each accepted hit costs one cell, with brief protection from overlapping fire. Cells recharge one by one after avoiding damage. Shield cores raise base capacity to three; Aegis Bastion adds a fourth. Hex Lattice and Ion Bubble have identical protection.' },
+    { name: 'CAMPAIGN ROUTES', tag: 'TWO FORKS · FOUR PATHWAYS', description: 'After Coastal, choose Minefield for +12% ARC damage or Aurora for +1 shield cell; earn the reward on mission completion. After Fortress, choose Graveyard’s buried memory or Stormbreak’s live signal independently. Your first reward stays with you on either path. Open the Route Map from the menu, hangar or pause screen.' },
     { name: 'EMP', tag: 'X / SHIFT', description: 'Press X or either Shift key to clear nearby bullets and mines, damage enemies, and temporarily disrupt Bulwark armor.' },
     { name: 'WAYPOINTS', tag: 'RESTART', description: 'Two automatic waypoints preserve mission progress. A retry restores full shields, at least two hull, and at least one EMP without restoring used one-shot defenses.' },
     { name: 'OVERDRIVE', tag: 'UTILITY', description: 'Fires every weapon faster. White-hot gold projectiles show when Overdrive is active.' },
+    { name: 'TRACTOR FIELD', tag: 'SALVAGE', description: 'For 12 seconds, draws utility pickups from 360px and earns 25% more kill credits. Armament choices remain fixed so you can choose deliberately.' },
     { name: 'ARMAMENT CARRIER', tag: 'CHOICE', description: 'Gold-marked targets drop two permanent campaign upgrades. Collect one before the offer expires.' },
     { name: 'SORTIE MODULE', tag: 'CONSUMABLE', description: 'A hangar purchase used for the next mission only. Failed attempts restore it with the mission checkpoint.' },
     { name: 'THREAT LEVEL', tag: 'ESCALATION', description: 'Each mission climbs through five deterministic pressure bands. Warning times never become shorter.' },
@@ -1183,6 +1475,7 @@ function unlockedStoryChapters(): Set<StoryChapterId> {
 }
 
 function rememberStoryChapter(ids: StoryChapterId[]): void {
+  if (graphicsPreview) return;
   try {
     const existing = unlockedStoryChapters();
     ids.forEach((id) => existing.add(id));
@@ -1206,6 +1499,7 @@ function formatScore(score: number): string {
 }
 
 function saveCampaign(): void {
+  if (graphicsPreview) return;
   try {
     savedCampaign = campaign.exportSave();
     localStorage.setItem(CAMPAIGN_SAVE_KEY, JSON.stringify(savedCampaign));
@@ -1226,6 +1520,7 @@ function loadCampaign(): CampaignSnapshot | undefined {
 
 function clearCampaignSave(): void {
   savedCampaign = undefined;
+  if (graphicsPreview) return;
   try {
     localStorage.removeItem(CAMPAIGN_SAVE_KEY);
   } catch {
@@ -1234,13 +1529,74 @@ function clearCampaignSave(): void {
   refreshContinueButton();
 }
 
+function mountGraphicsPreviewControls(selectedMission: string): void {
+  if (document.querySelector('.graphics-preview-tools')) return;
+  const panel = document.createElement('details');
+  panel.className = 'graphics-preview-tools';
+  panel.addEventListener('toggle', () => {
+    // Closing the panel leaves native focus on its summary. Release that focus
+    // so the form-control input guard does not keep swallowing flight controls.
+    if (!panel.open && document.activeElement instanceof HTMLElement && panel.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+  });
+  const summary = document.createElement('summary');
+  summary.textContent = missionLab ? 'MISSION LAB // CONTROLS' : 'TEST CONTROLS // NO SAVES';
+  const invincible = missionLab ? labOptions.godMode : new URLSearchParams(window.location.search).get('god') === '1';
+  const safety = document.createElement('div');
+  safety.className = 'preview-safety-badge';
+  safety.textContent = invincible ? 'GOD MODE ON // SAVES OFF' : 'DAMAGE ON // SAVES OFF';
+  required<HTMLElement>('game-shell').append(safety);
+  const damageMode = document.createElement('a');
+  const damageUrl = new URL(window.location.href);
+  if (invincible) damageUrl.searchParams.set('god', '0');
+  else damageUrl.searchParams.set('god', '1');
+  damageMode.href = damageUrl.href;
+  damageMode.textContent = invincible ? 'RESTART WITH DAMAGE ON' : 'RESTART INVINCIBLE';
+  const label = document.createElement('label');
+  label.textContent = 'Mission';
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', 'Preview mission');
+  MISSIONS.forEach((mission) => select.add(new Option(mission.title, mission.id)));
+  select.value = selectedMission;
+  select.addEventListener('change', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('mission', select.value);
+    window.location.assign(url.href);
+  });
+  label.append(select);
+  const enemyLabel = document.createElement('label');
+  enemyLabel.textContent = 'Craft';
+  const enemies = document.createElement('select');
+  enemies.setAttribute('aria-label', 'Preview craft');
+  Object.keys(ENEMIES).forEach((kind) => enemies.add(new Option(kind, kind)));
+  const spawn = document.createElement('button');
+  spawn.textContent = 'SPAWN CRAFT';
+  spawn.addEventListener('click', () => { window.__AEGIS_DEBUG__?.spawnEnemy(enemies.value as EnemyKind); spawn.blur(); });
+  const isolate = document.createElement('button');
+  isolate.textContent = 'ISOLATE CRAFT';
+  isolate.title = 'Clear the field and test this craft without automatic waves or campaign rewards.';
+  isolate.addEventListener('click', () => { window.__AEGIS_DEBUG__?.previewEnemy(enemies.value as EnemyKind); isolate.blur(); });
+  enemyLabel.append(enemies);
+  const restart = document.createElement('a');
+  restart.href = window.location.href;
+  restart.textContent = 'RESTART THIS MISSION';
+  const choose = document.createElement('a');
+  choose.href = missionLabUrl(window.location.href, { ...labOptions, mission: undefined });
+  choose.textContent = 'CHOOSE MISSION / LOADOUT';
+  const exit = document.createElement('a');
+  exit.href = window.location.pathname;
+  exit.textContent = 'RETURN TO MENU';
+  const testKeys = document.createElement('p');
+  testKeys.textContent = 'TEST KEYS: 1 ARC · 2 NOVA · 3 LANCE · 4 WING · I ION · 5 SHIELD · 6 EMP · H HIT · T TRACTOR · O OVERDRIVE';
+  testKeys.className = 'preview-key-hint';
+  panel.append(summary, damageMode, restart, choose, label, enemyLabel, spawn, isolate, testKeys, exit);
+  required<HTMLElement>('game-shell').append(panel);
+}
+
 function refreshContinueButton(): void {
   ui.continue.classList.toggle('hidden', !savedCampaign || savedCampaign.phase === 'victory');
-  if (savedCampaign) ui.continue.textContent = savedCampaign.phase === 'story'
-    ? 'RESUME // STORY TRANSMISSION'
-    : savedCampaign.phase === 'mission' && savedCampaign.activeWaypoint
-      ? `RESUME // ${savedCampaign.currentMissionId?.toUpperCase()} WAYPOINT ${savedCampaign.activeWaypoint.waypointId}`
-    : `RESUME // MISSION ${savedCampaign.missionIndex + 1}`;
+  if (savedCampaign) ui.continue.textContent = campaignResumeLabel(savedCampaign);
 }
 
 const config: Phaser.Types.Core.GameConfig = {

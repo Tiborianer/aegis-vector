@@ -1,0 +1,99 @@
+{
+  "name": "Eclipse Seraph",
+  "source": "assets/seraph-proposals-v1/eclipse.blend",
+  "width": 320,
+  "height": 164,
+  "textureDensity": 2,
+  "renderDensity": 4,
+  "neutralFrame": 7,
+  "sweepRadians": 0.1,
+  "wings": [
+    {
+      "side": -1,
+      "file": "modules/seraph-wing-left.png",
+      "textureKey": "seraph-wing-left",
+      "hinge": [
+        -17.708588,
+        -12.732872
+      ],
+      "origin": [
+        0.44466066,
+        0.42236054
+      ],
+      "muzzle": [
+        -71.502619,
+        14.009385
+      ],
+      "colliders": [
+        {
+          "x": -84.366412,
+          "y": -12.456919,
+          "width": 20,
+          "height": 38
+        },
+        {
+          "x": -84.366412,
+          "y": 8.83029,
+          "width": 19,
+          "height": 35
+        },
+        {
+          "x": -71.502619,
+          "y": 8.041874,
+          "width": 21,
+          "height": 30
+        },
+        {
+          "x": -50.118666,
+          "y": -23.967788,
+          "width": 36,
+          "height": 17
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "file": "modules/seraph-wing-right.png",
+      "textureKey": "seraph-wing-right",
+      "hinge": [
+        17.708588,
+        -12.732881
+      ],
+      "origin": [
+        0.55533934,
+        0.42236048
+      ],
+      "muzzle": [
+        71.502628,
+        14.009376
+      ],
+      "colliders": [
+        {
+          "x": 84.366417,
+          "y": -12.456938,
+          "width": 20,
+          "height": 38
+        },
+        {
+          "x": 84.366417,
+          "y": 8.830275,
+          "width": 19,
+          "height": 35
+        },
+        {
+          "x": 71.502628,
+          "y": 8.041859,
+          "width": 21,
+          "height": 30
+        },
+        {
+          "x": 50.118656,
+          "y": -23.967797,
+          "width": 36,
+          "height": 17
+        }
+      ]
+    }
+  ],
+  "note": "Coordinates in logical pixels from hull center; wing canvas shares the neutral hull projection. Rotate around the recorded physical hinge."
+}

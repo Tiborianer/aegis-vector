@@ -1,6 +1,6 @@
 export type Difficulty = 'cadet' | 'pilot' | 'ace';
 export type WeaponType = 'spread' | 'missile' | 'laser' | 'drone' | 'ion';
-export type WeaponLevel = 0 | 1 | 2 | 3 | 4 | 5;
+export type WeaponLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type UpgradeType = WeaponType | 'shield';
 export type UtilityPickupType = 'repair' | 'overdrive' | 'tractor' | 'emp';
 export type PickupType = UpgradeType | UtilityPickupType;
@@ -17,17 +17,24 @@ export type EnemyKind =
   | 'phantom'
   | 'artillery'
   | 'reclaimer'
+  | 'skimmer'
+  | 'weaver'
+  | 'prism'
+  | 'leech'
   | 'razorwing'
   | 'gatekeeper'
   | 'pursuer'
   | 'carrierBoss'
   | 'warden'
+  | 'seraph'
+  | 'nullArchitect'
   | 'boss';
 export type GameMode = 'briefing' | 'playing' | 'paused' | 'complete' | 'gameover' | 'victory';
 export type DamageResult = 'ignored' | 'shield' | 'reserve' | 'hull' | 'secondWind' | 'nanites' | 'fortress' | 'phoenix' | 'destroyed';
-export type MissionId = 'coastal' | 'minefield' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought';
+export type MissionId = 'coastal' | 'minefield' | 'aurora' | 'fortress' | 'stormbreak' | 'graveyard' | 'carrierSiege' | 'dreadnought' | 'lastLight';
 export type CampaignPhase = 'briefing' | 'mission' | 'story' | 'hangar' | 'route' | 'victory';
 export type CampaignRoute = 'storm' | 'salvage';
+export type RouteRewardId = 'arc-resonator' | 'aegis-bastion';
 export type SortieModuleId = 'reserve-emp' | 'armament-scanner' | 'emergency-nanites' | 'wingman-beacon';
 export type UpgradeBranch = 'weapons' | 'defense' | 'systems';
 export type ThreatLevel = 1 | 2 | 3 | 4 | 5;
@@ -38,27 +45,40 @@ export type MissionVisualId = MissionId;
 export type StoryChapterId =
   | 'first-signal'
   | 'warden-key'
+  | 'aurora-key'
   | 'forked-truth'
   | 'stillwater-directive'
   | 'project-crown'
   | 'rook-confession'
-  | 'last-vector';
-export type StorySpeaker = 'Mara' | 'Rook' | 'ECHO-7';
+  | 'last-vector'
+  | 'homeward';
+export type StorySpeaker = 'Hana' | 'Vale' | 'ECHO-7';
 export type StoryTransition = 'dissolve' | 'comic-wipe' | 'flash' | 'push';
 export type MusicTrack =
   | 'menu'
   | 'hangar'
+  | 'story-discovery'
+  | 'story-revelation'
   | 'mission-coastal'
   | 'mission-minefield'
+  | 'mission-aurora'
   | 'mission-fortress'
+  | 'mission-stormbreak'
+  | 'mission-graveyard'
+  | 'mission-carrier-siege'
+  | 'mission-dreadnought'
+  | 'mission-last-light'
   | 'boss'
   | 'victory'
+  | 'ending'
   | 'defeat';
 export type MusicPlaybackState = 'locked' | 'loading' | 'playing' | 'unavailable';
 export type VoicePlaybackState = 'idle' | 'loading' | 'playing' | 'subtitle-only' | 'unavailable';
 export type WeaponOverdriveState = 'inactive' | 'cell' | 'reactor' | 'stacked';
 export type EnemyHitZoneRole = 'core' | 'wing' | 'weakpoint';
 export type FinalePhase = 'approach' | 'boss' | 'cleared';
+export type FinaleBossStage = 'seraph' | 'nullArchitect';
+export type FinaleBossKind = 'boss' | FinaleBossStage;
 export type MissionWaypointId = 1 | 2;
 
 export interface EnemyHitboxRect {
@@ -72,7 +92,7 @@ export interface EnemyHitboxRect {
 export type MusicLoopStrategy =
   | { mode: 'none' }
   | { mode: 'full'; crossfadeSeconds: number }
-  | { mode: 'tail'; tailSeconds: number; crossfadeSeconds: number };
+  | { mode: 'tail'; tailSeconds: number; crossfadeSeconds: number; endSeconds?: number };
 
 export interface MusicAssetDefinition {
   files: readonly string[];
@@ -110,6 +130,7 @@ export interface AudioDebugState {
 }
 
 export interface GameCheckpointSnapshot {
+  creditRemainder?: number;
   stageElapsedMs: number;
   score: number;
   kills: number;
@@ -119,6 +140,8 @@ export interface GameCheckpointSnapshot {
   damageTaken: number;
   weapons: WeaponLevels;
   shieldBaseMax: number;
+  /** Capacity granted by an earned campaign route; never added to base pickups. */
+  shieldCapacityBonus?: number;
   hull: number;
   shield: number;
   empCharges: number;
@@ -130,6 +153,7 @@ export interface GameCheckpointSnapshot {
   sortieNanitesAvailable: boolean;
   fortressRamAvailable: boolean;
   finalePhase?: FinalePhase;
+  finaleBossStage?: FinaleBossStage;
 }
 
 export interface EncounterCheckpointSnapshot {
@@ -164,6 +188,11 @@ export interface StoryPanel {
   caption: string;
   durationMs: number;
   transition: StoryTransition;
+  motion?: 'drift-left' | 'drift-right' | 'push-in' | 'pull-back';
+  bubbleSide?: 'left' | 'right';
+  location?: string;
+  shot?: 'wide' | 'insert' | 'portrait' | 'reaction' | 'over-shoulder' | 'departure';
+  focalPoint?: string;
 }
 
 export interface StoryChapter {
@@ -171,6 +200,8 @@ export interface StoryChapter {
   title: string;
   afterMission: MissionId;
   route?: CampaignRoute;
+  presentation?: 'cinematic';
+  musicTrack?: 'story-discovery' | 'story-revelation' | 'ending';
   panels: readonly StoryPanel[];
 }
 
@@ -210,7 +241,11 @@ export type UpgradeNodeId =
   | 'threat-analyzer'
   | 'salvage-router'
   | 'temporal-echo'
-  | 'fabrication-matrix';
+  | 'fabrication-matrix'
+  | 'precision-feed'
+  | 'capacitor-reservoir'
+  | 'ablative-frame'
+  | 'rapid-recovery';
 
 export interface WeaponLevels {
   spread: WeaponLevel;
@@ -238,7 +273,7 @@ export interface MissionDefinition {
 export interface UpgradeNode {
   id: UpgradeNodeId;
   branch: UpgradeBranch;
-  tier: 1 | 2 | 3 | 4 | 5 | 6;
+  tier: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   name: string;
   description: string;
   cost: number;
@@ -248,6 +283,8 @@ export interface UpgradeNode {
 export interface CombatModifiers {
   fireIntervalMultiplier: number;
   damageMultiplier: number;
+  arcDamageMultiplier: number;
+  shieldCapacityBonus: number;
   splitCapacitors: boolean;
   hunterLogic: boolean;
   overdriveReactor: boolean;
@@ -312,12 +349,16 @@ export interface MissionReport {
 }
 
 export interface CampaignSnapshot {
-  version: 1 | 2 | 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   phase: CampaignPhase;
   difficulty: Difficulty;
   missionIndex: number;
   currentMissionId?: MissionId;
+  /** First fork after Coastal: salvage = Minefield, storm = Aurora. */
+  earlyRoute?: CampaignRoute;
+  /** Independent evidence fork after Fortress: salvage = Graveyard, storm = Stormbreak. */
   route?: CampaignRoute;
+  routeReward?: RouteRewardId;
   sortieModule?: SortieModuleId;
   discoveredEnemies?: EnemyKind[];
   credits: number;
@@ -375,6 +416,7 @@ export interface GameSnapshot {
   bossName: string;
   bossHealthRatio: number;
   finalePhase?: FinalePhase;
+  finaleBossStage?: FinaleBossStage;
   threatLevel: ThreatLevel;
   chronoRemainingMs: number;
   reserveShieldAvailable: boolean;

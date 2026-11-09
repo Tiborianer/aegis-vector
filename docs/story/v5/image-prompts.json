@@ -1,0 +1,156 @@
+{
+  "version": 5,
+  "status": "generated-reviewed-and-activated-see-production-manifests",
+  "scope": "Nineteen replacement frames for four legacy chapters. Preserve IDs, shot order and duration; activate versioned paths only after visual review and verification.",
+  "approval": "User approved Hana and Vale consistently on 2026-11-01. Hana is the sole player pilot, callsign Vector. Vale extracted and concealed ECHO-7.",
+  "outputFormat": { "width": 1600, "height": 900, "aspectRatio": "16:9", "shippingFormat": "webp" },
+  "referencePolicy": "Identity references only. Make fresh compositions, never reuse, crop or collage intro-video keyframes. Attach only refs listed for each job. Other subjects from reference boards must not appear unless requested. Combine commonPrompt with the job prompt.",
+  "commonPrompt": "Use case: illustration-story. One full-bleed 16:9 photoreal cinematic science-fiction film frame for Aegis Vector. Fresh camera position and blocking, natural skin texture, physically lit metal, readable shadows, subtle anamorphic depth, restrained bloom. Not comic art or a contact sheet. Preserve approved identities, not input pose or layout. Hana is the sole player, callsign Vector: long dark curls, silver forelock, charcoal/cobalt flight suit, silver shoulders, amber buckle. Commander Vale is the older Black woman with cropped silver hair and navy asymmetric uniform. ECHO-7 is a small cyan FOUR-POINT diamond-star, never a humanoid. Kestrel: smooth silver manta fighter, black teardrop canopy, continuous swept wings, NO vertical tails, exactly TWO rounded-SQUARE blue rear engines with vertical bars. Only subjects requested in this shot. No baked text, letters, subtitles, labels, logos, watermarks, borders or graphic HUD. Abstract diegetic projections may have no writing. Main subjects within central 75 percent width and upper 75 percent height. Lower 22 percent quiet for runtime dialogue; scene still extends to every edge.",
+  "referenceLibrary": {
+    "hana": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/02_R-01_hana_primary.png",
+    "hanaCockpit": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/03_R-02_hana_cockpit.png",
+    "vale": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/04_R-03_commander_vale.png",
+    "kestrel": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/06_R-05_kestrel_detail.png",
+    "kestrelRear": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/18_R-04RS_kestrel_square_engine_rear.png",
+    "wisp": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/08_R-07_wisp_primary.png",
+    "crownCruiser": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/12_M-01_medium_cruiser.png",
+    "paleHarrow": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/13_R-08_pale_harrow.png",
+    "planet": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/14_R-09_vesper.png",
+    "aegisCarrier": "/Users/tiborbanach/Downloads/Aegis_Vector_All_Reference_Images/images/approved_reference_library/F-01_aegis_capital_command_carrier.png"
+  },
+  "sceneJobs": [
+    {
+      "chapter": "first-signal", "panelId": "first-signal-01", "n": 1,
+      "output": "story-v5/first-signal/01.webp", "durationMs": 8000,
+      "refs": ["kestrel", "kestrelRear", "wisp", "planet"],
+      "shot": "wide", "motion": "drift-right", "focalPoint": "56% 43%",
+      "prompt": "EXTREME WIDE HIGH OBLIQUE, 24mm, over a moonlit inhabited coast after combat. Tiny civilian rescue skiffs with warm cabin lights float beside a damaged sea platform. One silver Kestrel curves protectively above them, paired square blue engines visible, while two distant black forked Wisp fighters deliberately bank away through cloud. Civilians remain exposed but unharmed. The space between withdrawing enemies and vulnerable boats is the dramatic subject. Turquoise shallows, silver moon path, isolated amber embers. No fleet lineup, active dogfight or targeting graphics. Quiet relief turning into suspicion; wholly new coastal composition."
+    },
+    {
+      "chapter": "first-signal", "panelId": "first-signal-02", "n": 2,
+      "output": "story-v5/first-signal/02.webp", "durationMs": 8000,
+      "refs": ["hanaCockpit", "wisp"],
+      "shot": "over-shoulder", "motion": "push-in", "focalPoint": "56% 40%",
+      "prompt": "INTIMATE COCKPIT OVER-SHOULDER, 50mm, close behind Hana's silver-armoured right shoulder. Only one pilot: curls and silver forelock in her open-face charcoal helmet, cobalt suit trim and amber buckle. She turns toward a black forked Wisp banking away beyond the curved canopy. Small cyan four-point ECHO signal glows above a recessed console and reflects on her cheek; no readable displays. Outside is dark ocean and broken moonlit cloud, not an orbital fleet. The enemy's retreat is the unsettling moment. Tactile plausible cockpit; lower console in soft shadow."
+    },
+    {
+      "chapter": "first-signal", "panelId": "first-signal-03", "n": 3,
+      "output": "story-v5/first-signal/03.webp", "durationMs": 8000,
+      "refs": ["wisp"],
+      "shot": "insert", "motion": "pull-back", "focalPoint": "52% 42%",
+      "prompt": "MACRO RECOVERY INSERT, 85mm, shallow depth. A precise three-fingered maintenance robot claw lifts a palm-sized faceted black command core from a scorched Wisp fuselage on a recovery deck. Fractured charcoal armour retains angular enemy geometry and faint red seams. A tiny crimson light remains alive in the core. Fine salt droplets, carbon dust and falling sparks catch cyan work light; an amber beacon separates the soft background. Core and claw are the sole focal subjects. No people, giant crystal, floating interface or writing. Small tangible evidence with disproportionate significance."
+    },
+    {
+      "chapter": "first-signal", "panelId": "first-signal-04", "n": 4,
+      "output": "story-v5/first-signal/04.webp", "durationMs": 8000,
+      "refs": [],
+      "shot": "insert", "motion": "push-in", "focalPoint": "51% 42%",
+      "prompt": "PRECISE TOP-DOWN INSERT onto a dark circular diagnostic tray. A scorched black command core sits physically at its centre. Delicate crimson lattice rises only centimetres above the facets and unexpectedly opens around a small cyan FOUR-POINT ECHO diamond-star. Two old geometric patterns fit with uncanny precision. Cyan light penetrates red channels across the real core; not a flat diagram or computer desktop. Dust, worn metal and three tiny probe contacts establish scale. No numbers or letter-like symbols. Spare still composition, eerie recognition instead of spectacle; quiet unlit tray below for dialogue."
+    },
+    {
+      "chapter": "first-signal", "panelId": "first-signal-05", "n": 5,
+      "output": "story-v5/first-signal/05.webp", "durationMs": 8000,
+      "refs": ["hana", "vale", "kestrel"],
+      "shot": "over-shoulder", "motion": "drift-left", "focalPoint": "52% 40%",
+      "prompt": "LOW-ANGLE SPLIT-SPACE TWO-SHOT in a carrier maintenance hangar. Hana at left, helmet under one arm, curls with silver forelock and silver-armoured charcoal/cobalt suit. She faces a life-size TRANSLUCENT BLUE HOLOGRAM of Commander Vale on a narrow communications wall at right. Vale is the older Black woman with cropped silver hair and navy asymmetric uniform, composed but guarded. Damaged silver manta Kestrel rests in deep background. Fresh side-on staging, not the intro's central runway. Only two women, no third pilot. Emotional distance across empty deck, cool projection versus amber lamps."
+    },
+    {
+      "chapter": "first-signal", "panelId": "first-signal-06", "n": 6,
+      "output": "story-v5/first-signal/06.webp", "durationMs": 8000,
+      "refs": ["vale"],
+      "shot": "portrait", "motion": "drift-right", "focalPoint": "45% 40%",
+      "prompt": "TIGHT SIDE PROFILE of Commander Vale, 65mm, on the far side of a dim command deck. Preserve older Black face, short silver hair, navy asymmetric uniform with cobalt piping. Her near hand closes a small physical archive case while she faces a storm beyond a narrow side window. Crimson reflection disappears as its lid shuts; a faint cyan route-like arc across distant storm suggests the minefield without writing or graphic interface. No Hana, no front-on command table or intro recreation. Hidden action understated but readable. Her expression carries responsibility and withheld history, not villainy."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-01", "n": 1,
+      "output": "story-v5/warden-key/01.webp", "durationMs": 8000,
+      "refs": ["crownCruiser", "kestrel", "kestrelRear"],
+      "shot": "wide", "motion": "pull-back", "focalPoint": "53% 43%",
+      "prompt": "HIGH EXTREME WIDE looking down into a storm minefield. Broken black Warden command cruiser from the faceted CROWN cruiser family falls diagonally into deep teal cloud. Guns dark, only a concentrated crimson transmission beacon burns beside its fractured command section. Tiny dormant mines mark enormous empty space. One intact silver manta Kestrel with twin blue square engines holds a cautious turn far above. The machine spent its final power on a message, not another shot. Controlled debris, no huge fireball, no duplicate hero. Fresh steep camera angle and luminous layered clouds establish overwhelming depth."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-02", "n": 2,
+      "output": "story-v5/warden-key/02.webp", "durationMs": 8000,
+      "refs": ["hanaCockpit"],
+      "shot": "reaction", "motion": "drift-left", "focalPoint": "52% 39%",
+      "prompt": "EXTREME CLOSE-UP through Kestrel canopy of Hana's brown eye, cheek and brow beneath her OPEN-FACE charcoal helmet. Preserve approved face, natural skin, dark curls and subtle silver forelock. Rain beads on OUTSIDE glass, not her face. Abstract crimson transmission pulse reflects in glass and iris while soft cyan console light models cheek. She listens carefully, not shouting. Only one eye is focal; helmet curves and canopy reflections fall away naturally. No letters, numbers or opaque visor hiding her face. Restrained red tension against intimate blue shadow, no short-haired replacement pilot."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-03", "n": 3,
+      "output": "story-v5/warden-key/03.webp", "durationMs": 8000,
+      "refs": ["hanaCockpit"],
+      "shot": "insert", "motion": "push-in", "focalPoint": "51% 42%",
+      "prompt": "OVERHEAD COCKPIT INSERT centred on a physical recessed reader, only Hana's charcoal-gloved hands and cobalt sleeves at its edges. Small cyan FOUR-POINT ECHO diamond-star floats inside a larger crimson geometric lattice. Red structure opens a precise empty space matching ECHO's shape, showing recognition of a missing part. A small diegetic projection in a tangible cockpit, not flat graphic poster or computer desktop. Red light washes gloves; one cyan line reaches outward. No face, extra person, writing, numbers or holographic head. Quiet, intimate revelation with crisp glass and metal detail."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-04", "n": 4,
+      "output": "story-v5/warden-key/04.webp", "durationMs": 8000,
+      "refs": ["hana", "vale", "kestrel"],
+      "shot": "wide", "motion": "drift-right", "focalPoint": "52% 42%",
+      "prompt": "WIDE LOW-ANGLE HANGAR TWO-SHOT, 28mm. Hana and Vale are physically present facing each other beneath lifted wing of battle-damaged silver manta Kestrel in maintenance cradle. Hana helmetless, long dark curls and silver forelock, charcoal/cobalt suit, silver shoulders, amber buckle. Vale older Black woman, cropped silver hair, navy asymmetric uniform. Hana upright demanding truth; Vale meets her gaze. Curved Kestrel wing looms like roof with repair lights and scorched panels. No holographic people, male officer or separate Vector character. Fresh asymmetric staging, amber task light and cool deck reflections, realistic facial identity."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-05", "n": 5,
+      "output": "story-v5/warden-key/05.webp", "durationMs": 8000,
+      "refs": ["hana", "vale"],
+      "shot": "over-shoulder", "motion": "drift-left", "focalPoint": "58% 40%",
+      "prompt": "REVERSE OVER-SHOULDER behind Vale's navy/cobalt right shoulder and cropped silver hair toward Hana in the same maintenance hangar. Hana's natural face, long curls and silver forelock clear, anger shifting toward comprehension. Between them small cyan four-point ECHO signal nests in incomplete crimson lattice above a real diagnostic tray: ethical core removed from larger machine. Vale's open hand acknowledges her act, without threatening or commanding Hana. Only these two women. Shallow focus, quiet metal background, restrained cyan on skin, no readable diagram or text. Confession of extraction rather than battle briefing."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-06", "n": 6,
+      "output": "story-v5/warden-key/06.webp", "durationMs": 8000,
+      "refs": ["hana"],
+      "shot": "reaction", "motion": "pull-back", "focalPoint": "43% 40%",
+      "prompt": "QUIET SIDE-PROFILE of Hana alone on upper step of hangar maintenance stair. Long dark curls and silver forelock frame approved face; charcoal flight suit, cobalt seams, silver shoulder plate, amber buckle, helmet resting beside her. She leans toward tiny cyan four-point ECHO projection from handheld reader, processing that the enemy lost its capacity to refuse cruelty. No other person or background figure. Thoughtful and unsettled, not melodramatic. Silver curved fighter metal softly blurred behind. Cyan light on eye, warmer service light on hair, broad negative space right, lower scene quiet for dialogue."
+    },
+    {
+      "chapter": "warden-key", "panelId": "warden-key-07", "n": 7,
+      "output": "story-v5/warden-key/07.webp", "durationMs": 8000,
+      "refs": ["hana", "vale", "kestrel", "kestrelRear"],
+      "shot": "departure", "motion": "push-in", "focalPoint": "55% 42%",
+      "prompt": "WIDE REAR DEPARTURE TABLEAU in repair hangar from elevated SIDE CATWALK, not intro's central runway. Hana walks diagonally away toward waiting silver manta Kestrel, helmet under arm; curls, silver shoulders, cobalt suit identify her. Vale small and stationary in near right foreground watches. Kestrel smooth tail-free wings and exactly two rounded-SQUARE blue engines unmistakable. Past partially open blast shutter a distant fortress light glows behind layers of teal storm. No fleet parade, coordinates, text or extra pilot. Determination after revelation, amber lamps against cold blue weather, full scene to edges."
+    },
+    {
+      "chapter": "rook-confession", "panelId": "rook-confession-01", "n": 1,
+      "output": "story-v5/rook-confession/01.webp", "durationMs": 5500,
+      "refs": ["paleHarrow", "crownCruiser", "kestrel"],
+      "shot": "wide", "motion": "pull-back", "focalPoint": "57% 43%",
+      "prompt": "EXTREME WIDE AFTERMATH, low side-on camera skimming the broken hostile Bastion carrier foreground: black faceted CROWN cruiser family, NOT silver friendly carrier. Embers drift from split command spine. Far beyond, immense black spear-and-vertical-crescent Pale Harrow emerges through crimson storm, red circular core barely lit. One tiny silver Kestrel silhouette between wreck and giant. Dangerous route opened at enormous cost. No fleet formation, triumphant explosion wall, people or text. Strong scale contrast, readable charcoal silhouettes and a new oblique storm composition."
+    },
+    {
+      "chapter": "rook-confession", "panelId": "rook-confession-02", "n": 2,
+      "output": "story-v5/rook-confession/02.webp", "durationMs": 5500,
+      "refs": ["hana", "vale", "kestrel"],
+      "shot": "portrait", "motion": "push-in", "focalPoint": "50% 40%",
+      "prompt": "INTIMATE EYE-LEVEL TWO-SHOT in dim forward hangar before assault. Hana beside scorched silver Kestrel canopy, helmet in hand, curls and silver forelock loose, face steady but hurt. Life-size translucent blue COMMUNICATIONS HOLOGRAM of Vale opposite from small deck projector. Vale's older Black face and cropped silver hair clear, posture unusually unguarded, one open hand acknowledging she put ECHO in Hana's fighter without consent. Only Hana physically here. Not earlier towering communications wall composition. Close human framing, worn metal, warm emergency lamp against cool hologram. No text or extra pilot."
+    },
+    {
+      "chapter": "rook-confession", "panelId": "rook-confession-03", "n": 3,
+      "output": "story-v5/rook-confession/03.webp", "durationMs": 5500,
+      "refs": ["hanaCockpit", "paleHarrow"],
+      "shot": "over-shoulder", "motion": "push-in", "focalPoint": "55% 40%",
+      "prompt": "COCKPIT OVER-SHOULDER behind Hana's left shoulder as she prepares to approach Pale Harrow. Open-face charcoal helmet, curls, silver forelock and silver shoulder visible but secondary. Small cyan four-point ECHO signal above tangible console sends single fine route through volumetric model of black crescent dreadnought toward crimson core. Beyond canopy real giant ship waits in storm, soft and imposing. Projection has no labels, numbers or reticles. Quiet mutual commitment at personal risk, not flashy tactical dashboard. Small ECHO signal emotionally central; lower dialogue band protected."
+    },
+    {
+      "chapter": "last-vector", "panelId": "last-vector-01", "n": 1,
+      "output": "story-v5/last-vector/01.webp", "durationMs": 5500,
+      "refs": ["kestrel", "kestrelRear", "paleHarrow"],
+      "shot": "wide", "motion": "drift-right", "focalPoint": "54% 42%",
+      "prompt": "READABLE WIDE TRACKING FRAME inside Pale Harrow's colossal broken weapons-core channel. One silver manta Kestrel flies left-to-right between curved black armoured ribs, continuous tail-free wings and paired square blue engines intact. Cracked crimson energy conduits recede behind, controlled orange vent eruptions, not full-screen fireball. Narrow opening to blue planet far ahead. Kestrel holds exposed transmission line, NOT destroying entire dreadnought. Silver ally against black hostile architecture. Fresh interior view, coherent scale, no HUD, text, duplicate fighter or malformed wings."
+    },
+    {
+      "chapter": "last-vector", "panelId": "last-vector-02", "n": 2,
+      "output": "story-v5/last-vector/02.webp", "durationMs": 5500,
+      "refs": ["kestrel", "paleHarrow", "planet"],
+      "shot": "wide", "motion": "pull-back", "focalPoint": "55% 41%",
+      "prompt": "REVELATORY ORBITAL WIDE beneath immense spear-and-crescent Pale Harrow. Small silver Kestrel holds near damaged central core. Fine brilliant cyan stream bridges fighter to dreadnought, branching gently through formerly crimson channels: conscience returns, not weapon impact. Dreadnought guns turn away from living blue-green planet below; red light dims. Black ship remains intact and scarred, NOT exploding or sacrificing itself. Tiny scale, immense change. Subtle four-point ECHO impression where stream meets core, not giant logo. No people, fleet tableau, words or UI; readable physical metal in dawn rim light."
+    },
+    {
+      "chapter": "last-vector", "panelId": "last-vector-03", "n": 3,
+      "output": "story-v5/last-vector/03.webp", "durationMs": 5500,
+      "refs": ["hanaCockpit", "paleHarrow"],
+      "shot": "departure", "motion": "drift-left", "focalPoint": "51% 41%",
+      "prompt": "WIDE COCKPIT DEPARTURE from behind and beside Hana, past silver shoulder through Kestrel canopy. Approved curly hair, silver forelock and open-face helmet in profile. Storm parts into narrow cold-blue corridor. Far to side now-quiet black crescent Pale Harrow holds with subdued cyan rather than aggressive red core. Small four-point ECHO signal and single luminous arc over physical console indicate final route without words or diagrams. Corridor end remains obscured to preserve next mission's boss reveal. Relief tempered by final duty, not ending celebration. No second pilot or commander in cockpit."
+    }
+  ]
+}
