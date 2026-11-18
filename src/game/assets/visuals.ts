@@ -1,4 +1,5 @@
 import type { EnemyKind, GraphicsQuality, MissionId } from '../simulation/types';
+import { readPlaytestMode } from '../testing/playtestMode';
 
 export type VisualStyle = 'classic' | 'dimensional';
 export const VISUAL_STYLE_KEY = 'aegis-vector-visual-style-v2';
@@ -28,11 +29,7 @@ export const environmentAsset = (mission: MissionId): string => `graphics-v2/env
 export const shipKey = (kind: ShipKind): string => `dimensional-ship-${kind}`;
 export const surfaceKey = (mission: MissionId): string => `dimensional-surface-${mission}`;
 export const CLOUD_KEY = 'dimensional-cirrus';
-export const isGraphicsPreview = (query: string): boolean => {
-  const params = new URLSearchParams(query);
-  // The Mission Lab lobby is save-isolated before a mission is launched too.
-  return params.get('lab') === '1' || (params.get('debug') === '1' && params.get('graphics') === '1');
-};
+export const isGraphicsPreview = (query: string): boolean => readPlaytestMode(query).graphics;
 
 /** The approved artwork is fixed. Retain the old resolver signature so stale
  * links/preferences are harmless, without reading or rewriting any saved data.

@@ -3,7 +3,8 @@ import './styles.css';
 import './styles/campaignMap.css';
 import './styles/missionLab.css';
 import { mountMissionLab } from './ui/missionLab';
-import { createMissionLabCampaign, isMissionLab, missionLabUrl, readMissionLabOptions } from './game/testing/missionLab';
+import { createMissionLabCampaign, missionLabUrl, readMissionLabOptions } from './game/testing/missionLab';
+import { readPlaytestMode } from './game/testing/playtestMode';
 import { renderCampaignMap } from './ui/campaignMap';
 import { campaignResumeLabel, missionLaunchLabel } from './ui/campaignResume';
 import { SoundEngine, STORY_SCORE_STATUS, MISSION_SCORE_STATUS, type RadioCue, type SoundCue, type SoundRequest } from './audio/SoundEngine';
@@ -35,7 +36,6 @@ import type {
 } from './game/simulation/types';
 import { BootScene } from './phaser/scenes/BootScene';
 import { BattleScene } from './phaser/scenes/BattleScene';
-import { isGraphicsPreview } from './game/assets/visuals';
 import { MISSIONS } from './game/content/missions';
 import { ENEMIES } from './game/content/balance';
 import { EndingSequence } from './ui/EndingSequence';
@@ -49,9 +49,10 @@ import {
 
 const CAMPAIGN_SAVE_KEY = 'aegis-vector-campaign-v1';
 const STORY_ARCHIVE_KEY = 'aegis-vector-story-archive-v1';
-const endingPreview = !isMissionLab(window.location.search) && new URLSearchParams(window.location.search).get('debug') === '1' && new URLSearchParams(window.location.search).get('ending') === '1';
-const graphicsPreview = isGraphicsPreview(window.location.search) || endingPreview;
-const missionLab = isMissionLab(window.location.search);
+const playtest = readPlaytestMode(window.location.search);
+const missionLab = import.meta.env.DEV && playtest.lab;
+const endingPreview = import.meta.env.DEV && playtest.ending;
+const graphicsPreview = import.meta.env.DEV && (playtest.graphics || endingPreview);
 let labOptions = readMissionLabOptions(window.location.search);
 let isolatedCraftPreview = false;
 
@@ -204,7 +205,7 @@ const heldGameplayKeys = new Set<string>();
 let transitionInputLatched = false;
 let savedCampaign = graphicsPreview ? undefined : loadCampaign();
 let campaign = new CampaignModel(savedCampaign);
-const debugMode = missionLab || new URLSearchParams(window.location.search).get('debug') === '1';
+const debugMode = import.meta.env.DEV && playtest.debug;
 const quickDebugMode = !missionLab && debugMode && new URLSearchParams(window.location.search).get('quick') === '1';
 const collisionDebugMode = debugMode && new URLSearchParams(window.location.search).get('collisionDebug') === '1';
 const requestedDebugTrack = new URLSearchParams(window.location.search).get('audioTrack');
@@ -217,9 +218,15 @@ const debugInitialTrack = debugMode && [
   : 'menu';
 const audio = new SoundEngine();
 
-required<HTMLButtonElement>('mission-lab-button').addEventListener('click', () => {
-  window.location.assign(missionLabUrl(window.location.href));
-});
+if (import.meta.env.DEV) {
+  const labButton = document.createElement('button');
+  labButton.id = 'mission-lab-button';
+  labButton.type = 'button';
+  labButton.className = 'secondary-button';
+  labButton.innerHTML = 'MISSION LAB <small>TEST ANY LEVEL · SAVES OFF</small>';
+  labButton.addEventListener('click', () => window.location.assign(missionLabUrl(window.location.href)));
+  required<HTMLElement>('manual-button').before(labButton);
+}
 const labLauncher = missionLab ? mountMissionLab(required<HTMLElement>('game-shell'), labOptions, (options) => {
   if (!ready || !options.mission) return;
   labOptions = options;
@@ -1635,30 +1642,32 @@ const config: Phaser.Types.Core.GameConfig = {
 
 new Phaser.Game(config);
 
-Object.defineProperty(window, '__AEGIS_LAST_STATE__', {
-  get: () => latestSnapshot,
-  configurable: true,
-});
-Object.defineProperty(window, '__AEGIS_CAMPAIGN__', {
-  get: () => campaign.snapshot(),
-  configurable: true,
-});
-Object.defineProperty(window, '__AEGIS_AUDIO__', {
-  get: () => audio.getDebugState(),
-  configurable: true,
-});
-Object.defineProperty(window, '__AEGIS_INTRO__', {
-  get: () => ({
-    state: introPlaybackState,
-    currentTime: ui.introVideo.currentTime,
-    duration: ui.introVideo.duration,
-    paused: ui.introVideo.paused,
-    videoWidth: ui.introVideo.videoWidth,
-    videoHeight: ui.introVideo.videoHeight,
-    errorCode: ui.introVideo.error?.code,
-  }),
-  configurable: true,
-});
+if (import.meta.env.DEV) {
+  Object.defineProperty(window, '__AEGIS_LAST_STATE__', {
+    get: () => latestSnapshot,
+    configurable: true,
+  });
+  Object.defineProperty(window, '__AEGIS_CAMPAIGN__', {
+    get: () => campaign.snapshot(),
+    configurable: true,
+  });
+  Object.defineProperty(window, '__AEGIS_AUDIO__', {
+    get: () => audio.getDebugState(),
+    configurable: true,
+  });
+  Object.defineProperty(window, '__AEGIS_INTRO__', {
+    get: () => ({
+      state: introPlaybackState,
+      currentTime: ui.introVideo.currentTime,
+      duration: ui.introVideo.duration,
+      paused: ui.introVideo.paused,
+      videoWidth: ui.introVideo.videoWidth,
+      videoHeight: ui.introVideo.videoHeight,
+      errorCode: ui.introVideo.error?.code,
+    }),
+    configurable: true,
+  });
+}
 
 if (debugMode) {
   window.setInterval(() => {

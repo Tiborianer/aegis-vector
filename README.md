@@ -33,7 +33,9 @@ There are no graphics or shield-style selectors. Old saved preferences and the
 `visuals` / `shield` URL flags no longer change the presentation. Existing backup
 art is retained only for automatic missing-asset recovery, without changing combat rules.
 
-## Mission Lab — independent level testing
+## Local development only: Mission Lab
+
+The published game has no God mode or level selector. New pilots begin at Coastal Intercept; returning pilots can resume their save. The two in-story route choices remain part of the campaign. Old testing links open the ordinary title screen on the published version. The controls below require `npm run dev`.
 
 Choose **MISSION LAB** from the title screen, or append `?lab=1` to the local URL
 (currently `http://127.0.0.1:4176/?lab=1`). All nine locations, including both

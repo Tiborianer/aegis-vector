@@ -48,6 +48,16 @@ test('web staging fails for missing or empty active files and broken HTML refere
   await assert.rejects(stageWeb({ projectRoot }), /missing or unsupported bundles/);
 });
 
+test('web staging rejects private test controls in the public page or a game bundle', async (t) => {
+  const { projectRoot, put } = await fixture(t);
+  const html = await readFile(path.join(projectRoot, 'dist/index.html'), 'utf8');
+  await put('dist/index.html', html + '<button id="mission-lab-button">Mission Lab</button>');
+  await assert.rejects(stageWeb({ projectRoot }), /playtest controls.*index.html/);
+  await put('dist/index.html', html);
+  await put('dist/assets/index-1.js', 'window.__AEGIS_DEBUG__ = {}');
+  await assert.rejects(stageWeb({ projectRoot }), /playtest controls.*index-1.js/);
+});
+
 test('web staging rejects symlinked bundles', async (t) => {
   const { projectRoot, put } = await fixture(t);
   await put('private-key', 'not-a-real-secret');

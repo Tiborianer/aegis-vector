@@ -3,7 +3,7 @@ import type { RadioCue, SoundCue } from '../../audio/SoundEngine';
 import { ASSET_KEYS } from '../../game/assets/manifest';
 import { HOSTILE_PROJECTILE_ART } from '../../game/assets/hostileProjectiles';
 import { bankFrame, easeBank, isGraphicsPreview, NEUTRAL_BANK, shipKey, shipTextureDensity, visualLateralSpeed, type ShipKind } from '../../game/assets/visuals';
-import { isMissionLab, readMissionLabOptions } from '../../game/testing/missionLab';
+import { readPlaytestMode } from '../../game/testing/playtestMode';
 import { DimensionalEnvironment } from '../view/DimensionalEnvironment';
 import { ClassicSpaceEnvironment } from '../view/ClassicSpaceEnvironment';
 import { PlayerShieldView } from '../view/PlayerShieldView';
@@ -223,10 +223,9 @@ export class BattleScene extends Phaser.Scene {
 
   create(): void {
     const query = new URLSearchParams(window.location.search);
-    this.debugMode = query.get('debug') === '1' || isMissionLab(window.location.search);
-    this.godMode = isMissionLab(window.location.search)
-      ? readMissionLabOptions(window.location.search).godMode
-      : this.debugMode && query.get('god') === '1';
+    const playtest = readPlaytestMode(window.location.search);
+    this.debugMode = import.meta.env.DEV && playtest.debug;
+    this.godMode = import.meta.env.DEV && playtest.god;
     this.hitboxDebug = this.debugMode && query.get('collisionDebug') === '1';
     this.graphicsQuality = this.resolveGraphicsQuality();
     this.dimensional = this.registry.get('visualStyle') === 'dimensional';
@@ -250,16 +249,18 @@ export class BattleScene extends Phaser.Scene {
       this.playerShield?.destroy();
     });
 
-    window.__AEGIS_DEBUG__ = {
-      getState: () => this.model.snapshot(),
-      damagePlayer: () => this.damagePlayer(true),
-      grantPickup: (type) => this.collectPickup(type),
-      spawnEnemy: (kind) => { this.spawnEnemy(kind, WORLD_WIDTH / 2, 110, 0); },
-      previewEnemy: (kind) => this.previewEnemy(kind),
-      spawnBoss: () => this.spawnBoss(),
-      activateEmp: () => this.activateEmp(),
-      completeMission: () => this.debugCompleteMission(),
-    };
+    if (import.meta.env.DEV && this.debugMode) {
+      window.__AEGIS_DEBUG__ = {
+        getState: () => this.model.snapshot(),
+        damagePlayer: () => this.damagePlayer(true),
+        grantPickup: (type) => this.collectPickup(type),
+        spawnEnemy: (kind) => { this.spawnEnemy(kind, WORLD_WIDTH / 2, 110, 0); },
+        previewEnemy: (kind) => this.previewEnemy(kind),
+        spawnBoss: () => this.spawnBoss(),
+        activateEmp: () => this.activateEmp(),
+        completeMission: () => this.debugCompleteMission(),
+      };
+    }
 
     event('aegis:ready');
     this.emitState(true);
@@ -443,7 +444,7 @@ export class BattleScene extends Phaser.Scene {
       this.events.off(Phaser.Scenes.Events.PAUSE, releasePause);
       this.events.off(Phaser.Scenes.Events.SLEEP, releasePause);
     });
-    if (this.debugMode) {
+    if (import.meta.env.DEV && this.debugMode) {
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE).on('down', () => this.collectPickup('spread'));
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO).on('down', () => this.collectPickup('missile'));
       this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE).on('down', () => this.collectPickup('laser'));
@@ -517,7 +518,10 @@ export class BattleScene extends Phaser.Scene {
     if (!config) return;
     // The lab launches in place to retain the user's audio activation. Its
     // checkbox can change between sorties, without recreating this scene.
-    if (isMissionLab(window.location.search)) this.godMode = readMissionLabOptions(window.location.search).godMode;
+    if (import.meta.env.DEV) {
+      const playtest = readPlaytestMode(window.location.search);
+      if (playtest.lab) this.godMode = playtest.god;
+    }
     this.isolatedCraftPreview = false;
     this.missionRun += 1;
     this.time.removeAllEvents();
@@ -3080,7 +3084,7 @@ export class BattleScene extends Phaser.Scene {
 
   private damagePlayer(forced = false, source: 'projectile' | 'ram' | 'hazard' = 'projectile'): void {
     this.damageAttempts += 1;
-    if (this.godMode && !forced) {
+    if (import.meta.env.DEV && this.godMode && !forced) {
       this.lastDamageResult = 'god-mode';
       return;
     }
@@ -3316,7 +3320,7 @@ export class BattleScene extends Phaser.Scene {
     if (!force) return;
     this.lastHudAt = this.combatNow;
     event('aegis:state', this.model.snapshot());
-    if (this.debugMode) {
+    if (import.meta.env.DEV && this.debugMode) {
       const enemies: Array<{ kind: EnemyKind; x: number; y: number; state: string; combatReady: boolean; reactors?: number[];
         turrets?: Array<ReturnType<typeof siegeTurretPose> & { health: number; maxHealth: number }> }> = [];
       this.enemies.children.each((child) => {

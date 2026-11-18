@@ -1,4 +1,5 @@
 import { WEAPON_MAX_LEVEL } from '../content/balance';
+import { readPlaytestMode } from './playtestMode';
 import { MISSIONS } from '../content/missions';
 import { CampaignModel } from '../simulation/CampaignModel';
 import type { CampaignSnapshot, Difficulty, MissionId, WeaponLevels } from '../simulation/types';
@@ -16,7 +17,7 @@ const missionId = (value: unknown): MissionId | undefined => MISSIONS.find(({ id
 const difficulty = (value: unknown): Difficulty => value === 'cadet' || value === 'ace' ? value : 'pilot';
 const loadout = (value: unknown): MissionLabLoadout => value === 'starter' || value === 'max' ? value : 'combat';
 
-export const isMissionLab = (query: string): boolean => new URLSearchParams(query).get('lab') === '1';
+export const isMissionLab = (query: string): boolean => readPlaytestMode(query).lab;
 
 /** Lab configuration is URL-scoped: it never reads or modifies campaign storage. */
 export function readMissionLabOptions(query: string): MissionLabOptions {

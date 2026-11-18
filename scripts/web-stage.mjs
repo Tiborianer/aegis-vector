@@ -27,6 +27,12 @@ export async function stageWeb({ projectRoot, buildRoot = path.join(projectRoot,
       if (depth === segments.length && (!info.isFile() || !info.size)) throw new Error(`Missing or empty web release asset: ${file}`);
     }
   }
+  // Fail before copying anything if developer controls reappear in a public entry point.
+  const devControls = /mission-lab-button|MISSION LAB \/\/ CONTROLS|GOD MODE ON \/\/ SAVES OFF|__AEGIS_DEBUG__/;
+  for (const file of ['index.html', ...bundles.filter((name) => name.endsWith('.js'))]) {
+    const code = file === 'index.html' ? html : await readFile(path.join(buildRoot, file), 'utf8');
+    if (devControls.test(code)) throw new Error(`Development playtest controls found in public ${file}.`);
+  }
   await mkdir(stageRoot, { recursive: true });
   let bytes = 0;
   for (const file of files) {

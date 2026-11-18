@@ -16,7 +16,8 @@ GitHub Actions uploads only `web-dist`, never the unfiltered `dist` or `public` 
 
 - Confirm the workflow for the intended commit finishes successfully.
 - Fetch the live `release.json` and compare its revision to the commit; a successful push alone is not proof of deployment.
-- Check the public menu, opening video, gameplay, pause/resume and Mission Lab using the deployed URL.
+- Check the public menu, opening video, ordinary damage, pause/resume and saved campaign on the deployed URL. The route map shows the campaign, but is not a level launcher.
+- Open old `?lab=1&mission=lastLight&god=1` and `?debug=1&graphics=1&mission=fortress&god=1` bookmarks: both must show the normal menu, with no Mission Lab, skip controls or invincibility. Test the private Mission Lab separately with `npm run dev`.
 - Verify current media respond successfully and the intro supports byte-range playback.
 - Check a retained old voice and an internal review URL return 404 in the new website.
 - Keep browser smoke-test scope separate from a full campaign/platform acceptance test.
