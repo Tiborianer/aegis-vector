@@ -102,8 +102,9 @@ for (const [kind, spec] of Object.entries(breakups)) {
 }
 const wrecks = JSON.parse(readFileSync(new URL('../src/game/assets/wreck-ships.json', import.meta.url), 'utf8'));
 const enemies = ships.filter(kind => !['player', 'drone', 'droneMk2'].includes(kind));
-const covered = [...Object.keys(breakups), ...Object.keys(wrecks)];
+const covered = [...Object.keys(breakups), ...Object.keys(wrecks).filter(kind => kind !== 'player')];
 assert(covered.length === enemies.length && enemies.every(kind => covered.includes(kind)), 'every enemy must have exactly one destruction');
+assert(wrecks.player, 'missing player breakup');
 let wreckPoses = 0;
 for (const group of new Set([...Object.values(wrecks), 'plumes'])) {
   const prefix = 'breakups/wreck-' + group;
@@ -121,6 +122,10 @@ for (const group of new Set([...Object.values(wrecks), 'plumes'])) {
   for (const kind of members) {
     const d = meta.ships[kind];
     assert(d?.steps === 12 && d.parts.length >= 8 && d.density > 0 && d.duration > 0, kind + ': solid assemblies');
+    if (kind === 'player') {
+      assert(d.parts.filter(p => p.role === 'capsule').length === 1 && d.events.every(e => e.role !== 'capsule'),
+        'player must eject one complete cockpit from its collar');
+    }
     let previous = -1;
     for (const beat of d.events) {
       assert(beat.time > previous && beat.time + beat.life <= d.duration && beat.size > 0
@@ -191,4 +196,4 @@ if (verifySources) for(const kind of ships) {
   assert(json.meshes?.length > 3 && json.materials?.length > 2, `${kind}: missing model geometry/materials`);
 }
 assert(total < 20_000_000, 'graphics payload exceeds 20 MB');
-console.log(`Graphics verified: ${ships.length} real-model atlases, ${covered.length} enemy breakups (${wreckPoses} debris and plume poses), ${ships.length*16+breakupFrames} decoded transparent frames, 9 mission mappings (8 unique surfaces) + cirrus; ${(total/1024/1024).toFixed(2)} MiB.`);
+console.log(`Graphics verified: ${ships.length} real-model atlases, ${covered.length} enemy breakups plus the player (${wreckPoses} debris and plume poses), ${ships.length*16+breakupFrames} decoded transparent frames, 9 mission mappings (8 unique surfaces) + cirrus; ${(total/1024/1024).toFixed(2)} MiB.`);

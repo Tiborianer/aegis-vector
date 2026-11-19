@@ -1,4 +1,5 @@
 {
+  "player": "kestrel",
   "elite": "fighters", "charger": "fighters", "phantom": "fighters",
   "skimmer": "fighters", "weaver": "fighters", "prism": "fighters", "leech": "fighters",
   "bulwark": "specialists", "artillery": "specialists", "razorwing": "specialists", "pursuer": "specialists", "warden": "specialists",

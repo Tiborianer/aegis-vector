@@ -37,7 +37,7 @@ test('packaging allowlist copies only dist and the three shell files, never proj
 
 test('desktop asset contract keeps current media and excludes retained legacy originals', () => {
   assert.equal(new Set(DESKTOP_PUBLIC_ASSETS).size, DESKTOP_PUBLIC_ASSETS.length);
-  assert.equal(DESKTOP_PUBLIC_ASSETS.length, 194);
+  assert.equal(DESKTOP_PUBLIC_ASSETS.length, 196);
   for (const file of ['audio/voice/shield-down.wav', 'audio/cinematic/aegis-vector-intro-score-v1.wav',
     'audio/cinematic/aegis-vector-battle-starts-now-v1.wav', 'cinematics/keyframes/scene-05-end.webp',
     'story/last-vector/last-vector-01.webp', 'story-v2/first-signal/first-signal-01.jpg',

@@ -15,6 +15,12 @@ class Beat:
 # A beat's role is both the ignition site and the release time for that family of parts.
 # Structure and other unlisted parts progressively follow the nearest failure.
 PROFILES = {
+    'player': (1.23, [
+        Beat(.03, 'Struck wing root tears', 'skin', .21),
+        Beat(.16, 'Cockpit collar releases', 'collar', .12, 'ion'),
+        Beat(.31, 'Nacelle vents', 'drive', .24, 'ion'),
+        Beat(.54, 'Center keel ruptures', 'core', .28),
+    ]),
     'elite': (1.18, [Beat(.03,'Emitter seam','reactor',.25,'field'), Beat(.26,'Drive flare','drive',.22), Beat(.40,'Keel fracture','core',.25)]),
     'charger': (1.03, [Beat(.02,'Leading edge tears','skin',.25), Beat(.17,'Drive vents','drive',.24,'ion'), Beat(.32,'Spine snaps','core',.21)]),
     'bulwark': (1.49, [Beat(.02,'Armor detaches','skin',.20), Beat(.26,'Side pod ruptures','weapon',.24), Beat(.51,'Reactor fails','reactor',.27,'field'), Beat(.70,'Hull opens','core',.25)]),

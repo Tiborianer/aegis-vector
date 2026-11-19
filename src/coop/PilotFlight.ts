@@ -11,6 +11,7 @@ export class PilotFlight {
   contrails!: Phaser.GameObjects.Graphics;
   drones: Phaser.GameObjects.Sprite[] = [];
   marker?: Phaser.GameObjects.Text;
+  escapePod?: Phaser.GameObjects.Image;
   stripes?: Phaser.GameObjects.Graphics;
   playerBank = 0;
   nextPrimaryAt = 0;

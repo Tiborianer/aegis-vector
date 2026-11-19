@@ -24,7 +24,6 @@ CATALOG = json.loads((ROOT / 'src/game/assets/wreck-ships.json').read_text())
 assert set(CATALOG) == set(PROFILES)
 ARGS = sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else []
 STEPS = 12
-Z180 = Quaternion((0, 0, 1), math.pi)
 FPS = 30
 
 
@@ -103,6 +102,22 @@ def assignments(kind, label, c, span, length):
         bank = (' inner' if abs(x)<1.5 else ' middle' if abs(x)<2.2 else ' outer') if cap else ''
         if kind in ('weaver','prism') and abs(x)<.4: side = 'Axial'
         return one('drive:'+side+bank+' engine')
+    if kind == 'player':
+        if label in ('Smoked blue cockpit glass', 'Canopy spine'):
+            return one('capsule:Cockpit cell')
+        if label.startswith('Wing'):
+            return bands(['skin:'+side+' wing root', 'skin:'+side+' outer wing'],
+                         (1 if x>0 else -1,.12,.02), [.58*span])
+        if label == 'Tail stabilizer':
+            return one('fin:'+side+' stabilizer')
+        if label == 'Hull radiator louvre':
+            return one('core:Aft fairing' if y < -.44 else 'collar:Canopy collar')
+        if label == 'Dorsal shell':
+            return bands(['core:Aft fairing', 'collar:Canopy collar', 'capsule:Cockpit cell', 'core:Nose cone'],
+                         (0,1,0), [-.44,-.14,1.31])
+        if label == 'Dorsal center ridge':
+            return bands(['core:Aft fairing','collar:Canopy collar','core:Nose cone'], (0,1,0), [-.44,1.31])
+        return spine()
     if kind == 'seraph':
         mobile = label.startswith(('Eclipse','Wing '))
         if mobile:
@@ -172,14 +187,16 @@ def build(kind):
     out=OUT/kind;out.mkdir(parents=True,exist_ok=True)
     bpy.ops.import_scene.gltf(filepath=str(MODELS/(kind+'.glb')))
     rig=bpy.data.objects['HERO_'+kind];rig.rotation_mode='XYZ'
+    heading = 0 if kind == 'player' else math.pi
+    facing = Quaternion((0,0,1), heading)
     originals=list(rig.children);points=[]
     view=cam.matrix_world.inverted().to_3x3()
     for bank in spec['angles']:
-        rig.rotation_euler=(0,math.radians(bank),math.pi);bpy.context.view_layer.update()
+        rig.rotation_euler=(0,math.radians(bank),heading);bpy.context.view_layer.update()
         points.extend(view @ (o.matrix_world @ Vector(pt)) for o in originals for pt in o.bound_box)
     span_cam=2.24*max(max(abs(p.x) for p in points),max(abs(p.y) for p in points)*w/h)
     ppu=w/span_cam
-    cam.data.ortho_scale=span_cam*2.6
+    cam.data.ortho_scale=span_cam*max(1,h/w)*2.6
     scene.render.resolution_x,scene.render.resolution_y=w*4,h*4
     rig.rotation_euler=(0,0,0);bpy.context.view_layer.update()
     corners=[o.matrix_world @ Vector(pt) for o in originals for pt in o.bound_box]
@@ -196,7 +213,7 @@ def build(kind):
             part=cut_section(m,o.name+' | '+name,planes,cut)
             if part: groups.setdefault(name,[]).append(obj(part.name,part))
         bpy.data.meshes.remove(m);bpy.data.objects.remove(o,do_unlink=True)
-    rig.rotation_euler.z=math.pi
+    rig.rotation_euler.z=heading
     density=1.55 if kind in ('seraph','nullArchitect') else 1.15
     parts=[];nodes=[];centers=[];radii=[]
     for i,(name,meshes) in enumerate(sorted(groups.items())):
@@ -207,13 +224,13 @@ def build(kind):
         for mesh in meshes: mesh.parent=pivot;mesh.location=-center
         projected=[]
         for angle in spec['angles']:
-            v=view @ (Z180 @ (Quaternion((0,1,0),math.radians(angle)) @ center))
+            v=view @ (facing @ (Quaternion((0,1,0),math.radians(angle)) @ center))
             projected.append([round(v.x*ppu,2),round(-v.y*ppu,2)])
         radius=max((v-center).length for v in vertices)*ppu
         arm=0
         if kind=='seraph' and role in ('skin','weapon','hinge') and 'fixed' not in label:
             arm=-1 if projected[7][0]<0 else 1
-        parts.append(dict(name=label,role=role,anchors=projected,depth=round((view@(Z180@center)).z,3),arm=arm,paths=[]))
+        parts.append(dict(name=label,role=role,anchors=projected,depth=round((view@(facing@center)).z,3),arm=arm,paths=[]))
         centers.append(center);nodes.append(pivot);radii.append(radius)
     events=[]
     for beat in beats:
@@ -248,14 +265,14 @@ def build(kind):
     right,up,eye=(cam.matrix_world.to_quaternion()@Vector(v) for v in ((1,0,0),(0,1,0),(0,0,1)))
     for node,center,p in zip(nodes,centers,parts):
         delay,vx,vy,spin,roll=p['paths'][0];dt=duration-delay
-        flow=Z180.inverted()@((right*vx-up*vy)/ppu)
+        flow=facing.inverted()@((right*vx-up*vy)/ppu)
         node['release_seconds']=delay
         node['assembly_role']=p['role']
         key(node,'location',center,delay*FPS);key(node,'location',center+flow*dt,duration*FPS)
         node.rotation_mode='QUATERNION'
         for f in range(math.floor(delay*FPS),scene.frame_end+1,2):
             t=max(0,f/FPS-delay)
-            q=Z180.inverted()@Quaternion(eye,-spin*t)@Z180@Quaternion((0,1,0),roll*t)
+            q=facing.inverted()@Quaternion(eye,-spin*t)@facing@Quaternion((0,1,0),roll*t)
             key(node,'rotation_quaternion',q,f)
         anim=node.animation_data
         for fc in anim.action.layers[0].strips[0].channelbag(anim.action_slot).fcurves:
@@ -290,7 +307,7 @@ def build(kind):
         px=((i%cols+.5)*tile-render_w*.5)/(ppu*density);py=(render_h*.5-(i//cols+.5)*tile)/(ppu*density)
         node.location=right*px+up*py
     for k in range(STEPS):
-        q=Z180@Quaternion((0,1,0),math.tau*k/STEPS)
+        q=facing@Quaternion((0,1,0),math.tau*k/STEPS)
         for node in nodes:node.rotation_quaternion=q
         scene.render.filepath=str(out/f'roll-{k:02d}.png')
         bpy.ops.render.render(write_still=True)

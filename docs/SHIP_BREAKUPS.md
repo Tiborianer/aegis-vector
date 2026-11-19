@@ -1,6 +1,14 @@
-# Enemy ship destruction
+# Ship destruction
 
 All 24 campaign enemies break into parts from their original fleet models. The fatal hit determines which side opens first. The wreck inherits the ship’s bank, rotation, scale and flight velocity. Debris has no collision body. Kill credit, salvage, drops and mission progress resolve on the original hit.
+
+## Player fighter and crew rescue
+
+The Kestrel breaks into 15 assemblies over 1.23 seconds. The struck wing opens first, the cockpit collar releases, a drive nacelle vents and the central keel splits. The cockpit stays in one piece. Both pilots use the same geometry and retain their fighter’s bank and flight colors.
+
+A solo defeat or squad wipe lets the wreck finish before the results appear. With a wingmate still flying, the cockpit settles at the rescue beacon. Stay within 88 world pixels for 1.5 continuous seconds to recover the pilot. A downed pilot who has already used their field rescue returns at the next waypoint. The rescue position, timer and collision checks belong to the flight simulation. The wreck and cockpit are visual objects.
+
+Open `assets/graphics-v2/destruction/Player-breakup.blend` in the local model library to edit the scene. Rebuild the player art with the moving-assembly commands below, using `player` for the Blender ship ID and `kestrel` for the atlas.
 
 ## Small ship animations
 
@@ -68,7 +76,7 @@ The public PNG and JSON pairs live in `public/graphics-v2/breakups/`. The produc
 
 ### Moving assemblies and boss stages
 
-The remaining 17 editable Blender scenes use the same source GLBs. Each has 11 to 22 structural assemblies and timeline markers for each failure. The game draws twelve lit orientations per assembly. It chooses the initial position from the live bank, applies the authored release for the impact side, and advances the tumbling parts and their sounds on one scene clock.
+The player and the remaining 17 enemies use the same source GLBs. Each editable Blender scene has 11 to 22 structural assemblies and timeline markers for each failure. The game draws twelve lit orientations per assembly. It chooses the initial position from the live bank, applies the authored release for the impact side, and advances the tumbling parts and their sounds on one scene clock.
 
 Edit the ordered stage names, timings and effects in `scripts/wreck_profiles.py`. The source mesh grouping and fracture geometry live in `scripts/render-wreck-parts.py`. Use the original neutral ship art in `public/graphics-v2/ships/` when checking how overlapping pieces fit. The packer also uses those images to order the pieces front to back.
 
@@ -79,4 +87,4 @@ python3 scripts/pack-wreck-parts.py
 
 The first command renders the full fleet and the shared plumes to `work/wreck-parts/`. After a full build, a ship can be rebuilt individually. For example, append `-- seraph` to the Blender command, then pass `finale` to the packer. Use `-- --scene-only seraph` to update just the scene or `-- --metal seraph` for a Metal render on a Mac. Ship-to-atlas assignments are in `src/game/assets/wreck-ships.json`.
 
-Five WebP/JSON pairs ship under `public/graphics-v2/breakups/`. The four fleet atlases contain the assemblies. The shared effects atlas contains fire, field and ion plumes and a spark. `npm run build` verifies coverage of the complete enemy roster, atlas hashes, frame bounds, bank anchors and stage timing. To review a change, fire from both sides in Mission Lab, then check the transition from Seraph to Crown in Last Light.
+Six WebP/JSON pairs ship under `public/graphics-v2/breakups/`. Four enemy atlases and one Kestrel atlas contain the assemblies. The shared effects atlas contains fire, field and ion plumes and a spark. `npm run build` verifies coverage of the complete enemy roster, atlas hashes, frame bounds, bank anchors and stage timing. To review a change, fire from both sides in Mission Lab, then check the transition from Seraph to Crown in Last Light.

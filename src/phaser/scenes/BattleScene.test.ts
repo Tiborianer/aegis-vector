@@ -14,6 +14,8 @@ vi.mock('phaser', () => ({ default: { Scene: class {}, BlendModes: { ADD: 1 }, C
   },
 } } }));
 import { BattleScene } from './BattleScene';
+import { PilotFlight } from '../../coop/PilotFlight';
+import * as wrecks from '../view/fleetWreck';
 import { getMissionById } from '../../game/content/missions';
 import { buildCombatModifiers } from '../../game/content/upgrades';
 import { applyRouteReward } from '../../game/content/routeRewards';
@@ -409,7 +411,7 @@ describe('combat runtime contracts without rendering', () => {
         installStartViews(scene);
         const { advance } = installCombatLoop(scene);
         const surge = { scale: 1, alpha: 1, setDepth: () => surge, setStrokeStyle: () => surge, setBlendMode: () => surge, destroy: vi.fn() };
-        const trails = { clear: () => trails, lineStyle: () => trails, lineBetween: () => trails };
+        const trails = { clear: () => trails, lineStyle: () => trails, lineBetween: () => trails, setVisible: () => trails };
         assignBattleFixtures(scene, { add: { circle: () => surge }, contrails: trails });
         if (mode === 'complete') scene['completeMission'](false);
         else {
@@ -1049,6 +1051,51 @@ describe('combat runtime contracts without rendering', () => {
     expect(model.mode).toBe('gameover');
     expect(scene['endFailedMission']).toHaveBeenCalledOnce();
     expect(scene['damageAttempts']).toBe(5);
+  });
+  it.each([0, 1] as const)('keeps the rescue at the beacon when pilot %i loses their fighter', seat => {
+    const scene = harness('coastal');
+    installStartViews(scene);
+    const lead = scene['lead'], wing = new PilotFlight(1);
+    wing.model.start(config('coastal'));
+    wing.player = Object.assign(Object.create(lead.player), { x: 990, y: 600, body: { enable: true } });
+    wing.contrails = lead.contrails;
+    wing.playerShadow = lead.playerShadow;
+    Object.assign(scene, { flyingCoop: true, dimensional: true, wing });
+    const [lost, survivor] = seat === 0 ? [lead, wing] : [wing, lead];
+    const pod = { destroy: vi.fn(), once: vi.fn() } as unknown as Phaser.GameObjects.Image;
+    const play = vi.spyOn(wrecks, 'playFleetWreck').mockImplementation((_scene, _kind, _ship, _hit, _views, _sound, rescue) => {
+      rescue?.takePod(pod);
+      return 1230;
+    });
+    lost.model.hull = 1; lost.model.shield = 0;
+    const hit = { x: lost.player.x - 8, y: lost.player.y };
+    scene['damagePlayer'](false, 'projectile', lost, hit);
+    expect(play.mock.calls[0].slice(1, 4)).toEqual(['player', lost.player, hit]);
+    expect(lost.escapePod).toBe(pod);
+    expect(lost.down).toBe(true);
+    expect(lost.player.body!.enable).toBe(false);
+    expect(survivor.player.body!.enable).toBe(true);
+    scene['damagePlayer'](false, 'projectile', lost, hit);
+    expect(play).toHaveBeenCalledOnce();
+    expect(scene['endFailedMission']).not.toHaveBeenCalled();
+    survivor.player.setPosition(lost.player.x, lost.player.y);
+    Object.assign(lost.player.body!, { reset: vi.fn() });
+    scene['updateRescues'](1499);
+    expect(lost.down).toBe(true);
+    scene['updateRescues'](1);
+    expect(pod.destroy).toHaveBeenCalledOnce();
+    expect(lost.down).toBe(false);
+    expect(lost.rescueAvailable).toBe(false);
+    expect(lost.player.body!.enable).toBe(true);
+    expect(lost.model.hull).toBe(1);
+  });
+  it('waits for the solo hull breakup before showing the defeat screen', () => {
+    const scene = harness('coastal');
+    installStartViews(scene);
+    const schedule = vi.spyOn(scene.time, 'delayedCall');
+    scene['model'].mode = 'gameover';
+    BattleScene.prototype['endFailedMission'].call(scene, 1230);
+    expect(schedule.mock.calls[0][0]).toBe(1290);
   });
   it('reports Shield Hit only for accepted damage that leaves shields intact, and Shield down at depletion', () => {
     const scene = harness('coastal'), model = scene['model'];

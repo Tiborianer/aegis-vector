@@ -516,7 +516,7 @@ export class BattleScene extends Phaser.Scene {
       if (!projectile.active) return;
       if (pilot.model.modifiers.kineticReversal && pilot.model.shield > 0) this.reflectHostileBullet(projectile, pilot);
       this.disableBody(projectile);
-      this.damagePlayer(false, 'projectile', pilot);
+      this.damagePlayer(false, 'projectile', pilot, projectile);
     });
     this.physics.add.overlap(pilot.player, this.enemyHitZones, (_player, hitZone) => {
       const zone = hitZone as Phaser.GameObjects.Zone;
@@ -526,15 +526,16 @@ export class BattleScene extends Phaser.Scene {
       const lastRamAt = (target.getData(ramKey) as number | undefined) ?? Number.NEGATIVE_INFINITY;
       if (this.combatNow - lastRamAt < 250) return;
       target.setData(ramKey, this.combatNow);
-      this.damagePlayer(false, 'ram', pilot);
+      this.damagePlayer(false, 'ram', pilot, zone);
       const kind = target.getData('kind') as EnemyKind;
       if (!COMMAND_ENEMIES.includes(kind)) this.damageEnemy(target, 8, undefined, undefined, undefined, undefined, pilot);
     });
     this.physics.add.overlap(pilot.player, this.mines, (_player, mine) => {
       const target = mine as Phaser.Physics.Arcade.Sprite;
       if (!target.active || !target.getData('armed')) return;
+      const impact = { x: target.x, y: target.y };
       this.destroyMine(target);
-      this.damagePlayer(false, 'hazard', pilot);
+      this.damagePlayer(false, 'hazard', pilot, impact);
     });
     this.physics.add.overlap(pilot.player, this.pickups, (_player, pickup) => {
       const target = pickup as Phaser.Physics.Arcade.Sprite;
@@ -572,6 +573,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private revive(pilot: PilotFlight): void {
+    pilot.escapePod?.destroy();
     pilot.down = false; pilot.rescueMs = 0;
     pilot.model.reviveWingmate();
     this.setFighterVisible(pilot,true);
@@ -589,7 +591,7 @@ export class BattleScene extends Phaser.Scene {
         if (pilot.rescueMs >= 1500) { pilot.rescueAvailable=false; this.revive(pilot); }
       }
       const title = 'P' + (pilot.seat+1);
-      pilot.marker?.setPosition(x,y + (pilot.down ? 0 : 56)).setText(pilot.down
+      pilot.marker?.setPosition(x,y + (pilot.down ? (pilot.escapePod ? -27 : 0) : 56)).setText(pilot.down
         ? (pilot.rescueAvailable ? '◎ ' + title + ' RESCUE ' + Math.floor(pilot.rescueMs/15) + '%' : title + ' · NEXT WAYPOINT') : title);
       if (pilot.stripes && !pilot.down) {
         pilot.stripes.clear().lineStyle(3,0xfff5df,1);
@@ -2096,7 +2098,7 @@ export class BattleScene extends Phaser.Scene {
     beam.lineStyle(3, 0xffffff, 0.9).lineBetween(line.x1, line.y1, line.x2, line.y2);
     this.transientViews.add(beam);
     this.tweens.add({ targets: beam, alpha: 0, duration: 150, onComplete: () => this.destroyTransient(beam) });
-    for (const p of this.pilots) if (!p.down && Phaser.Geom.Intersects.LineToCircle(line, new Phaser.Geom.Circle(p.player.x,p.player.y,22))) this.damagePlayer(false,'projectile',p);
+    for (const p of this.pilots) if (!p.down && Phaser.Geom.Intersects.LineToCircle(line, new Phaser.Geom.Circle(p.player.x,p.player.y,22))) this.damagePlayer(false,'projectile',p,enemy);
     this.emitSound('laser');
   }
 
@@ -2229,7 +2231,7 @@ export class BattleScene extends Phaser.Scene {
         const blast = this.add.circle(x, y, 18, 0xff6f61, 0.32).setDepth(5).setStrokeStyle(3, 0xffe1ba, 0.92);
         this.transientViews.add(blast);
         this.tweens.add({ targets: blast, scale: 3.4, alpha: 0, duration: 280, onComplete: () => this.destroyTransient(blast) });
-        for (const p of this.pilots) if (!p.down && Phaser.Math.Distance.Between(x,y,p.player.x,p.player.y) <= 54) this.damagePlayer(false,'hazard',p);
+        for (const p of this.pilots) if (!p.down && Phaser.Math.Distance.Between(x,y,p.player.x,p.player.y) <= 54) this.damagePlayer(false,'hazard',p,{ x, y });
       });
       enemy.setData('state', 'hover').setData('nextFire', time + ENEMIES.artillery.fireMs / (enemy.getData('fireScale') as number));
       this.emitSound('explode');
@@ -2971,7 +2973,7 @@ export class BattleScene extends Phaser.Scene {
     const contact = impact ?? pilot.player;
     const breakup = this.dimensional && (isBreakupShip(kind)
       ? playShipBreakup(this, kind, enemy, contact, this.transientViews, playSecondary)
-      : isWreckShip(kind) && playFleetWreck(this, kind, enemy, contact, this.transientViews, playSecondary));
+      : isWreckShip(kind) && playFleetWreck(this, kind, enemy, contact, this.transientViews, playSecondary) > 0);
     this.destroyEnemyView(enemy, 'modulesView');
     this.clearArtilleryMarkers(enemy);
     this.destroyEnemyHitZones(enemy);
@@ -3277,7 +3279,8 @@ export class BattleScene extends Phaser.Scene {
     this.emitSound('emp');
   }
 
-  private damagePlayer(forced = false, source: 'projectile' | 'ram' | 'hazard' = 'projectile', pilot = this.lead): void {
+  private damagePlayer(forced = false, source: 'projectile' | 'ram' | 'hazard' = 'projectile', pilot = this.lead,
+    impact?: { x: number; y: number }): void {
     this.damageAttempts += 1;
     if (import.meta.env.DEV && this.godMode && !forced) {
       this.lastDamageResult = 'god-mode';
@@ -3289,6 +3292,11 @@ export class BattleScene extends Phaser.Scene {
     this.lastDamageResult = result;
     if (result === 'ignored') return;
     this.emitConsumedDefenses(pilot);
+    if (result === 'destroyed') {
+      this.destroyPlayer(pilot, impact ?? pilot.player);
+      this.emitState(true);
+      return;
+    }
     if (result === 'shield' || result === 'reserve') {
       pilot.playerShield?.hit(this.combatNow);
       this.shieldPulse(0x35e8ff, 1, pilot);
@@ -3298,9 +3306,9 @@ export class BattleScene extends Phaser.Scene {
       if (previousShield > 0 && pilot.model.shield === 0) this.emitRadio('shield-down');
       else if (result === 'shield' && pilot.model.shield > 0) this.emitRadio('shield-hit');
     } else {
-      this.cameras.main.shake(result === 'destroyed' ? 650 : 260, result === 'destroyed' ? 0.02 : 0.009);
+      this.cameras.main.shake(260, 0.009);
       this.particles.setParticleTint(result === 'phoenix' ? 0xffb640 : 0xff667c);
-      this.particles.explode(result === 'destroyed' ? 75 : 25, pilot.player.x, pilot.player.y);
+      this.particles.explode(25, pilot.player.x, pilot.player.y);
       this.emitSound('hull-hit');
       if (result === 'phoenix') this.announce('PHOENIX PROTOCOL // RESTORED');
       if (result === 'secondWind') {
@@ -3320,17 +3328,36 @@ export class BattleScene extends Phaser.Scene {
 
     this.tweens.killTweensOf(pilot.player);
     this.tweens.add({ targets: pilot.player, alpha: { from: 0.22, to: 1 }, duration: 100, repeat: result === 'shield' || result === 'reserve' ? 2 : 6 });
-    if (result === 'destroyed') {
-      if (this.flyingCoop) {
-        pilot.down = true;
-        this.setFighterVisible(pilot, false);
-        pilot.player.x = Phaser.Math.Clamp(pilot.player.x, 65, WORLD_WIDTH-65);
-        pilot.player.y = Phaser.Math.Clamp(pilot.player.y, PLAYER_COMBAT_MIN_Y+20, WORLD_HEIGHT-55);
-        if (this.pilots.some(other => !other.down)) pilot.model.mode = 'playing';
-        else { this.model.mode = 'gameover'; this.endFailedMission(); }
-      } else this.endFailedMission();
-    }
     this.emitState(true);
+  }
+
+  private destroyPlayer(pilot: PilotFlight, impact: { x: number; y: number }): void {
+    const ship = pilot.player;
+    const wingmateFlying = this.flyingCoop && this.pilots.some(other => other !== pilot && !other.down);
+    const beacon = { x: Phaser.Math.Clamp(ship.x, 65, WORLD_WIDTH - 65),
+      y: Phaser.Math.Clamp(ship.y, PLAYER_COMBAT_MIN_Y + 20, WORLD_HEIGHT - 55) };
+    const takePod = (pod: Phaser.GameObjects.Image) => {
+      pilot.escapePod = pod;
+      pod.once('destroy', () => { if (pilot.escapePod === pod) pilot.escapePod = undefined; });
+    };
+    this.tweens.killTweensOf(ship);
+    const wreckMs = this.dimensional ? playFleetWreck(this, 'player', ship, impact, this.transientViews,
+      (cue, x) => this.emitSound(cue, x), wingmateFlying ? { ...beacon, takePod } : undefined) : 0;
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.cameras.main.shake(650, .02);
+    if (wreckMs) this.emitSound('hull-rupture', ship.x);
+    else {
+      this.particles.setParticleTint(0xff667c);
+      this.particles.explode(75, ship.x, ship.y);
+      this.emitSound('hull-hit');
+    }
+    if (this.flyingCoop) {
+      pilot.down = true;
+      this.setFighterVisible(pilot, false);
+      ship.setPosition(beacon.x, beacon.y);
+      if (wingmateFlying) { pilot.model.mode = 'playing'; return; }
+      this.model.mode = 'gameover';
+    }
+    this.endFailedMission(wreckMs);
   }
 
   private emitConsumedDefenses(pilot = this.lead): void {
@@ -3459,17 +3486,20 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private endFailedMission(): void {
+  private endFailedMission(wreckMs = 0): void {
     if (this.missionEnding) return;
     const run = this.missionRun;
     this.missionEnding = true;
-    if (this.flyingCoop) this.pilots.forEach(p => {this.setFighterVisible(p,false);p.marker?.setVisible(false);});
-    this.lead.player.setVelocity(0).setVisible(false).setActive(false);
+    for (const pilot of this.pilots) {
+      this.setFighterVisible(pilot, false);
+      pilot.escapePod?.destroy();
+      pilot.marker?.setVisible(false);
+    }
     BattleScene.saveHighScore(this.model.highScore, this.flyingCoop);
     this.physics.world.pause();
     this.announce('AEGIS SIGNAL LOST');
     this.emitSound('defeat');
-    this.time.delayedCall(850, () => {
+    this.time.delayedCall(Math.max(850, wreckMs + 60), () => {
       if (run === this.missionRun) event('aegis:mission-ended', this.teamSnapshot());
     });
   }
