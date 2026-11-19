@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('phaser', () => ({ default: { Scene: class {} } }));
 vi.mock('../view/generateTextures', () => ({ generateTextures: vi.fn() }));
+import { BREAKUP_SHIPS, breakupAsset, breakupKey } from '../view/shipBreakup';
 import { BootScene } from './BootScene';
 import { generateTextures } from '../view/generateTextures';
 import { CLOUD_KEY, ENVIRONMENT_IDS, SHIP_SIZES, shipFrameSize, shipKey } from '../../game/assets/visuals';
@@ -11,9 +12,14 @@ describe('approved artwork boot and internal recovery', () => {
   it('preloads every new ship and surface even when an old URL requests Classic', () => {
     vi.stubGlobal('window', { location: { search: '?visuals=classic' } });
     const scene = new BootScene();
-    const image = vi.fn(), spritesheet = vi.fn();
-    Object.assign(scene, { load: { image, spritesheet } });
+    const image = vi.fn(), spritesheet = vi.fn(), atlas = vi.fn();
+    Object.assign(scene, { load: { image, spritesheet, atlas } });
     scene.preload();
+    expect(atlas).toHaveBeenCalledTimes(BREAKUP_SHIPS.length);
+    for (const kind of BREAKUP_SHIPS) {
+      const file = breakupAsset(kind);
+      expect(atlas).toHaveBeenCalledWith(breakupKey(kind), expect.stringContaining(file + '.png'), expect.stringContaining(file + '.json'));
+    }
     expect(spritesheet).toHaveBeenCalledTimes(Object.keys(SHIP_SIZES).length);
     expect(image).toHaveBeenCalledTimes(3 + ENVIRONMENT_IDS.length + 1);
     expect(image).toHaveBeenCalledWith(CLOUD_KEY, expect.any(String));

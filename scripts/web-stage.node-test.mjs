@@ -26,8 +26,8 @@ test('web release contains active game files and notices, not retained media or 
   for (const file of ['.env', 'dist/.env', 'dist/assets/index-1.js.map', 'dist/reviews/internal.html',
     'dist/audio/voice/shield-down.wav', 'dist/audio/cinematic/old-score.wav', 'dist/story-v2/old.jpg']) await put(file, 'preserved');
   const release = await stageWeb({ projectRoot, revision: 'verified-commit' });
-  assert.equal(release.activeAssets, 170);
-  assert.equal(release.files.length, 173);
+  assert.equal(release.activeAssets, 184);
+  assert.equal(release.files.length, release.activeAssets + 3);
   assert.deepEqual((await readdir(path.join(projectRoot, 'web-dist/assets'))).sort(), ['index-1.css', 'index-1.js']);
   const stamp = JSON.parse(await readFile(path.join(projectRoot, 'web-dist/release.json'), 'utf8'));
   assert.equal(stamp.revision, 'verified-commit');

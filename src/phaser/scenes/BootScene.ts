@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { generateTextures } from '../view/generateTextures';
+import { BREAKUP_SHIPS, breakupAsset, breakupKey } from '../view/shipBreakup';
 import { publicAssetUrl } from '../../game/assets/publicAsset';
 import { SHIP_SIZES, shipFrameSize, shipKey, surfaceKey, ENVIRONMENT_IDS, CLOUD_KEY, environmentAsset } from '../../game/assets/visuals';
 
@@ -9,6 +10,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    for (const kind of BREAKUP_SHIPS) {
+      const file = breakupAsset(kind);
+      this.load.atlas(breakupKey(kind), publicAssetUrl(file + '.png'), publicAssetUrl(file + '.json'));
+    }
     this.load.image('crown-turret', publicAssetUrl('graphics-v2/modules/crown-turret.png'));
     for (const side of ['left', 'right']) this.load.image(`seraph-wing-${side}`, publicAssetUrl(`graphics-v2/modules/seraph-wing-${side}.png`));
     for (const kind of Object.keys(SHIP_SIZES)) {

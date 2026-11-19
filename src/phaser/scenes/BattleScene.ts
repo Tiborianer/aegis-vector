@@ -10,6 +10,7 @@ import { bankFrame, easeBank, isGraphicsPreview, NEUTRAL_BANK, shipKey, shipText
 import { readPlaytestMode } from '../../game/testing/playtestMode';
 import { DimensionalEnvironment } from '../view/DimensionalEnvironment';
 import { ClassicSpaceEnvironment } from '../view/ClassicSpaceEnvironment';
+import { isBreakupShip, playShipBreakup } from '../view/shipBreakup';
 import { PlayerShieldView } from '../view/PlayerShieldView';
 import { currentShieldStyle } from '../view/shieldStyles';
 import { createSeraphModules, createSiegeModules, drawSeraphModules, drawSiegeModules } from '../view/bossModulesView';
@@ -944,7 +945,7 @@ export class BattleScene extends Phaser.Scene {
     this.enemies.children.each((child) => {
       const enemy = child as Phaser.Physics.Arcade.Sprite;
       if (enemy.active && enemy.getData('entityId') !== excludedId && Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y) <= 42) {
-        this.damageEnemy(enemy, damage, undefined, undefined, undefined, undefined, pilot);
+        this.damageEnemy(enemy, damage, undefined, undefined, undefined, undefined, pilot, { x, y });
       }
       return true;
     });
@@ -2727,13 +2728,14 @@ export class BattleScene extends Phaser.Scene {
     pilot.model.registerHit();
     const damage = bullet.getData('damage') as number;
     const missile = bullet.getData('missile') as boolean;
+    const contact = { x: bullet.x, y: bullet.y };
     const impactX = zone.x;
     const impactY = zone.y;
     const pierce = bullet.getData('pierce') as number;
     if (pierce > 0) bullet.setData('pierce', pierce - 1);
     else this.disableBody(bullet);
     const overdriveVisual = Boolean(bullet.getData('overdriveVisual'));
-    this.damageEnemy(enemy, damage, zone.getData('role') as EnemyHitZoneRole, zone.getData('zoneIndex') as number, overdriveVisual, undefined, pilot);
+    const breakup = this.damageEnemy(enemy, damage, zone.getData('role') as EnemyHitZoneRole, zone.getData('zoneIndex') as number, overdriveVisual, undefined, pilot, contact);
     const missileLevel = pilot.model.weapons.missile;
     const nova = getNovaVolley(missileLevel);
     const splashRadius = pilot.model.modifiers.phaseArsenal ? 75 : nova.splashRadius;
@@ -2746,7 +2748,7 @@ export class BattleScene extends Phaser.Scene {
       spread: 'arc-impact', missile: 'nova-impact', laser: 'lance-impact', drone: 'wing-impact', ion: 'ion-impact',
     };
     if (weaponKind && impactCue[weaponKind]) this.emitSound(impactCue[weaponKind]!, impactX);
-    if (weaponKind) this.weaponImpact(weaponKind, impactX, impactY, overdriveVisual);
+    if (weaponKind && !breakup) this.weaponImpact(weaponKind, impactX, impactY, overdriveVisual);
     if (pilot.model.modifiers.resonanceMatrix && (weaponKind === 'spread' || weaponKind === 'laser')) {
       pilot.resonanceHits += 1;
       if (pilot.resonanceHits % 10 === 0) {
@@ -2774,7 +2776,7 @@ export class BattleScene extends Phaser.Scene {
       if (enemy.active && enemy.getData('combatReady') !== false && enemy.getData('entityId') !== excludedId && Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y) <= radius) targets.push(enemy);
       return true;
     });
-    targets.forEach((enemy) => this.damageEnemy(enemy, damage, 'core', -1, overdriveVisual, true, pilot));
+    targets.forEach((enemy) => this.damageEnemy(enemy, damage, 'core', -1, overdriveVisual, true, pilot, { x, y }));
     const blast = this.add.circle(x, y, 16, OVERDRIVE_GOLD, overdriveVisual ? 0.28 : 0.18)
       .setDepth(5)
       .setStrokeStyle(2, overdriveVisual ? OVERDRIVE_CORE : 0xffe7a0, 0.8);
@@ -2794,6 +2796,7 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  /** A true result means the ship supplied its own impact flash. */
   private damageEnemy(
     enemy: Phaser.Physics.Arcade.Sprite,
     rawDamage: number,
@@ -2802,8 +2805,9 @@ export class BattleScene extends Phaser.Scene {
     overdriveVisual = false,
     areaDamage = false,
     pilot = this.lead,
-  ): void {
-    if (!enemy.active || enemy.getData('combatReady') === false) return;
+    impact?: { x: number; y: number },
+  ): boolean {
+    if (!enemy.active || enemy.getData('combatReady') === false) return false;
     const kind = enemy.getData('kind') as EnemyKind;
     if (kind === 'nullArchitect') {
       const previous = enemy.getData('modularBoss') as ModularBossState;
@@ -2815,7 +2819,7 @@ export class BattleScene extends Phaser.Scene {
       if (result.blocked) {
         this.particles.setParticleTint(0xa590ff);
         this.particles.explode(2, enemy.x, enemy.y + enemy.displayHeight * .27);
-        return;
+        return false;
       }
       const zones = (enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined) ?? [];
       for (const index of result.destroyed) {
@@ -2838,12 +2842,12 @@ export class BattleScene extends Phaser.Scene {
         this.emitSound('shield-hit');
       }
       if (result.state.hull <= 0) this.destroyEnemy(enemy, pilot);
-      return;
+      return false;
     }
     if (kind === 'bulwark' && role === 'weakpoint') {
       const reactorIndex = Math.max(0, zoneIndex - 3);
       const reactors = [...(enemy.getData('reactorHealth') as number[])];
-      if ((reactors[reactorIndex] ?? 0) <= 0) return;
+      if ((reactors[reactorIndex] ?? 0) <= 0) return false;
       reactors[reactorIndex] = Math.max(0, reactors[reactorIndex] - rawDamage);
       enemy.setData('reactorHealth', reactors);
       this.particles.setParticleTint(overdriveVisual ? OVERDRIVE_GOLD : 0x65ffb1);
@@ -2858,7 +2862,7 @@ export class BattleScene extends Phaser.Scene {
         this.announce(`BULWARK ${reactorIndex === 0 ? 'PORT' : 'STARBOARD'} REACTOR DESTROYED`);
         this.emitSound('explode');
       }
-      return;
+      return false;
     }
     if (kind === 'artillery' && role === 'weakpoint' && enemy.getData('state') === 'barrageWarning') {
       this.clearArtilleryMarkers(enemy);
@@ -2921,7 +2925,7 @@ export class BattleScene extends Phaser.Scene {
       ? (enemy.getData('hitZones') as Phaser.GameObjects.Zone[] | undefined)?.[zoneIndex]
       : undefined;
     this.particles.explode(3, impactZone?.x ?? enemy.x, impactZone?.y ?? enemy.y);
-    if (health <= 0) this.destroyEnemy(enemy, pilot);
+    return health <= 0 && this.destroyEnemy(enemy, pilot, impact);
   }
 
   /** A destroyed siege battery creates one small tactical opening. It grants no
@@ -2948,8 +2952,8 @@ export class BattleScene extends Phaser.Scene {
     return protectedTarget;
   }
 
-  private destroyEnemy(enemy: Phaser.Physics.Arcade.Sprite, pilot = this.lead): void {
-    if (!enemy.active) return;
+  private destroyEnemy(enemy: Phaser.Physics.Arcade.Sprite, pilot = this.lead, impact?: { x: number; y: number }): boolean {
+    if (!enemy.active) return false;
     const kind = enemy.getData('kind') as EnemyKind;
     const commandTarget = Boolean(enemy.getData('commandTarget'));
     const carrierIndex = enemy.getData('carrierIndex') as number | undefined;
@@ -2966,17 +2970,24 @@ export class BattleScene extends Phaser.Scene {
     this.destroyEnemyView(enemy, 'modulesView');
     this.clearArtilleryMarkers(enemy);
     this.destroyEnemyHitZones(enemy);
+    const breakup = this.dimensional && isBreakupShip(kind)
+      && playShipBreakup(this, kind, enemy, impact ?? pilot.player, this.transientViews,
+        (cue, at) => this.emitSound(cue, at));
     enemy.destroy();
-    const commandExplosion = COMMAND_ENEMIES.includes(kind);
-    this.particles.setParticleTint(kind === 'boss' ? 0xffb640 : commandExplosion ? 0xf06cff : 0xff6f61);
-    this.particles.explode(kind === 'boss' ? 90 : commandExplosion ? 58 : Math.min(28, 8 + maxHealth), x, y);
-    this.emitSound('explode');
+    if (breakup) {
+      this.emitSound('hull-rupture', x);
+    } else {
+      const commandExplosion = COMMAND_ENEMIES.includes(kind);
+      this.particles.setParticleTint(kind === 'boss' ? 0xffb640 : commandExplosion ? 0xf06cff : 0xff6f61);
+      this.particles.explode(kind === 'boss' ? 90 : commandExplosion ? 58 : Math.min(28, 8 + maxHealth), x, y);
+      this.emitSound('explode');
+    }
 
     if (this.isolatedCraftPreview) {
       this.boss = undefined;
       this.model.setBoss('', 0);
       this.announce('CRAFT DESTROYED // ISOLATE TO REPLAY');
-      return;
+      return breakup;
     }
 
     const reward = this.model.registerKill(ENEMIES[kind].score, ENEMIES[kind].credits, SPECIALISTS.includes(kind), pilot.model);
@@ -3015,12 +3026,12 @@ export class BattleScene extends Phaser.Scene {
         this.announce('SERAPH DESTROYED // OBSIDIAN CROWN AWAKENS');
         this.scheduleBoss(2600);
       }
-      return;
+      return breakup;
     }
     if (kind === 'boss' || kind === 'nullArchitect') {
       this.boss = undefined;
       this.completeMission(true);
-      return;
+      return breakup;
     }
 
     this.killsSinceUtilityDrop += 1;
@@ -3029,6 +3040,7 @@ export class BattleScene extends Phaser.Scene {
       this.killsSinceUtilityDrop = 0;
     }
     if (reward.points >= 2_000) this.announce(`CHAIN ×${this.model.multiplier}`);
+    return breakup;
   }
 
   private creditPopup(x: number, y: number, credits: number): void {
@@ -3193,7 +3205,7 @@ export class BattleScene extends Phaser.Scene {
       const kind = enemy.getData('kind') as EnemyKind;
       if (kind === 'bulwark') enemy.setData('armorDisabledUntil', this.combatNow + 5_000);
       const base = COMMAND_ENEMIES.includes(kind) ? 35 : 12;
-      this.damageEnemy(enemy, base * pilot.model.empDamageMultiplier, 'core', -1, false, true, pilot);
+      this.damageEnemy(enemy, base * pilot.model.empDamageMultiplier, 'core', -1, false, true, pilot, { x, y });
     });
     const pulse = this.add.circle(x, y, 28, 0x8b7dff, 0.12).setDepth(7).setStrokeStyle(4, 0xd8d1ff, 0.92);
     this.transientViews.add(pulse);
@@ -3254,7 +3266,7 @@ export class BattleScene extends Phaser.Scene {
     enemies.forEach((enemy) => {
       const kind = enemy.getData('kind') as EnemyKind;
       const base = COMMAND_ENEMIES.includes(kind) ? 18 : 6;
-      this.damageEnemy(enemy, base * pilot.model.empDamageMultiplier, 'core', -1, false, true, pilot);
+      this.damageEnemy(enemy, base * pilot.model.empDamageMultiplier, 'core', -1, false, true, pilot, { x, y });
     });
     const pulse = this.add.circle(x, y, 24, 0x65ffb1, 0.1).setDepth(7).setStrokeStyle(3, 0xc8ffe4, 0.82);
     this.transientViews.add(pulse);

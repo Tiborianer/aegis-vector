@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 const missionScores = JSON.parse(readFileSync(new URL('../src/audio/mission-scores.json', import.meta.url), 'utf8'));
 const radioFiles = JSON.parse(readFileSync(new URL('../src/audio/radio-files.json', import.meta.url), 'utf8'));
+const breakups = JSON.parse(readFileSync(new URL('../src/game/assets/ship-breakups.json', import.meta.url), 'utf8'));
 // Keep explicit names in sync with runtime manifests; never guess from minified bundles.
 const numbered = (directory, count, extension, prefix = '') => Array.from({ length: count }, (_, i) =>
   `${directory}/${prefix}${String(i + 1).padStart(2, '0')}.${extension}`);
@@ -32,6 +33,7 @@ export const DESKTOP_PUBLIC_ASSETS = Object.freeze([
     'pursuer', 'carrierBoss', 'warden', 'boss', 'drone', 'droneMk2', 'skimmer', 'weaver',
     'seraph', 'nullArchitect', 'prism', 'leech',
   ].map((name) => `graphics-v2/ships/${name}.png`),
+  ...Object.keys(breakups).flatMap(name => ['png', 'json'].map(ext => `graphics-v2/breakups/${name}.${ext}`)),
   'graphics-v2/modules/crown-turret.png',
   'graphics-v2/modules/crown-turret.json',
   'graphics-v2/modules/seraph-wing-left.png',

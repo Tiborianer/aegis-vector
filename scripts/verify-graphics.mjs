@@ -76,6 +76,30 @@ for (const kind of ships) {
   assert(hashes.size === 16, `${kind}: duplicate bank images`);
 }
 assert(Object.keys(manifest.environments).length === environments.length, 'environment count');
+let breakupFrames = 0;
+const breakups = JSON.parse(readFileSync(new URL('../src/game/assets/ship-breakups.json', import.meta.url), 'utf8'));
+for (const [kind, spec] of Object.entries(breakups)) {
+  const { meta, frames } = JSON.parse(readFileSync(join(root, 'breakups', kind + '.json'), 'utf8'));
+  const { width, height } = rgbaPng(asset({ file: 'breakups/' + kind + '.png', sha256: meta.sha256 }), kind);
+  assert(meta.fps === 30 && meta.sharedTail > 0 && meta.sharedTail < meta.length
+    && width <= 2048 && height <= 2048, kind + ': breakup timing and sheet size');
+  assert(meta.length === spec.frames && meta.sharedTail === spec.bankFrames
+    && Object.keys(frames).length === meta.length + 2 * meta.sharedTail, kind + ': breakup frame count');
+  for (const cue of ['rackIgnition', 'fieldCollapse']) {
+    assert(meta[cue] === spec[cue] && (meta[cue] === undefined || meta[cue] > 0 && meta[cue] < meta.length), kind + ': secondary cue');
+  }
+  for (const bank of [-30, 0, 30]) {
+    for (let i = 0; i < (bank === 0 ? meta.length : meta.sharedTail); i++) {
+      const entry = frames[`${bank}/${i}`];
+      assert(entry?.trimmed, kind + ': missing breakup frame ' + i);
+      const { frame: f, sourceSize: s, spriteSourceSize: t } = entry;
+      assert(f.w > 0 && f.h > 0 && f.x >= 0 && f.y >= 0 && f.x + f.w <= width && f.y + f.h <= height
+        && t.w === f.w && t.h === f.h && t.x >= 0 && t.y >= 0 && t.x + t.w <= s.w && t.y + t.h <= s.h,
+        kind + ': invalid breakup trim ' + i);
+      breakupFrames++;
+    }
+  }
+}
 const crownModule = manifest.modules?.crownTurret;
 const crownPng = rgbaPng(asset(crownModule), 'crown-turret');
 assert(crownPng.width === 144 && crownPng.height === 144 && crownModule.width === 48 && crownModule.height === 48 && crownModule.textureDensity === 3, 'crown-turret: high-density 48px logical module contract');
@@ -128,4 +152,4 @@ if (verifySources) for(const kind of ships) {
   assert(json.meshes?.length > 3 && json.materials?.length > 2, `${kind}: missing model geometry/materials`);
 }
 assert(total < 20_000_000, 'graphics payload exceeds 20 MB');
-console.log(`Graphics verified: ${ships.length} real-model atlases, ${ships.length*16} decoded transparent frames, 9 mission mappings (8 unique surfaces) + cirrus; ${(total/1024/1024).toFixed(2)} MiB.`);
+console.log(`Graphics verified: ${ships.length} real-model atlases, ${Object.keys(breakups).length} ship breakups, ${ships.length*16+breakupFrames} decoded transparent frames, 9 mission mappings (8 unique surfaces) + cirrus; ${(total/1024/1024).toFixed(2)} MiB.`);

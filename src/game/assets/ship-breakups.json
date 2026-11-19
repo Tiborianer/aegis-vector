@@ -1,0 +1,9 @@
+{
+  "scout": { "frames": 30, "bankFrames": 10 },
+  "bomber": { "frames": 42, "bankFrames": 13, "rackIgnition": 9 },
+  "interceptor": { "frames": 31, "bankFrames": 9 },
+  "sniper": { "frames": 36, "bankFrames": 11 },
+  "mineLayer": { "frames": 40, "bankFrames": 12, "rackIgnition": 12 },
+  "shieldCarrier": { "frames": 38, "bankFrames": 11, "fieldCollapse": 10 },
+  "reclaimer": { "frames": 33, "bankFrames": 10 }
+}

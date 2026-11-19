@@ -3,6 +3,7 @@ import { DESKTOP_PUBLIC_ASSETS, isDesktopAsset } from './desktop-assets.mjs';
 import { MUSIC_ASSETS, VOICE_ASSETS } from '../src/audio/SoundEngine';
 import { getStoryChapter, STORY_CHAPTERS } from '../src/game/content/story';
 import { SHIP_SIZES, ENVIRONMENT_IDS, environmentAsset } from '../src/game/assets/visuals';
+import { BREAKUP_SHIPS, breakupAsset } from '../src/phaser/view/shipBreakup';
 import { UPGRADE_NODES } from '../src/game/content/upgrades';
 import { SORTIE_MODULES } from '../src/game/content/sortieModules';
 import { INTRO_VIDEO } from '../src/ui/introVideo';
@@ -43,6 +44,7 @@ describe('desktop asset contract against actual runtime catalogues', () => {
       ...Object.values(MUSIC_ASSETS).flatMap((track) => track.files),
       INTRO_VIDEO.file, INTRO_VIDEO.poster,
       ...Object.keys(SHIP_SIZES).map((kind) => `graphics-v2/ships/${kind}.png`),
+      ...BREAKUP_SHIPS.flatMap(kind => ['.png', '.json'].map(ext => breakupAsset(kind) + ext)),
       ...ENVIRONMENT_IDS.map(environmentAsset), 'graphics-v2/environments/cirrus.webp',
       ...UPGRADE_NODES.map((node) => node.icon), ...SORTIE_MODULES.map((module) => module.icon),
     ]);

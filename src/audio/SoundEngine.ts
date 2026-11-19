@@ -29,6 +29,9 @@ export type SoundCue =
   | 'ion-impact'
   | 'enemy-fire'
   | 'explode'
+  | 'hull-rupture'
+  | 'rack-ignition'
+  | 'field-collapse'
   | 'pickup'
   | 'shield-hit'
   | 'shield-ready'
@@ -127,6 +130,7 @@ const CUE_INTERVALS: Partial<Record<SoundCue, number>> = {
   'arc-fire': 64, 'arc-impact': 80, 'wing-fire': 130, 'wing-impact': 95,
   'nova-fire': 240, 'nova-impact': 160, 'lance-fire': 260, 'lance-impact': 150,
   'ion-fire': 420, 'ion-impact': 130,
+  'hull-rupture': 60, 'rack-ignition': 90, 'field-collapse': 100,
 };
 
 export interface MusicVoiceSchedule {
@@ -455,6 +459,19 @@ export class SoundEngine {
         break;
       case 'ion-impact': this.sequence([1_480, 860, 1_920], 0.027, 'square', 0.013, pan); this.noise(0.07, 0.008, 8_000, pan); break;
       case 'enemy-fire': this.tone(180, 110, 0.08, 'triangle', 0.025); break;
+      case 'hull-rupture':
+        this.noise(.074, .09, 4_100, pan);
+        this.noise(.19, .075, 1_050, pan);
+        this.tone(116, 42, .16, 'triangle', .065, pan);
+        break;
+      case 'field-collapse':
+        this.tone(760, 125, .24, 'sine', .048, pan);
+        this.noise(.13, .033, 3_600, pan);
+        break;
+      case 'rack-ignition':
+        this.noise(.33, .12, 1_240, pan);
+        this.tone(85, 31, .35, 'sine', .105, pan);
+        break;
       case 'explode':
         this.noise(0.18, 0.09);
         this.tone(92, 36, 0.2, 'sawtooth', 0.05);
