@@ -100,6 +100,45 @@ for (const [kind, spec] of Object.entries(breakups)) {
     }
   }
 }
+const wrecks = JSON.parse(readFileSync(new URL('../src/game/assets/wreck-ships.json', import.meta.url), 'utf8'));
+const enemies = ships.filter(kind => !['player', 'drone', 'droneMk2'].includes(kind));
+const covered = [...Object.keys(breakups), ...Object.keys(wrecks)];
+assert(covered.length === enemies.length && enemies.every(kind => covered.includes(kind)), 'every enemy must have exactly one destruction');
+let wreckPoses = 0;
+for (const group of new Set([...Object.values(wrecks), 'plumes'])) {
+  const prefix = 'breakups/wreck-' + group;
+  const { meta, frames } = JSON.parse(readFileSync(join(root, prefix + '.json'), 'utf8'));
+  const image = asset({ file: prefix + '.webp', sha256: meta.sha256 });
+  assert(image.toString('ascii', 0, 4) === 'RIFF' && image.toString('ascii', 8, 16) === 'WEBPVP8X'
+    && image.readUIntLE(24, 3) + 1 === meta.size.w && image.readUIntLE(27, 3) + 1 === meta.size.h
+    && meta.size.w <= 2048 && meta.size.h <= 2048, group + ': transparent WebP dimensions');
+  for (const { frame: f, sourceSize: sz, spriteSourceSize: t } of Object.values(frames)) {
+    assert(f.w > 0 && f.h > 0 && f.x >= 0 && f.y >= 0 && f.x+f.w <= meta.size.w && f.y+f.h <= meta.size.h
+      && t.w === f.w && t.h === f.h && t.x >= 0 && t.y >= 0 && t.x+t.w <= sz.w && t.y+t.h <= sz.h, group + ': trim');
+  }
+  const members = Object.keys(wrecks).filter(kind => wrecks[kind] === group);
+  assert(Object.keys(meta.ships).length === members.length, group + ': ship count');
+  for (const kind of members) {
+    const d = meta.ships[kind];
+    assert(d?.steps === 12 && d.parts.length >= 8 && d.density > 0 && d.duration > 0, kind + ': solid assemblies');
+    let previous = -1;
+    for (const beat of d.events) {
+      assert(beat.time > previous && beat.time + beat.life <= d.duration && beat.size > 0
+        && beat.sites.length === 2 && beat.sites.every(i => d.parts[i]?.role === beat.role), kind + ': physical stage');
+      previous = beat.time;
+    }
+    for (const [i, part] of d.parts.entries()) {
+      assert(part.anchors.length === 16 && part.paths.length === 2 && part.paths.every(p =>
+        p.length === 5 && p.every(Number.isFinite) && p[0] >= 0 && p[0] < d.duration), kind + ': bank and release');
+      for (let n=0; n<d.steps; n++) assert(frames[kind+'/'+i+'/'+n], kind + ': missing solid orientation');
+    }
+  }
+  if (group === 'plumes') {
+    for (const color of ['fire','field','ion']) for (let i=0; i<18; i++) assert(frames[color+'/'+i], color + ': missing plume');
+    assert(frames.spall, 'missing incandescent chip');
+  }
+  wreckPoses += Object.keys(frames).length;
+}
 const crownModule = manifest.modules?.crownTurret;
 const crownPng = rgbaPng(asset(crownModule), 'crown-turret');
 assert(crownPng.width === 144 && crownPng.height === 144 && crownModule.width === 48 && crownModule.height === 48 && crownModule.textureDensity === 3, 'crown-turret: high-density 48px logical module contract');
@@ -152,4 +191,4 @@ if (verifySources) for(const kind of ships) {
   assert(json.meshes?.length > 3 && json.materials?.length > 2, `${kind}: missing model geometry/materials`);
 }
 assert(total < 20_000_000, 'graphics payload exceeds 20 MB');
-console.log(`Graphics verified: ${ships.length} real-model atlases, ${Object.keys(breakups).length} ship breakups, ${ships.length*16+breakupFrames} decoded transparent frames, 9 mission mappings (8 unique surfaces) + cirrus; ${(total/1024/1024).toFixed(2)} MiB.`);
+console.log(`Graphics verified: ${ships.length} real-model atlases, ${covered.length} enemy breakups (${wreckPoses} debris and plume poses), ${ships.length*16+breakupFrames} decoded transparent frames, 9 mission mappings (8 unique surfaces) + cirrus; ${(total/1024/1024).toFixed(2)} MiB.`);

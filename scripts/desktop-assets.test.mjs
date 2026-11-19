@@ -3,6 +3,7 @@ import { DESKTOP_PUBLIC_ASSETS, isDesktopAsset } from './desktop-assets.mjs';
 import { MUSIC_ASSETS, VOICE_ASSETS } from '../src/audio/SoundEngine';
 import { getStoryChapter, STORY_CHAPTERS } from '../src/game/content/story';
 import { SHIP_SIZES, ENVIRONMENT_IDS, environmentAsset } from '../src/game/assets/visuals';
+import { WRECK_SHEETS, wreckAsset } from '../src/phaser/view/fleetWreck';
 import { BREAKUP_SHIPS, breakupAsset } from '../src/phaser/view/shipBreakup';
 import { UPGRADE_NODES } from '../src/game/content/upgrades';
 import { SORTIE_MODULES } from '../src/game/content/sortieModules';
@@ -29,6 +30,9 @@ describe('desktop asset contract against actual runtime catalogues', () => {
       'graphics-v2/modules/crown-turret.json',
       'graphics-v2/modules/seraph-wing-left.png', 'graphics-v2/modules/seraph-wing-right.png', 'graphics-v2/modules/seraph-wings.json',
     ];
+    for (const sheet of WRECK_SHEETS) {
+      for (const ext of ['webp', 'json']) expect(isDesktopAsset(wreckAsset(sheet) + '.' + ext)).toBe(true);
+    }
     expect(newFiles).toHaveLength(13);
     for (const file of newFiles) expect(isDesktopAsset(file), file).toBe(true);
     for (const mission of ['stormbreak', 'graveyard', 'carrier-siege', 'dreadnought', 'last-light']) {

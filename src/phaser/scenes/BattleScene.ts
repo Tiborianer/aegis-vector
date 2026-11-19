@@ -10,6 +10,7 @@ import { bankFrame, easeBank, isGraphicsPreview, NEUTRAL_BANK, shipKey, shipText
 import { readPlaytestMode } from '../../game/testing/playtestMode';
 import { DimensionalEnvironment } from '../view/DimensionalEnvironment';
 import { ClassicSpaceEnvironment } from '../view/ClassicSpaceEnvironment';
+import { isWreckShip, playFleetWreck, shedCrownTurret } from '../view/fleetWreck';
 import { isBreakupShip, playShipBreakup } from '../view/shipBreakup';
 import { PlayerShieldView } from '../view/PlayerShieldView';
 import { currentShieldStyle } from '../view/shieldStyles';
@@ -2828,7 +2829,7 @@ export class BattleScene extends Phaser.Scene {
           zone.setData('reactorDestroyed', true).setActive(false);
           (zone.body as Phaser.Physics.Arcade.Body).enable = false;
           this.particles.setParticleTint(0xffa578);
-          this.particles.explode(24, zone.x, zone.y);
+          if (!this.dimensional || !shedCrownTurret(this, enemy, index, this.transientViews)) this.particles.explode(24, zone.x, zone.y);
           if (this.model.mission.id === 'lastLight') this.siegeBreachPulse(zone.x, zone.y);
         }
         this.emitSound('explode');
@@ -2841,8 +2842,7 @@ export class BattleScene extends Phaser.Scene {
         this.cameras.main.shake(180, .003);
         this.emitSound('shield-hit');
       }
-      if (result.state.hull <= 0) this.destroyEnemy(enemy, pilot);
-      return false;
+      return result.state.hull <= 0 && this.destroyEnemy(enemy, pilot, impact);
     }
     if (kind === 'bulwark' && role === 'weakpoint') {
       const reactorIndex = Math.max(0, zoneIndex - 3);
@@ -2967,12 +2967,14 @@ export class BattleScene extends Phaser.Scene {
     this.destroyEnemyView(enemy, 'arrivalRing');
     this.destroyEnemyView(enemy, 'carrierAura');
     this.destroyEnemyView(enemy, 'analyzer');
+    const playSecondary = (cue: 'rack-ignition' | 'field-collapse', at: number) => this.emitSound(cue, at);
+    const contact = impact ?? pilot.player;
+    const breakup = this.dimensional && (isBreakupShip(kind)
+      ? playShipBreakup(this, kind, enemy, contact, this.transientViews, playSecondary)
+      : isWreckShip(kind) && playFleetWreck(this, kind, enemy, contact, this.transientViews, playSecondary));
     this.destroyEnemyView(enemy, 'modulesView');
     this.clearArtilleryMarkers(enemy);
     this.destroyEnemyHitZones(enemy);
-    const breakup = this.dimensional && isBreakupShip(kind)
-      && playShipBreakup(this, kind, enemy, impact ?? pilot.player, this.transientViews,
-        (cue, at) => this.emitSound(cue, at));
     enemy.destroy();
     if (breakup) {
       this.emitSound('hull-rupture', x);
@@ -3452,7 +3454,7 @@ export class BattleScene extends Phaser.Scene {
       return true;
     });
     this.transientViews.forEach((view) => {
-      if (view === this.lead.playerShadow || view === this.lead.contrails) return;
+      if (view === this.lead.playerShadow || view === this.lead.contrails || view.getData('finishDuringExtraction')) return;
       if ('alpha' in view) this.tweens.add({ targets: view, alpha: 0, duration: 350 });
     });
   }

@@ -2,7 +2,7 @@
 
 The public browser game is deployed to https://tiborianer.github.io/aegis-vector/ from `main` by `.github/workflows/deploy-pages.yml`. A browser publication is separate from Steam onboarding, native Windows validation and store release approval.
 
-The [enemy destruction guide](SHIP_BREAKUPS.md) covers the seven campaign breakups and their editable sources.
+The [enemy destruction guide](SHIP_BREAKUPS.md) covers all 24 enemy breakups, the eight staged command ships and bosses, and their editable Blender sources.
 
 ## Checked production package
 

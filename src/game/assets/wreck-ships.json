@@ -1,0 +1,7 @@
+{
+  "elite": "fighters", "charger": "fighters", "phantom": "fighters",
+  "skimmer": "fighters", "weaver": "fighters", "prism": "fighters", "leech": "fighters",
+  "bulwark": "specialists", "artillery": "specialists", "razorwing": "specialists", "pursuer": "specialists", "warden": "specialists",
+  "gatekeeper": "capitals", "carrierBoss": "capitals", "boss": "capitals",
+  "seraph": "finale", "nullArchitect": "finale"
+}

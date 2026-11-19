@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { generateTextures } from '../view/generateTextures';
+import { WRECK_SHEETS, wreckAsset, wreckKey } from '../view/fleetWreck';
 import { BREAKUP_SHIPS, breakupAsset, breakupKey } from '../view/shipBreakup';
 import { publicAssetUrl } from '../../game/assets/publicAsset';
 import { SHIP_SIZES, shipFrameSize, shipKey, surfaceKey, ENVIRONMENT_IDS, CLOUD_KEY, environmentAsset } from '../../game/assets/visuals';
@@ -10,6 +11,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    for (const sheet of WRECK_SHEETS) {
+      const file = wreckAsset(sheet);
+      this.load.atlas(wreckKey(sheet), publicAssetUrl(file + '.webp'), publicAssetUrl(file + '.json'));
+    }
     for (const kind of BREAKUP_SHIPS) {
       const file = breakupAsset(kind);
       this.load.atlas(breakupKey(kind), publicAssetUrl(file + '.png'), publicAssetUrl(file + '.json'));

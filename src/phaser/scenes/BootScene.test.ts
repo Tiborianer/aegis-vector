@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('phaser', () => ({ default: { Scene: class {} } }));
 vi.mock('../view/generateTextures', () => ({ generateTextures: vi.fn() }));
+import { WRECK_SHEETS, wreckAsset, wreckKey } from '../view/fleetWreck';
 import { BREAKUP_SHIPS, breakupAsset, breakupKey } from '../view/shipBreakup';
 import { BootScene } from './BootScene';
 import { generateTextures } from '../view/generateTextures';
@@ -15,7 +16,11 @@ describe('approved artwork boot and internal recovery', () => {
     const image = vi.fn(), spritesheet = vi.fn(), atlas = vi.fn();
     Object.assign(scene, { load: { image, spritesheet, atlas } });
     scene.preload();
-    expect(atlas).toHaveBeenCalledTimes(BREAKUP_SHIPS.length);
+    expect(atlas).toHaveBeenCalledTimes(BREAKUP_SHIPS.length + WRECK_SHEETS.length);
+    for (const sheet of WRECK_SHEETS) {
+      const file = wreckAsset(sheet);
+      expect(atlas).toHaveBeenCalledWith(wreckKey(sheet), expect.stringContaining(file + '.webp'), expect.stringContaining(file + '.json'));
+    }
     for (const kind of BREAKUP_SHIPS) {
       const file = breakupAsset(kind);
       expect(atlas).toHaveBeenCalledWith(breakupKey(kind), expect.stringContaining(file + '.png'), expect.stringContaining(file + '.json'));

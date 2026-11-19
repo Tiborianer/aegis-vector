@@ -1,6 +1,8 @@
 # Enemy ship destruction
 
-Seven small enemies break into recognizable parts from their original fleet models. A final hit starts the rupture on the side it came from. The wreck inherits the ship’s position, scale, rotation and flight velocity. Debris has no collision body. Damage, score, salvage and drops resolve on the original kill.
+All 24 campaign enemies break into parts from their original fleet models. The fatal hit determines which side opens first. The wreck inherits the ship’s bank, rotation, scale and flight velocity. Debris has no collision body. Kill credit, salvage, drops and mission progress resolve on the original hit.
+
+## Small ship animations
 
 | Ship | What releases | Duration |
 | --- | --- | ---: |
@@ -12,9 +14,44 @@ Seven small enemies break into recognizable parts from their original fleet mode
 | Shield Carrier | A side emitter separates, then the induction ring tears free in a violet discharge. | 1.27 s |
 | Reclaimer | The struck salvage arm swings away with its claw attached. The opposite drive vents later. | 1.10 s |
 
-Each effect uses one transparent sprite in play. Three opening bank angles converge on shared later frames. The Bomber and Mine Layer have a timed secondary ignition sound. The Shield Carrier has a separate electrical collapse. These cues follow the animation through a pause. Network co-op sends the same sprite, frame and mirror direction to the second pilot.
+These seven ships each use one transparent sprite in play. Three opening bank angles converge on shared later frames. The Bomber and Mine Layer have a timed secondary ignition sound. The Shield Carrier has a separate electrical collapse. These cues follow the animation through a pause. Network co-op sends the same sprite, frame and mirror direction to the second pilot.
+
+## Ships with moving assemblies
+
+Nine fighters and escorts use independently tumbling assemblies. Heavy structural parts drift, small fragments spin faster, and drive, field and magazine failures originate at different points on the hull.
+
+| Ship | Order of failure | Duration |
+| --- | --- | ---: |
+| Elite | Emitter seam, drive, keel | 1.18 s |
+| Charger | Leading edge, drive, spine | 1.03 s |
+| Phantom Raider | Drive and cloak, dorsal blade, spinal vent | 1.17 s |
+| Skimmer | Crescent, turbine, command pod | 1.24 s |
+| Weaver | Emitter drum, lobe bridge, spindle | 1.34 s |
+| Prism | Lateral optic, spar, optical nexus | 1.30 s |
+| Leech | Mandible pivot, back armor, induction well | 1.34 s |
+| Bulwark | Armor, side pod, reactor, main hull | 1.49 s |
+| Artillery Skimmer | Battery, capacitor, magazine, chassis | 1.45 s |
+
+## Command ships and bosses
+
+The opening breach travels across each hull over four or five stages. The last stage of a final boss continues through the pilot’s escape. Reduced-motion playback shortens the sequence to at most 1.28 seconds, reduces displacement and dims the flashes.
+
+| Ship | Order of failure after the fatal hit | Duration |
+| --- | --- | ---: |
+| Razorwing Ace | Wing root, near drive, opposite stabilizer, keel | 1.86 s |
+| Crown Pursuer | Pursuit bank, emitter, far drive, center hull | 2.02 s |
+| Warden | Near emitter, far emitter, field ring, drives, keel | 2.26 s |
+| Gatekeeper Frigate | Battery, deck, opposing engines, bridge and spine | 2.32 s |
+| Bastion Carrier | Outer hangar, broadside, far hangar, engines, bridge and keel | 2.62 s |
+| Pale Harrow | Near crescent, gun deck, far crescent, containment ring, spine | 2.79 s |
+| Eclipse Seraph | Wing bearing, near crescent, far lance and wing, reactor, citadel | 2.44 s |
+| Obsidian Crown | Near outrigger, armor ribs, far outriggers, drive spine, reactor | 2.82 s |
+
+Seraph’s fragments begin at its current wing sweep. Each of the Crown’s six guns flies off at its last aimed angle when that turret is disabled during combat. The eventual hull breakup uses the exposed gun mounts. Both pilots see the host’s fragment poses. Pausing freezes the entire sequence.
 
 ## Editing and rebuilding
+
+### Original seven sprite animations
 
 Open the ship’s Blender scene in the local model library under `assets/graphics-v2/destruction/`. Frame zero shows the intact ship. Timeline markers locate ruptures and secondary events. Each assembly records its release frame and distance from the initial breach.
 
@@ -28,3 +65,18 @@ python3 scripts/pack-ship-breakups.py shieldCarrier
 Blender writes the editable scene and bank renders to `work/ship-breakups/<ship ID>/`. Append `--metal` to use a Mac GPU, or `--scene-only` to save the editable scene without rendering. The packer requires Pillow. With no ship IDs it repacks all seven from their renders.
 
 The public PNG and JSON pairs live in `public/graphics-v2/breakups/`. The production build checks their hashes, timing, dimensions and frame bounds. For local visual review, launch a mission in Mission Lab, isolate a craft and fire from either side.
+
+### Moving assemblies and boss stages
+
+The remaining 17 editable Blender scenes use the same source GLBs. Each has 11 to 22 structural assemblies and timeline markers for each failure. The game draws twelve lit orientations per assembly. It chooses the initial position from the live bank, applies the authored release for the impact side, and advances the tumbling parts and their sounds on one scene clock.
+
+Edit the ordered stage names, timings and effects in `scripts/wreck_profiles.py`. The source mesh grouping and fracture geometry live in `scripts/render-wreck-parts.py`. Use the original neutral ship art in `public/graphics-v2/ships/` when checking how overlapping pieces fit. The packer also uses those images to order the pieces front to back.
+
+```sh
+blender -b --factory-startup --disable-autoexec --python-exit-code 1 -P scripts/render-wreck-parts.py
+python3 scripts/pack-wreck-parts.py
+```
+
+The first command renders the full fleet and the shared plumes to `work/wreck-parts/`. After a full build, a ship can be rebuilt individually. For example, append `-- seraph` to the Blender command, then pass `finale` to the packer. Use `-- --scene-only seraph` to update just the scene or `-- --metal seraph` for a Metal render on a Mac. Ship-to-atlas assignments are in `src/game/assets/wreck-ships.json`.
+
+Five WebP/JSON pairs ship under `public/graphics-v2/breakups/`. The four fleet atlases contain the assemblies. The shared effects atlas contains fire, field and ion plumes and a spark. `npm run build` verifies coverage of the complete enemy roster, atlas hashes, frame bounds, bank anchors and stage timing. To review a change, fire from both sides in Mission Lab, then check the transition from Seraph to Crown in Last Light.

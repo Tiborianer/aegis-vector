@@ -722,8 +722,9 @@ describe('combat runtime contracts without rendering', () => {
     expect(scene['announce']).toHaveBeenLastCalledWith('ALL TURRETS DISABLED // HULL EXPOSED');
     expect(scene['model'].exportCheckpoint()).toEqual(before);
     expect(scene['destroyEnemy']).not.toHaveBeenCalled();
-    scene['damageEnemy'](enemy as never, 1000, 'core', 6);
-    expect(scene['destroyEnemy']).toHaveBeenCalledExactlyOnceWith(enemy, scene['lead']);
+    const finalContact = { x: 530, y: 315 };
+    scene['damageEnemy'](enemy as never, 1000, 'core', 6, false, false, scene['lead'], finalContact);
+    expect(scene['destroyEnemy']).toHaveBeenCalledExactlyOnceWith(enemy, scene['lead'], finalContact);
   });
   it('keeps the tactical breach reward exclusive to Last Light', () => {
     const { scene, enemy } = modularHarness('coastal');
