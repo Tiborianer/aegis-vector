@@ -1,6 +1,7 @@
 import { connection, WorldMirror } from '../../coop/mirror';
 import { PilotFlight } from '../../coop/PilotFlight';
 import { squadInput } from '../../coop/input';
+import { ARC_BOLT_SPEED, arcInterval, arcPattern, wingArcTrigger, type ArcPart } from '../../coop/wingArc';
 import type { PilotOffers, PilotStatus } from '../../coop/campaign';
 import Phaser from 'phaser';
 import type { RadioCue, SoundCue } from '../../audio/SoundEngine';
@@ -236,7 +237,7 @@ export class BattleScene extends Phaser.Scene {
     this.createPlayer();
     this.createInput();
     this.createCollisions();
-    this.mirror = new WorldMirror(this);
+    this.mirror = new WorldMirror(this, (x, y, gold) => this.weaponMuzzle('spread', x, y, gold));
     connection.receive = frame => {
       if(connection.role !== 'guest')return;
       if(this.remoteMission !== frame.state.missionId){
@@ -256,6 +257,7 @@ export class BattleScene extends Phaser.Scene {
       window.removeEventListener('aegis:pause', this.pauseHandler);
       window.removeEventListener('aegis:resume', this.resumeHandler);
       window.removeEventListener('aegis:emp', this.empHandler);
+      this.mirror?.clear();
       this.dimensionalEnvironment?.destroy();
       this.classicSpaceEnvironment?.destroy();
       this.lead.playerShield?.destroy();
@@ -287,7 +289,13 @@ export class BattleScene extends Phaser.Scene {
       const wing=this.wing;
       const track=new Set<Phaser.GameObjects.GameObject>([...wing.playerShield?.objects??[]]);
       if(wing.stripes)track.add(wing.stripes);if(wing.marker)track.add(wing.marker);
-      connection.publish?.(this.mirror.capture(this.teamSnapshot(),wing.player,track));
+      connection.publish?.(this.mirror.capture(this.teamSnapshot(), wing.player, track, {
+        session: wingArcTrigger.session, press: wingArcTrigger.press, volley: wingArcTrigger.volley,
+        held: wingArcTrigger.awaitingRelease,
+        intervalMs: arcInterval(getArcVolley(wing.model.weapons.spread).intervalMs, wing.model.fireIntervalMultiplier),
+        split: wing.model.modifiers.splitCapacitors, overdrive: wing.model.weaponOverdriveState !== 'inactive',
+        helios: wing.model.modifiers.heliosBattery, total: wing.primaryVolleyIndex,
+      }));
     }
     if (this.model.mode !== 'paused') this.scrollEnvironment(delta);
     if (this.model.mode !== 'playing') {
@@ -313,7 +321,11 @@ export class BattleScene extends Phaser.Scene {
 
   private tickPilot(pilot: PilotFlight, delta: number): void {
     const restoration = pilot.model.tick(delta, pilot.down);
-    if (pilot.down) { squadInput.takeEmp(pilot.seat); return; }
+    if (pilot.down) {
+      squadInput.takeEmp(pilot.seat);
+      if (pilot.seat === 1 && connection.role === 'host') wingArcTrigger.takeTap();
+      return;
+    }
     const time = this.combatNow;
     if (restoration === 'shield') {
       this.shieldPulse(0x35e8ff, 1.2, pilot);
@@ -688,6 +700,7 @@ export class BattleScene extends Phaser.Scene {
         this.createPilotCollisions(this.wing);
       }
       this.wing.reset();
+      wingArcTrigger.takeTap();
       this.wing.model.start(config.wingmate);
       this.bankedOffers = structuredClone(config.coopOffers ?? [[], []]);
       this.wing.player.setPosition(780, WORLD_HEIGHT-110).setVisible(true).setActive(true).setAlpha(1);
@@ -812,10 +825,11 @@ export class BattleScene extends Phaser.Scene {
     pilot.contrails.lineBetween(pilot.player.x + 17, pilot.player.y + 37, pilot.player.x + 18 - direction.x * 9, pilot.player.y + 92);
     pilot.contrails.lineStyle(2, pilot.seat === 1 ? 0xfff2c4 : 0xdffcff, 0.34).lineBetween(pilot.player.x - 17, pilot.player.y + 37, pilot.player.x - 18 - direction.x * 9, pilot.player.y + 77);
     pilot.contrails.lineBetween(pilot.player.x + 17, pilot.player.y + 37, pilot.player.x + 18 - direction.x * 9, pilot.player.y + 77);
-    if (input.fire) this.fireWeapons(time, pilot);
+    const tapped = pilot.seat === 1 && connection.role === 'host' && wingArcTrigger.takeTap();
+    if (input.fire || tapped) this.fireWeapons(time, pilot, !input.fire);
   }
 
-  private fireWeapons(time: number, pilot = this.lead): void {
+  private fireWeapons(time: number, pilot = this.lead, primaryOnly = false): void {
     const intervalScale = pilot.model.fireIntervalMultiplier;
     const spreadLevel = pilot.model.weapons.spread;
     if (time >= pilot.nextPrimaryAt) {
@@ -823,16 +837,22 @@ export class BattleScene extends Phaser.Scene {
       const heliosVolley = pilot.model.modifiers.heliosBattery && pilot.primaryVolleyIndex % 8 === 0;
       const volley = getArcVolley(spreadLevel);
       const centerAngle = Math.min(...volley.angles.map(Math.abs));
-      volley.angles.forEach((angle) => {
-        const prism = pilot.model.modifiers.prismaticCore && Math.abs(angle) <= centerAngle + .001
+      const id = connection.role === 'host' && pilot.seat === 1 ? wingArcTrigger.next(wingArcTrigger.session) : undefined;
+      arcPattern(volley.angles, pilot.model.modifiers.splitCapacitors).forEach((part, index) => {
+        const extra = index === volley.angles.length;
+        const prism = !extra && pilot.model.modifiers.prismaticCore && Math.abs(part.angle) <= centerAngle + .001
           ? volley.angles.length % 2 === 0 ? 1.25 : 1.5 : 1;
-        this.spawnPlayerBullet(pilot.player.x, pilot.player.y - 42, ASSET_KEYS.playerBullet, angle, volley.damage * prism * (heliosVolley ? 1.5 : 1), heliosVolley, 'spread', pilot);
+        const damage = (extra ? 1 : volley.damage * prism) * (heliosVolley ? 1.5 : 1);
+        this.spawnPlayerBullet(pilot.player.x + part.x, pilot.player.y + part.y, ASSET_KEYS.playerBullet,
+          part.angle, damage, heliosVolley, 'spread', pilot, id ? [id, index] : undefined);
       });
-      if (pilot.model.modifiers.splitCapacitors) this.spawnPlayerBullet(pilot.player.x + 8, pilot.player.y - 40, ASSET_KEYS.playerBullet, 0, heliosVolley ? 1.5 : 1, heliosVolley, 'spread', pilot);
-      this.weaponMuzzle('spread', pilot.player.x, pilot.player.y - 42, heliosVolley || pilot.model.weaponOverdriveState !== 'inactive');
-      pilot.nextPrimaryAt = time + Math.max(62, volley.intervalMs * intervalScale);
-      this.emitSound('arc-fire');
+      const muzzle = this.weaponMuzzle('spread', pilot.player.x, pilot.player.y - 42, heliosVolley || pilot.model.weaponOverdriveState !== 'inactive');
+      if (id) muzzle.setData('wingArc', [id, -1]);
+      pilot.nextPrimaryAt = time + arcInterval(volley.intervalMs, intervalScale);
+      if (id) event('aegis:sound', { cue: 'arc-fire', wingArc: id });
+      else this.emitSound('arc-fire');
     }
+    if (primaryOnly) return;
 
     const droneLevel = pilot.model.weapons.drone;
     if (droneLevel > 0 && time >= pilot.nextDroneAt) {
@@ -960,7 +980,7 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: pulse, scale: 5.2, alpha: 0, duration: 220, onComplete: () => this.destroyTransient(pulse) });
   }
 
-  private weaponMuzzle(kind: 'spread' | 'laser' | 'drone', x: number, y: number, overdrive: boolean): void {
+  private weaponMuzzle(kind: 'spread' | 'laser' | 'drone', x: number, y: number, overdrive: boolean) {
     const color = overdrive ? OVERDRIVE_GOLD : kind === 'spread' ? 0x35e8ff : kind === 'laser' ? 0xf06cff : 0x65ffb1;
     const flash = kind === 'laser'
       ? this.add.rectangle(x, y, 12, 32, color, 0.34).setStrokeStyle(2, overdrive ? OVERDRIVE_CORE : 0xffffff, 0.82)
@@ -968,6 +988,7 @@ export class BattleScene extends Phaser.Scene {
     flash.setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
     this.transientViews.add(flash);
     this.tweens.add({ targets: flash, scale: kind === 'laser' ? 1.8 : 2.4, alpha: 0, duration: kind === 'laser' ? 100 : 80, onComplete: () => this.destroyTransient(flash) });
+    return flash;
   }
 
   private spawnPlayerBullet(
@@ -977,7 +998,7 @@ export class BattleScene extends Phaser.Scene {
     angle: number,
     baseDamage: number,
     forceOverdriveVisual = false,
-    weaponKind: WeaponType = 'spread', pilot = this.lead): void {
+    weaponKind: WeaponType = 'spread', pilot = this.lead, arc?: ArcPart): void {
     const overdriveState = pilot.model.weaponOverdriveState;
     const overdriveVisual = overdriveState !== 'inactive' || forceOverdriveVisual;
     const renderTexture = !overdriveVisual
@@ -1005,6 +1026,7 @@ export class BattleScene extends Phaser.Scene {
     body.setSize(isLaser && pilot.model.modifiers.splitCapacitors ? 11 : isWing ? 7 : 8, isLaser ? 48 : isWing ? 16 : isArc ? 24 : 18);
     const missile = texture === ASSET_KEYS.missile;
     bullet.setDataEnabled()
+      .setData('wingArc', arc)
       .setData('seat', pilot.seat).setData('damage', baseDamage * (weaponKind === 'spread' ? pilot.model.arcDamageMultiplier : pilot.model.damageMultiplier))
       .setData('missile', missile)
       .setData('weaponKind', weaponKind)
@@ -1013,7 +1035,7 @@ export class BattleScene extends Phaser.Scene {
       .setData('nextTrailAt', 0)
       .setData('pierce', pilot.model.modifiers.phaseArsenal ? 1 : 0)
       .setData('hitTargets', new Set<number>());
-    const speed = missile ? 620 : 940;
+    const speed = missile ? 620 : ARC_BOLT_SPEED;
     bullet.setVelocity(Math.sin(angle) * speed, -Math.cos(angle) * speed);
     bullet.setRotation(angle);
     pilot.model.registerShot();
@@ -3544,6 +3566,7 @@ export class BattleScene extends Phaser.Scene {
 
   private setPaused(paused: boolean): void {
     if (paused && this.model.mode === 'playing') {
+      if (connection.role === 'host') wingArcTrigger.takeTap();
       this.model.setPaused(true);
       this.time.paused = true;
       // Keep the tween manager ticking with zero progression so its wall-clock

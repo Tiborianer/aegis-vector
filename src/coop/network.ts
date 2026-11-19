@@ -1,6 +1,7 @@
 import { connection, type WorldFrame } from './mirror';
 import { element, type DeckView, type FlightDeck } from './panel';
 import { squadInput, ACTIONS } from './input';
+import { wingArcTrigger } from './wingArc';
 import { publicAssetUrl } from '../game/assets/publicAsset';
 
 interface Screen {
@@ -57,7 +58,10 @@ export class PrivateRooms {
       if (this.handlers.screen().kind === 'flight') this.send({ type: 'world', frame });
     };
     squadInput.onRemote = (_seat, action, down) => {
-      if (connection.role === 'guest') this.send({ type: 'input', action, down });
+      if (connection.role === 'guest' && connection.connected) {
+        if (action === 'fire') wingArcTrigger.set(down, connection.guestInFlight);
+        this.send({ type: 'input', action, down });
+      }
     };
     window.addEventListener(
       'keydown',
@@ -312,6 +316,8 @@ export class PrivateRooms {
         this.waiting?.append(copy);
         this.status.textContent = 'Waiting for the second pilot. Share this link with your wingmate.';
       } else if (m.type === 'joined') {
+        wingArcTrigger.connect();
+        connection.guestInFlight = false;
         connection.connected = true;
         this.retriesUntil = 0;
         this.seatKey = m.seatKey;
@@ -323,6 +329,7 @@ export class PrivateRooms {
         document.getElementById('coop-lobby')?.classList.add('hidden');
         this.showGuest({ kind: 'waiting', title: 'Joining squadron', detail: 'The host is preparing your seat.' });
       } else if (m.type === 'partner' && !guest) {
+        wingArcTrigger.connect();
         connection.connected = true;
         squadInput.onlineSeat = 0;
         squadInput.active = true;
@@ -344,6 +351,7 @@ export class PrivateRooms {
         if (running) this.handlers.pause(true);
         this.message('Wingmate disconnected', 'Holding the seat for 30 seconds.');
       } else if (m.type === 'error' || m.type === 'ended') {
+        connection.guestInFlight = false;
         if (!guest && this.handlers.screen().kind === 'flight') this.handlers.pause(true);
         ++this.generation;
         connection.connected = false;
@@ -356,6 +364,7 @@ export class PrivateRooms {
           connection.role = undefined;
         } else this.message('Room closed', String(m.message).slice(0, 180), true);
       } else if (!guest && m.type === 'input' && ACTIONS.includes(m.action)) {
+        if (m.action === 'fire') wingArcTrigger.set(m.down, this.handlers.screen().kind === 'flight');
         squadInput.set(1, m.action, m.down);
       } else if (!guest && m.type === 'choose') {
         this.deck.choose(1, m.id);
@@ -368,6 +377,7 @@ export class PrivateRooms {
         Array.isArray(m.frame.items)
       ) {
         this.phase = 'flight';
+        connection.guestInFlight = m.frame.state.mode === 'playing';
         this.guestScreen = '';
         this.panel.classList.add('hidden');
         if (!this.deck.panel.classList.contains('hidden')) this.deck.hide();
@@ -380,6 +390,8 @@ export class PrivateRooms {
         m.view.cards.every((c: { choices: unknown[] }) => Array.isArray(c.choices) && c.choices.length <= 60)
       ) {
         this.phase = 'deck';
+        if (connection.guestInFlight) squadInput.clear();
+        connection.guestInFlight = false;
         this.guestScreen = '';
         this.panel.classList.add('hidden');
         this.deck.hud.classList.add('hidden');
@@ -387,12 +399,15 @@ export class PrivateRooms {
       } else if (guest && m.type === 'story') {
         this.showGuest(m.screen);
       } else if (guest && ['sound', 'music', 'radio', 'announce'].includes(m.type)) {
+        if (m.type === 'sound' && m.payload?.cue === 'arc-fire' && typeof m.payload.wingArc === 'string' &&
+          !wingArcTrigger.firstSound(m.payload.wingArc)) return;
         window.dispatchEvent(new CustomEvent('aegis:' + m.type, { detail: m.payload }));
       }
     };
     ws.onclose = () => {
       window.clearTimeout(openingTimer);
       if (generation !== this.generation) return;
+      connection.guestInFlight = false;
       if (openingUntil && !acknowledged && Date.now() + 2500 < openingUntil) {
         window.setTimeout(() => {
           if (generation === this.generation) this.connect(guest, openingUntil);
@@ -453,6 +468,8 @@ export class PrivateRooms {
   }
   private showGuest(screen: Screen) {
     if (!screen || typeof screen.kind !== 'string') return;
+    if (connection.guestInFlight) squadInput.clear();
+    connection.guestInFlight = false;
     this.phase = screen.kind;
     this.deck.hide();
     this.deck.hud.classList.add('hidden');

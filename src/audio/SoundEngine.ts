@@ -45,6 +45,7 @@ export type SoundCue =
 export interface SoundRequest {
   cue: SoundCue;
   pan?: number;
+  wingArc?: string;
 }
 
 export interface AudioSettings {
@@ -422,12 +423,15 @@ export class SoundEngine {
     this.emitState();
   }
 
-  play(cue: SoundCue, pan = 0): void {
+  play(cue: SoundCue, pan = 0, wingArc?: string): void {
     if (!this.context || this.context.state !== 'running' || !this.sfxBus || this.settings.sfx <= 0) return;
     const nowMs = performance.now();
     const minimum = CUE_INTERVALS[cue] ?? 0;
-    if (nowMs - (this.lastCueAt.get(cue) ?? -Infinity) < minimum) return;
-    this.lastCueAt.set(cue, nowMs);
+    // Identified wingmate volleys have already been deduplicated and have their own gun cadence.
+    if (!(cue === 'arc-fire' && wingArc)) {
+      if (nowMs - (this.lastCueAt.get(cue) ?? -Infinity) < minimum) return;
+      this.lastCueAt.set(cue, nowMs);
+    }
     switch (cue) {
       case 'fire':
       case 'arc-fire':

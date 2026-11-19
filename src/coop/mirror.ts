@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { squadInput } from './input';
+import { GuestArcView } from './GuestArcView';
+import { wingArcTrigger, type ArcPart, type WingArcState } from './wingArc';
 import type { GameSnapshot } from '../game/simulation/types';
 import { PLAYER_COMBAT_MIN_Y, WORLD_HEIGHT, WORLD_WIDTH } from '../game/content/balance';
 
@@ -31,19 +33,22 @@ interface Drawing {
   commands?: number[];
   track?: boolean;
   add?: boolean;
+  arc?: ArcPart;
 }
 export interface WorldFrame {
   seq: number;
   state: GameSnapshot;
   items: Drawing[];
   self: number;
+  wingArc?: WingArcState;
 }
 export const connection: {
   role?: 'host' | 'guest';
   publish?: (frame: WorldFrame) => void;
   receive?: (frame: WorldFrame) => void;
   connected: boolean;
-} = { connected: false };
+  guestInFlight: boolean;
+} = { connected: false, guestInFlight: false };
 const lengths: Record<number, number> = {
   0: 7,
   1: 0,
@@ -99,7 +104,10 @@ export class WorldMirror {
   private displayX = 0;
   private displayY = 0;
   private lastSeq = -1;
-  constructor(private scene: Phaser.Scene) {}
+  private arc: GuestArcView;
+  constructor(private scene: Phaser.Scene, muzzle: (x: number, y: number, gold: boolean) => void) {
+    this.arc = new GuestArcView(scene, muzzle);
+  }
   private id(o: Phaser.GameObjects.GameObject) {
     let id = this.ids.get(o);
     if (id === undefined) {
@@ -112,6 +120,7 @@ export class WorldMirror {
     state: GameSnapshot,
     self: Phaser.GameObjects.Sprite,
     attachments: Set<Phaser.GameObjects.GameObject>,
+    wingArc: WingArcState,
   ): WorldFrame {
     const items: Drawing[] = [];
     const collect = (o: Phaser.GameObjects.GameObject, depth: number, parentAlpha: number) => {
@@ -149,6 +158,8 @@ export class WorldMirror {
       };
       if (o.blendMode === Phaser.BlendModes.ADD) d.add = true;
       if (attachments.has(o)) d.track = true;
+      const arc = o.data?.get('wingArc') as ArcPart | undefined;
+      if (arc) d.arc = arc;
       if (o instanceof Phaser.GameObjects.Graphics) {
         const values = o.commandBuffer.map(Number);
         if (!values.length || !safeCommands(values)) return;
@@ -186,7 +197,7 @@ export class WorldMirror {
       const d = (o as Phaser.GameObjects.Image).depth;
       if (d >= 1) collect(o, d, 1);
     }
-    return { seq: ++this.seq, state, items, self: this.id(self) };
+    return { seq: ++this.seq, state, items, self: this.id(self), wingArc };
   }
   accept(f: WorldFrame): void {
     if (!Array.isArray(f?.items) || f.items.length > 600 || !f.state?.squad || f.seq <= this.lastSeq) return;
@@ -194,9 +205,13 @@ export class WorldMirror {
     this.frame = f;
     this.lastSeq = f.seq;
     this.received = performance.now();
+    if (f.state.missionId !== was?.state.missionId || f.wingArc?.session !== was?.wingArc?.session ||
+      (was && f.state.stageElapsedMs < was.state.stageElapsedMs))
+      this.arc.clear();
     const live = new Set<number>();
     for (const it of f.items) {
       if (!it || !Number.isFinite(it.x) || !Number.isFinite(it.y) || !Number.isFinite(it.id)) continue;
+      if (it.arc && this.arc.match(it.arc, it.x, it.y, it.key, this.received, f.seq)) continue;
       let v = this.objects.get(it.id);
       if (!v) {
         let obj: Visual;
@@ -259,6 +274,7 @@ export class WorldMirror {
         this.objects.delete(id);
       }
     const pilot = f.state.squad.pilots[1];
+    if (f.wingArc) this.arc.confirm(f.wingArc, f.seq);
     if (
       !was ||
       was.state.missionId !== f.state.missionId ||
@@ -290,6 +306,12 @@ export class WorldMirror {
       PLAYER_COMBAT_MIN_Y,
       WORLD_HEIGHT - 30,
     );
+    const tap = wingArcTrigger.takeTap();
+    if (f.wingArc && connection.connected && connection.guestInFlight && f.state.mode === 'playing') {
+      const fresh = performance.now() - this.received < 1500;
+      this.arc.update(delta, f.wingArc, fresh && !pilot.down && (axis.fire || tap),
+        pilot.weapons.spread, this.displayX, this.displayY);
+    }
     const mix = Math.min(1, age / 0.05);
     for (const [id, { obj, item, fromX, fromY }] of this.objects) {
       if (id === f.self) obj.setPosition(this.displayX, this.displayY);
@@ -298,6 +320,7 @@ export class WorldMirror {
     }
   }
   clear(): void {
+    this.arc.clear();
     for (const { obj } of this.objects.values()) obj.destroy();
     this.objects.clear();
     this.frame = undefined;

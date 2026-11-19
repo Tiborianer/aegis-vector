@@ -40,6 +40,8 @@ The shared-keyboard launcher listens on loopback, port 4187. The LAN launcher li
 
 ## 3. Play over the internet
 
+In a network room, the wingmate sees the ARC cannon flash and launch its bolts and hears one firing sound per volley as soon as the gun is ready. This also applies to held fire and upgraded spreads. The host confirms collisions, enemy damage and score. A moving enemy can clear a shot that looked lined up on the guest’s screen. Secondary weapons and EMP use the host’s timing.
+
 The host opens the [GitHub game](https://tiborianer.github.io/aegis-vector/#two-pilots), chooses **Create private room** and sends the resulting invite to the guest. The guest opens the invite and chooses **Join private room**. Each pilot chooses a kit and marks their own fighter ready. Keep the host's game tab open during the flight. Unused invites expire after ten minutes. Rooms have two seats and require no game accounts. If the guest disconnects, the same tab can reclaim its seat for 30 seconds.
 
 The repository includes the game server and relay. A reachable HTTPS service is required for play between homes. For a single-site installation, stage the game once on the server and run the following from the game folder behind an HTTPS reverse proxy. Replace the example origin with the actual game origin.
@@ -89,6 +91,7 @@ The browser checks use Playwright and Chrome. Make the `playwright` package avai
 | Check | Service | Command |
 | --- | --- | --- |
 | Shared keyboard | Start `npm run dev -- --port 4197` | `node scripts/qa-coop.mjs` |
+| Wingmate ARC timing and authority | Start the staged room server on port 4216. The check adds 300 ms in each direction and measures rendered bolts and audio waveforms. Set `AEGIS_GUEST_ENGINE=webkit` for a WebKit guest, or `AEGIS_EXPECT_PUBLIC_RELAY` for a flight on the public game with its actual latency. | `node scripts/qa-coop-arc.mjs` |
 | Network rooms | Run `PORT=4198 AEGIS_BIND=127.0.0.1 AEGIS_LAN_ADDRESS=127.0.0.1 node server/coop/start.mjs` with a staged release | `node scripts/qa-coop-network.mjs` |
 | Encrypted relay | Provide the staged game directory with `AEGIS_WEB_DIR`. The check starts its own loopback listeners and uses OpenSSL to generate a temporary certificate. | `node scripts/qa-coop-relay.mjs` |
 | Hosted rooms | Set `AEGIS_EXPECT_PUBLIC_RELAY` to the deployed WSS address. The check opens the GitHub game and verifies the default address, private invite, guest flight and reconnection with two independent browsers. | `node scripts/qa-coop-network.mjs` |

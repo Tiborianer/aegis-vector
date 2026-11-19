@@ -707,7 +707,7 @@ if (debugMode) {
 window.addEventListener('aegis:sound', (raw) => {
   const detail = (raw as CustomEvent<SoundCue | SoundRequest>).detail;
   if (typeof detail === 'string') audio.play(detail);
-  else audio.play(detail.cue, detail.pan ?? 0);
+  else audio.play(detail.cue, detail.pan ?? 0, detail.wingArc);
 });
 window.addEventListener('aegis:radio', (raw) => audio.playRadio((raw as CustomEvent<RadioCue>).detail));
 window.addEventListener('aegis:radio-state', (raw) => {
