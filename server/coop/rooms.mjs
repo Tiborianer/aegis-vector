@@ -1,13 +1,10 @@
 import { createServer } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
-import { randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { WebSocketServer, WebSocket } from 'ws';
-const protocol = 1,
-  inviteLifetime = 10 * 60_000;
-const token = () => randomBytes(18).toString('base64url');
+import { WebSocketServer } from 'ws';
+import { createRoomHub, maxPayload, protocol } from './room-hub.mjs';
 const mime = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -23,8 +20,6 @@ const mime = {
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
 };
-const actions = new Set(['up', 'down', 'left', 'right', 'fire', 'emp']);
-const hostMessages = new Set(['world', 'deck', 'announce', 'sound', 'music', 'radio', 'story']);
 export function createRoomServer({
   scope = 'lan',
   root,
@@ -32,12 +27,10 @@ export function createRoomServer({
   tls,
   origins = [],
   grace = 30000,
-  inviteMs = inviteLifetime,
+  inviteMs,
   maxRooms = 64,
 } = {}) {
-  const rooms = new Map(),
-    peers = new Map(),
-    counts = new Map();
+  const hub = createRoomHub({ grace, inviteMs, maxRooms });
   const serve = async (req, res) => {
     try {
       const url = new URL(req.url, 'http://game.local');
@@ -107,23 +100,7 @@ export function createRoomServer({
     }
   };
   const http = tls ? createSecureServer(tls, serve) : createServer(serve);
-  const ws = new WebSocketServer({ noServer: true, maxPayload: 384 * 1024, perMessageDeflate: false });
-  const send = (s, m) => {
-    if (s?.readyState === WebSocket.OPEN) s.send(JSON.stringify(m));
-  };
-  const fail = (s, reason) => {
-    send(s, { type: 'error', message: reason });
-    s.close(1008, 'Room unavailable');
-  };
-  function end(room, reason) {
-    if (!rooms.delete(room.id)) return;
-    clearTimeout(room.timer);
-    for (const s of [room.host, room.guest])
-      if (s) {
-        send(s, { type: 'ended', message: reason });
-        s.close(1000);
-      }
-  }
+  const ws = new WebSocketServer({ noServer: true, maxPayload, perMessageDeflate: false });
   http.on('upgrade', (req, socket, head) => {
     let allowed = false;
     try {
@@ -135,140 +112,20 @@ export function createRoomServer({
       /* Browser clients supply Origin. */
     }
     const ip = socket.remoteAddress;
-    if (
-      req.url !== '/coop/socket' ||
-      !allowed ||
-      ws.clients.size >= 2 * maxRooms + 24 ||
-      (counts.get(ip) || 0) >= 20
-    ) {
+    if (req.url !== '/coop/socket' || !allowed || !hub.canAccept(ip)) {
       socket.destroy();
       return;
     }
-    ws.handleUpgrade(req, socket, head, (s) => {
-      counts.set(ip, (counts.get(ip) || 0) + 1);
-      s.on('close', () => {
-        const n = (counts.get(ip) || 1) - 1;
-        if (n) counts.set(ip, n);
-        else counts.delete(ip);
-      });
-      ws.emit('connection', s);
-    });
-  });
-  ws.on('connection', (s) => {
-    let interval = Date.now(),
-      count = 0;
-    s.isAlive = true;
-    s.on('pong', () => {
-      s.isAlive = true;
-    });
-    s.on('error', () => {});
-    const handshake = setTimeout(() => {
-      if (!peers.has(s)) s.close(1008);
-    }, 5000);
-    handshake.unref();
-    s.on('message', (raw, binary) => {
-      let m;
-      try {
-        m = JSON.parse(raw.toString());
-      } catch {
-        fail(s, 'Invalid message');
-        return;
-      }
-      if (binary || !m || typeof m !== 'object') {
-        fail(s, 'Invalid message');
-        return;
-      }
-      const now = Date.now();
-      if (now - interval >= 1000) {
-        interval = now;
-        count = 0;
-      }
-      if (++count > 140) {
-        fail(s, 'Too many messages');
-        return;
-      }
-      let peer = peers.get(s);
-      if (!peer) {
-        if (m.v !== protocol) {
-          fail(s, 'Both pilots need the same game version.');
-          return;
-        }
-        if (m.type === 'create') {
-          if (rooms.size >= maxRooms) {
-            fail(s, 'Rooms are full.');
-            return;
-          }
-          const room = {
-            id: token(),
-            host: s,
-            expires: now + inviteMs,
-            seatKey: token(),
-            guest: undefined,
-            claimed: false,
-          };
-          rooms.set(room.id, room);
-          peers.set(s, { room, host: true });
-          send(s, { type: 'created', room: room.id, expires: room.expires });
-          return;
-        }
-        const room = rooms.get(m.room);
-        if (
-          m.type !== 'join' ||
-          !room ||
-          room.guest ||
-          (!room.claimed && now > room.expires) ||
-          (room.claimed && m.seatKey !== room.seatKey)
-        ) {
-          fail(s, 'Invite expired, room full, or seat unavailable.');
-          return;
-        }
-        const returning = room.claimed;
-        clearTimeout(room.timer);
-        room.claimed = true;
-        room.guest = s;
-        peers.set(s, { room, host: false });
-        send(s, { type: 'joined', seatKey: room.seatKey });
-        send(room.host, { type: 'partner', returning });
-        return;
-      }
-      const { room, host } = peer;
-      if (m.type === 'leave') {
-        end(room, 'The squadron closed the room.');
-        return;
-      }
-      if (host && hostMessages.has(m.type)) {
-        if (room.guest?.bufferedAmount > 768 * 1024 && m.type === 'world') return;
-        if (room.guest?.bufferedAmount > 3 * 1024 * 1024) {
-          room.guest.terminate();
-          return;
-        }
-        send(room.guest, m);
-        return;
-      }
-      if (!host && m.type === 'input' && actions.has(m.action) && typeof m.down === 'boolean')
-        send(room.host, { type: 'input', action: m.action, down: m.down });
-      else if (!host && m.type === 'choose' && typeof m.id === 'string' && /^[a-z0-9-]{1,55}$/.test(m.id))
-        send(room.host, { type: 'choose', id: m.id });
-      else if (!host && m.type === 'pause') send(room.host, { type: 'guest-pause' });
-    });
-    s.on('close', () => {
-      clearTimeout(handshake);
-      const peer = peers.get(s);
-      peers.delete(s);
-      if (!peer || !rooms.has(peer.room.id)) return;
-      const room = peer.room;
-      if (peer.host) {
-        end(room, 'Host left. Progress is on the host computer.');
-        return;
-      }
-      room.guest = undefined;
-      send(room.host, { type: 'missing', grace });
-      room.timer = setTimeout(() => end(room, 'Reconnect window ended. Resume from the host save.'), grace);
-      room.timer.unref();
+    ws.handleUpgrade(req, socket, head, (client) => {
+      const peer = hub.connect(client, ip);
+      client.isAlive = true;
+      client.on('pong', () => { client.isAlive = true; });
+      client.on('error', () => {});
+      client.on('message', (raw, binary) => peer.receive(binary ? undefined : raw.toString()));
+      client.on('close', peer.disconnect);
     });
   });
   const cleanup = setInterval(() => {
-    for (const r of rooms.values()) if (!r.claimed && Date.now() > r.expires) end(r, 'The unused invite expired.');
     for (const s of ws.clients) {
       if (!s.isAlive) {
         s.terminate();
@@ -283,7 +140,7 @@ export function createRoomServer({
     http,
     close: async () => {
       clearInterval(cleanup);
-      for (const r of [...rooms.values()]) end(r, 'Server stopped.');
+      hub.shutdown();
       for (const s of ws.clients) s.terminate();
       ws.close();
       await new Promise((resolve) => http.close(resolve));

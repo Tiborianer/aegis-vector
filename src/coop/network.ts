@@ -236,7 +236,7 @@ export class PrivateRooms {
           ? 'Create a private internet invite for your wingmate.'
           : 'Guests on this Wi-Fi can open your invite in a browser.'
         : endpoint
-          ? 'Create a private internet invite for your wingmate.'
+          ? 'Create a room for a second computer on this Wi-Fi or over the internet.'
           : 'For two computers on home Wi-Fi, use the Host LAN Co-op launcher. Internet play needs a secure relay address.';
   }
   cancelWaiting(): void {

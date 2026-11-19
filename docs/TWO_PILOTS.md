@@ -27,6 +27,10 @@ The preflight **Test keyboard** button shows both jets responding. Try both diag
 
 ## 2. Play on the same Wi-Fi or LAN
 
+With internet access, open [Two Pilots](https://tiborianer.github.io/aegis-vector/#two-pilots), select **Create private room** and send the invite to the second computer. The guest selects **Join private room**. Wi-Fi and Ethernet both work. The hosting account is only for maintaining the service.
+
+For a game that stays entirely on your local network, use the LAN launcher.
+
 1. On the host Mac, double-click **Host LAN Co-op.command**. On Windows with the project and Node installed, use **Host LAN Co-op.cmd**. Leave the terminal open during play.
 2. Choose **Create private room**. If a squad save exists on this address, the checkbox lets the host continue it.
 3. Send the displayed private invite to the second computer. The guest opens it in a browser and clicks **Join private room**. The guest needs only the link.
@@ -36,7 +40,7 @@ The shared-keyboard launcher listens on loopback, port 4187. The LAN launcher li
 
 ## 3. Play over the internet
 
-Both pilots open the HTTPS game website. The host chooses **Two Pilots → Create private room** and shares the resulting link. The guest opens it and chooses **Join private room**. Room invitations expire after ten minutes if unused. Rooms have two seats, use a separate private reconnect credential and require no game accounts.
+The host opens the [GitHub game](https://tiborianer.github.io/aegis-vector/#two-pilots), chooses **Create private room** and sends the resulting invite to the guest. The guest opens the invite and chooses **Join private room**. Each pilot chooses a kit and marks their own fighter ready. Keep the host's game tab open during the flight. Unused invites expire after ten minutes. Rooms have two seats and require no game accounts. If the guest disconnects, the same tab can reclaim its seat for 30 seconds.
 
 The repository includes the game server and relay. A reachable HTTPS service is required for play between homes. For a single-site installation, stage the game once on the server and run the following from the game folder behind an HTTPS reverse proxy. Replace the example origin with the actual game origin.
 
@@ -53,9 +57,17 @@ For an existing static HTTPS game website, run `npm run coop:relay` with `AEGIS_
 
 ### Host the room service for the GitHub game
 
+The public game uses **Cloudflare Workers Free**. The game and artwork load from GitHub Pages. Cloudflare forwards the pilots' live controls and game updates. Reaching a Free quota can interrupt rooms until the quota resets. A Workers Free account can run this setup without a card. [Free-plan behavior](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+
+The Worker configuration is in `wrangler.jsonc`. It creates one SQLite-backed Durable Object namespace supported on Free. Both the Worker and LAN server use `server/coop/room-hub.mjs` to enforce the same invite, seat and reconnection rules. The Worker holds the active sockets in memory and the host browser keeps the campaign save.
+
+To maintain it, sign in to the hosting account with Wrangler, confirm **Workers plans → Free → Current plan**, and run `npx wrangler@4 deploy` from the game root after room-service changes. Test with `node scripts/qa-room-service.mjs https://aegis-vector-rooms.aegis-vector.workers.dev`. GitHub builds use the repository Actions variable `VITE_COOP_RELAY`. Its value is `wss://aegis-vector-rooms.aegis-vector.workers.dev/coop/socket`. When changing the address, redeploy GitHub Pages and run the hosted room test below.
+
+### Optional Render installation
+
 The repository includes a Render Blueprint for one free Node web service in Singapore. It runs the relay by itself, accepts browser connections from the game's GitHub Pages origin and checks its health at `/coop/config`. The game, artwork and campaign saves stay with the existing game and players. [Render setup](https://render.com/deploy?repo=https://github.com/Tiborianer/aegis-vector)
 
-1. In the hosting account, review the Blueprint, confirm **Free**, and deploy it. Record the HTTPS address assigned by Render.
+1. Review the Blueprint and the workspace billing terms before deploying. Render can require a card even on Free, and traffic beyond the included allowance can incur charges. Record the assigned HTTPS address. [Render's bandwidth billing](https://render.com/docs/outbound-bandwidth)
 2. Open `/coop/config` at that address. Check for game `aegis-vector`, protocol `1` and scope `internet`.
 3. In the game's GitHub repository, open **Settings → Secrets and variables → Actions → Variables**. Set `VITE_COOP_RELAY` to `wss://` followed by the assigned hostname and `/coop/socket`. Run **Actions → Deploy Aegis Vector → Run workflow**.
 4. From the published **Two Pilots** screen, create a room and open its invite in a different browser. The first connection can take about a minute after the Free instance goes idle. The lobby retries while it wakes. [Render free service behavior](https://render.com/docs/free)
@@ -66,7 +78,7 @@ The repository includes a Render Blueprint for one free Node web service in Sing
 | --- | --- | --- |
 | Shared keyboard | Browser movement and manual fire for each seat, six simultaneously held keys, independent EMP, field rescue, waypoint rejoin, wipe and retry, split shopping, refresh, survivor extraction, both route captains and an accelerated seven-mission ending. Campaign model tests exercise every route pair at Cadet, Pilot and Ace. | Play with two people on the intended physical keyboard. Compare ordinary-wave crowding and boss clear times using the same difficulty and kits. |
 | LAN | Two independent Chrome sessions join the release, control only their own seat, fly together, pause, reconnect, purchase different upgrades, choose the second fork and launch Stormbreak. Private-room tests cover admission, expiration, third-seat rejection and host departure. | Repeat on two physical computers on the same Wi-Fi and check the host’s firewall prompt and keyboard feel. |
-| Internet | The HTTPS game and separate WSS endpoint run on loopback. The browser test adds 152 ms of round-trip delay and drops every hundredth world snapshot. Reliable controls and purchases still arrive, and the guest can reclaim its seat. | Deploy the service and fly from two independent internet connections. The impairment test exercises game snapshots. Real internet packet loss, bandwidth variation and long-haul latency still need field testing. |
+| Internet | The public service test creates a private room, passes messages in both directions and restores the guest seat. The browser test uses the public GitHub lobby and its configured Cloudflare address. A separate local test adds 152 ms of round-trip delay and drops every hundredth world snapshot. | Play from two physical computers on different internet connections to assess keyboard feel and long-distance latency. |
 
 ### Repeat the checks
 

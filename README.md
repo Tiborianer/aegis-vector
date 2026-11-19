@@ -8,7 +8,7 @@ A polished, desktop-first 2D browser arcade campaign built with Phaser, TypeScri
 
 Choose **Two Pilots → Start local co-op** to share a keyboard. P1 uses WASD, holds F to fire and presses G for EMP. P2 uses the arrow keys, holds J to fire and presses K for EMP. Either pilot can choose either weapon kit. Each has a separate wallet and upgrade panel.
 
-For two computers on the same Wi-Fi, the host can run `npm run coop:lan` and share the private invite with the guest. Internet rooms use a secure relay. See the [playing and hosting guide](docs/TWO_PILOTS.md).
+On separate computers, open [Two Pilots](https://tiborianer.github.io/aegis-vector/#two-pilots) and choose **Create private room**. Send the invite to your wingmate, who opens it and chooses **Join private room**. This works on home Wi-Fi or different internet connections. Both players need only a browser. The free Cloudflare room service runs online. A local-only LAN launcher is also available. [Playing and hosting guide](docs/TWO_PILOTS.md)
 
 ## Play locally
 

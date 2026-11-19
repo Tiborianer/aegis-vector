@@ -12,7 +12,7 @@ const game = new URL(publicRelay
   : process.env.AEGIS_LOCAL_ORIGIN || 'http://127.0.0.1:4198');
 if (!publicRelay && !['127.0.0.1', 'localhost'].includes(game.hostname))
   throw Error('Use a loopback test origin for local checks.');
-const lobby = new URL('#host', game).href;
+const lobby = new URL(publicRelay ? '#two-pilots' : '#host', game).href;
 const out = resolve(process.argv[2] || 'outputs/quality/two-pilots');
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({

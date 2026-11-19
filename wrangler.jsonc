@@ -1,0 +1,12 @@
+{
+  "name": "aegis-vector-rooms",
+  "main": "server/coop/worker.mjs",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": { "GAME_ORIGIN": "https://tiborianer.github.io" },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "PrivateRooms" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PrivateRooms"] }]
+}
