@@ -3,8 +3,16 @@ import { createRequire } from 'node:module';
 import { mkdir } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 const { chromium } = createRequire(import.meta.url)('playwright');
-const origin = new URL(process.env.AEGIS_LOCAL_ORIGIN || 'http://127.0.0.1:4198').origin;
-if (!['127.0.0.1', 'localhost'].includes(new URL(origin).hostname)) throw Error('Use a loopback test origin.');
+const publicRelay = process.env.AEGIS_EXPECT_PUBLIC_RELAY;
+const testRelay = process.env.AEGIS_TEST_RELAY;
+if (publicRelay && (testRelay || process.env.AEGIS_LOCAL_ORIGIN || new URL(publicRelay).protocol !== 'wss:'))
+  throw Error('For the public check, set only AEGIS_EXPECT_PUBLIC_RELAY to the deployed secure endpoint.');
+const game = new URL(publicRelay
+  ? 'https://tiborianer.github.io/aegis-vector/'
+  : process.env.AEGIS_LOCAL_ORIGIN || 'http://127.0.0.1:4198');
+if (!publicRelay && !['127.0.0.1', 'localhost'].includes(game.hostname))
+  throw Error('Use a loopback test origin for local checks.');
+const lobby = new URL('#host', game).href;
 const out = resolve(process.argv[2] || 'outputs/quality/two-pilots');
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({
@@ -20,7 +28,7 @@ const browser = await chromium.launch({
 const errors = [];
 try {
   async function pilot() {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, ignoreHTTPSErrors: true });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, ignoreHTTPSErrors: !publicRelay });
     await ctx.addInitScript(() =>
       window.addEventListener('aegis:state', (e) => {
         if (e.detail?.squad) window.squadObservation = e.detail;
@@ -34,19 +42,25 @@ try {
     });
     return p;
   }
-  const host = await pilot(),
-    guest = await pilot();
-  await host.goto(origin + '/#host');
-  const hostButton = host.locator('#coop-create-room');
-  await hostButton.waitFor();
-  if (process.env.AEGIS_TEST_RELAY) {
-    await host.getByText('Internet relay address', { exact: true }).click();
-    await host.getByLabel('Secure relay address', { exact: true }).fill(process.env.AEGIS_TEST_RELAY);
+  async function createRoom(host) {
+    await host.goto(lobby);
+    const create = host.getByRole('button', { name: 'Create private room', exact: true });
+    await create.waitFor();
+    const address = host.getByLabel('Secure relay address', { exact: true });
+    if (publicRelay) assert.equal(await address.inputValue(), publicRelay, 'The public game supplies the relay.');
+    if (testRelay) {
+      await host.getByText('Internet relay address', { exact: true }).click();
+      await address.fill(testRelay);
+    }
+    await create.click();
+    const invite = await host.locator('#coop-invite').inputValue({ timeout: publicRelay ? 100_000 : 18_000 });
+    const url = new URL(invite);
+    if (publicRelay) assert.equal(url.origin + url.pathname, game.origin + game.pathname);
+    if (publicRelay || testRelay) assert.equal(new URLSearchParams(url.hash.slice(1)).get('relay'), publicRelay || testRelay);
+    return invite;
   }
-  await hostButton.click();
-  const invite = await host.locator('#coop-invite').inputValue();
-  if (process.env.AEGIS_TEST_RELAY)
-    assert.equal(new URLSearchParams(new URL(invite).hash.slice(1)).get('relay'), process.env.AEGIS_TEST_RELAY);
+  const host = await pilot(), guest = await pilot();
+  const invite = await createRoom(host);
   await guest.goto(invite);
   await guest.locator('#coop-join-room').click();
   await guest.locator('#coop-deck').waitFor();
@@ -115,14 +129,7 @@ try {
     });
   await host.evaluate((s) => localStorage.setItem('aegis-vector-coop-v1', JSON.stringify(s)), saved);
   await host.goto('about:blank');
-  await host.goto(origin + '/#host');
-  await host.locator('#coop-create-room').waitFor();
-  if (process.env.AEGIS_TEST_RELAY) {
-    await host.getByText('Internet relay address', { exact: true }).click();
-    await host.getByLabel('Secure relay address', { exact: true }).fill(process.env.AEGIS_TEST_RELAY);
-  }
-  await host.locator('#coop-create-room').click();
-  const nextInvite = await host.locator('#coop-invite').inputValue();
+  const nextInvite = await createRoom(host);
   await guest.goto(nextInvite);
   await guest.locator('#coop-join-room').click();
   await guest.locator('[data-seat="1"] [data-choice="route-storm"]').click();

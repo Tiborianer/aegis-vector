@@ -51,6 +51,15 @@ Route HTTPS requests for the game and WebSocket upgrades for `/coop/socket` to t
 
 For an existing static HTTPS game website, run `npm run coop:relay` with `AEGIS_ALLOWED_ORIGINS` set to that website’s origin. Build the frontend with `VITE_COOP_RELAY=wss://relay.example/coop/socket` or enter that address under **Internet relay address**. When hosting from a local game page with a public relay, enter the publicly reachable **Public game address** as well. For GitHub Pages, set the repository Actions variable `VITE_COOP_RELAY` to the public WSS endpoint and run the Pages deployment. The guest’s invite contains the game address and the relay choice. The service handles private rooms and forwards traffic. The host’s game decides damage, pickups, purchases, routes and checkpoints.
 
+### Host the room service for the GitHub game
+
+The repository includes a Render Blueprint for one free Node web service in Singapore. It runs the relay by itself, accepts browser connections from the game's GitHub Pages origin and checks its health at `/coop/config`. The game, artwork and campaign saves stay with the existing game and players. [Render setup](https://render.com/deploy?repo=https://github.com/Tiborianer/aegis-vector)
+
+1. In the hosting account, review the Blueprint, confirm **Free**, and deploy it. Record the HTTPS address assigned by Render.
+2. Open `/coop/config` at that address. Check for game `aegis-vector`, protocol `1` and scope `internet`.
+3. In the game's GitHub repository, open **Settings → Secrets and variables → Actions → Variables**. Set `VITE_COOP_RELAY` to `wss://` followed by the assigned hostname and `/coop/socket`. Run **Actions → Deploy Aegis Vector → Run workflow**.
+4. From the published **Two Pilots** screen, create a room and open its invite in a different browser. The first connection can take about a minute after the Free instance goes idle. The lobby retries while it wakes. [Render free service behavior](https://render.com/docs/free)
+
 ## Verification and acceptance
 
 | Stage | Automated coverage | Remaining playtest |
@@ -70,6 +79,7 @@ The browser checks use Playwright and Chrome. Make the `playwright` package avai
 | Shared keyboard | Start `npm run dev -- --port 4197` | `node scripts/qa-coop.mjs` |
 | Network rooms | Run `PORT=4198 AEGIS_BIND=127.0.0.1 AEGIS_LAN_ADDRESS=127.0.0.1 node server/coop/start.mjs` with a staged release | `node scripts/qa-coop-network.mjs` |
 | Encrypted relay | Provide the staged game directory with `AEGIS_WEB_DIR`. The check starts its own loopback listeners and uses OpenSSL to generate a temporary certificate. | `node scripts/qa-coop-relay.mjs` |
+| Hosted rooms | Set `AEGIS_EXPECT_PUBLIC_RELAY` to the deployed WSS address. The check opens the GitHub game and verifies the default address, private invite, guest flight and reconnection with two independent browsers. | `node scripts/qa-coop-network.mjs` |
 | Published game | Run against the public game after deployment. Set `AEGIS_EXPECT_REVISION` to the full commit ID to check the deployed version. | `node scripts/qa-coop-release.mjs https://tiborianer.github.io/aegis-vector/` |
 
 The local browser check uses development controls to cause damage and shorten completed missions. It still crosses the ordinary mission, rescue, failure, story and hangar screens. The network checks use the production build and include a saved hangar fixture to exercise the second route fork.

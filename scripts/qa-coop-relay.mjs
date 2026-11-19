@@ -62,9 +62,16 @@ try {
       await new Promise((resolve) => edge.close(resolve));
     },
   });
+  let warming = true;
   edge.on('upgrade', (req, socket, head) => {
     if (req.url !== '/coop/socket' || req.headers.origin !== siteOrigin) {
       socket.destroy();
+      return;
+    }
+    // A free hosted instance can briefly reject the initial handshake while waking.
+    if (warming) {
+      warming = false;
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
       return;
     }
     wss.handleUpgrade(req, socket, head, (front) => {
@@ -108,6 +115,7 @@ try {
   });
   const [code] = await once(child, 'exit');
   assert.equal(code, 0);
+  assert.equal(warming, false, 'The host retried after the first connection was unavailable.');
   assert(dropped > 0, 'Deliver at least 100 world frames to exercise loss');
   console.log(
     'Secure relay: 152ms artificial round trip, ' +

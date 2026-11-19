@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: aegis-vector-rooms
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+    startCommand: npm run coop:relay
+    healthCheckPath: /coop/config
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: AEGIS_BIND
+        value: "0.0.0.0"
+      - key: AEGIS_ALLOWED_ORIGINS
+        value: https://tiborianer.github.io
+    buildFilter:
+      paths:
+        - server/coop/**
+        - package.json
+        - package-lock.json
+        - render.yaml

@@ -71,6 +71,7 @@ export class PrivateRooms {
       true,
     );
     window.addEventListener('pagehide', () => {
+      ++this.generation;
       this.socket?.close();
     });
     window.addEventListener('blur', () => {
@@ -210,7 +211,8 @@ export class PrivateRooms {
           } catch {}
         this.retriesUntil = 0;
         this.phase = 'waiting';
-        this.connect(guest);
+        // An idle hosted relay may take a minute to wake on its first request.
+        this.connect(guest, this.sameOriginService ? 0 : Date.now() + 90_000);
       } catch (err) {
         this.status.textContent = (err as Error).message;
       }
@@ -257,18 +259,23 @@ export class PrivateRooms {
       this.socket.send(JSON.stringify(m));
     }
   }
-  private connect(guest: boolean): void {
+  private connect(guest: boolean, openingUntil = 0): void {
     const generation = ++this.generation;
     this.socket?.close();
     const ws = (this.socket = new WebSocket(this.endpoint));
-    this.status.textContent = 'Connecting…';
+    let acknowledged = false;
+    const openingTimer = openingUntil
+      ? window.setTimeout(() => {
+          if (generation === this.generation && !acknowledged) ws.close();
+        }, Math.max(0, openingUntil - Date.now()))
+      : 0;
+    this.status.textContent = openingUntil
+      ? 'Connecting to the online room service. The first connection can take about a minute.'
+      : 'Connecting…';
     ws.onopen = () => {
       if (generation !== this.generation) return;
       connection.role = guest ? 'guest' : 'host';
       this.send(guest ? { type: 'join', v: 1, room: this.room, seatKey: this.seatKey } : { type: 'create', v: 1 });
-    };
-    ws.onerror = () => {
-      this.status.textContent = 'Room service unavailable. Check the address and host launcher.';
     };
     ws.onmessage = (event) => {
       if (generation !== this.generation) return;
@@ -277,6 +284,11 @@ export class PrivateRooms {
         m = JSON.parse(event.data);
       } catch {
         return;
+      }
+      if (!m || typeof m !== 'object') return;
+      if (!acknowledged && ['created', 'joined', 'error', 'ended'].includes(m.type)) {
+        acknowledged = true;
+        window.clearTimeout(openingTimer);
       }
       if (m.type === 'created') {
         this.room = m.room;
@@ -379,7 +391,14 @@ export class PrivateRooms {
       }
     };
     ws.onclose = () => {
+      window.clearTimeout(openingTimer);
       if (generation !== this.generation) return;
+      if (openingUntil && !acknowledged && Date.now() + 2500 < openingUntil) {
+        window.setTimeout(() => {
+          if (generation === this.generation) this.connect(guest, openingUntil);
+        }, 2500);
+        return;
+      }
       if (!guest && this.handlers.screen().kind === 'flight') this.handlers.pause(true);
       connection.connected = false;
       squadInput.clear();
