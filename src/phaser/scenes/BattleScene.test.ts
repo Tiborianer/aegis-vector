@@ -514,21 +514,13 @@ describe('combat runtime contracts without rendering', () => {
     }
     expect(spawnAt('scout', 210000).getData('maxHealth')).toBeGreaterThan(spawnAt('scout', 35000).getData('maxHealth'));
   });
-  it('arms the first-salvo warning only for Bombers spawned in the Coastal opening', () => {
+  it('makes the bomber pod and the two field emitters independently reachable', () => {
     const scene = harness('coastal');
-    installEnemySpawnViews(scene);
-    for (const difficulty of ['cadet', 'pilot', 'ace'] as const) {
-      for (const mission of ['coastal', 'minefield', 'fortress'] as const) {
-        scene['model'].start({ ...config(mission), difficulty });
-        for (const progress of [0, .12, .199, .2, .5]) {
-          scene['model'].stageElapsedMs = scene['model'].stageDurationMs * progress;
-          const bomber = scene['spawnEnemy']('bomber', 640, -100, 0)!;
-          expect(bomber.getData('openingFirstSalvoPending')).toBe(mission === 'coastal' && progress < .2);
-          expect(scene['spawnEnemy']('scout', 640, -100, 0)!.getData('openingFirstSalvoPending')).toBe(false);
-          expect(scene['spawnEnemy']('elite', 640, -100, 0)!.getData('openingFirstSalvoPending')).toBe(false);
-        }
-      }
-    }
+    const boxes = (kind: EnemyKind) => scene['hitboxDefinitions'](kind);
+    expect(boxes('bomber')[0]).toMatchObject({ role:'weakpoint', x:.24 });
+    expect(boxes('warden').slice(0,2).map(b=>[b.role,Math.sign(b.x)])).toEqual([['weakpoint',-1],['weakpoint',1]]);
+    expect(boxes('razorwing')[0].role).toBe('weakpoint');
+    expect(boxes('scout').every(b=>b.role!=='weakpoint')).toBe(true);
   });
   it('spawns the complete deterministic Aurora encounter deck, including its gentler opening formations', () => {
     const scene = harness('aurora');
@@ -895,18 +887,16 @@ describe('combat runtime contracts without rendering', () => {
     scene['startMission'](config('lastLight'));
     expect(scene['isolatedCraftPreview']).toBe(false);
   });
-  it('gives the first Coastal waves smaller actual formations, then ramps to full groups', () => {
+  it('teaches five Coastal silhouettes one at a time before combining the crossing pass and bombing lane', () => {
     const scene = harness('coastal'), spawn = vi.fn();
-    Object.assign(scene, { spawnEnemy: spawn, waveX: () => 640 });
-    scene['spawnWave'](0);
-    expect(spawn).toHaveBeenCalledTimes(3);
-    spawn.mockClear(); scene['spawnWave'](1);
-    expect(spawn).toHaveBeenCalledTimes(2);
-    spawn.mockClear(); scene['spawnBaseHeavyWave'](2, .05);
-    expect(spawn).toHaveBeenCalledTimes(2);
-    scene['model'].stageElapsedMs = scene['model'].stageDurationMs * .3;
-    spawn.mockClear(); scene['spawnWave'](0);
-    expect(spawn).toHaveBeenCalledTimes(5);
+    Object.assign(scene, {spawnEnemy:spawn, waveX:()=>640});
+    const expected = [['scout','scout'],['interceptor'],['bomber'],['charger'],['sniper'],['interceptor','bomber']];
+    expected.forEach((kinds,wave)=>{
+      spawn.mockClear();scene['spawnWave'](wave);
+      expect(spawn.mock.calls.map(call=>call[0])).toEqual(kinds);
+    });
+    scene['model'].stageElapsedMs=scene['model'].stageDurationMs*.3;
+    spawn.mockClear();scene['spawnWave'](6);expect(spawn).toHaveBeenCalledTimes(5);
   });
   it('alternates early heavy slots with scouts and caps regular Coastal Bombers at one', () => {
     const scene = harness('coastal'), spawn = vi.fn(), count = vi.fn(() => 0);
@@ -924,7 +914,7 @@ describe('combat runtime contracts without rendering', () => {
     spawn.mockClear(); scene['spawnBaseHeavyWave'](3, .1);
     expect(spawn.mock.calls.map(([kind]) => kind)).toEqual(['bomber', 'scout', 'scout', 'scout']);
   });
-  it('replaces the next ordinary Coastal wave with the first unreinforced carrier', () => {
+  it('gives the first carrier time without skipping the next flight lesson', () => {
     const scene = harness('coastal'), { enemy } = fakeEnemy('bomber');
     Object.assign(scene, {
       time: { now: 23_400 }, nextWaveAt: 26_700, waveIndex: 4,
@@ -937,18 +927,18 @@ describe('combat runtime contracts without rendering', () => {
     expect(scene['spawnEnemy']).toHaveBeenCalledExactlyOnceWith('bomber', 640, -100, 0);
     expect(scene['markCarrier']).toHaveBeenCalledExactlyOnceWith(enemy, 0, false);
     expect(scene['nextCarrierIndex']).toBe(1);
-    expect(scene['waveIndex']).toBe(5);
+    expect(scene['waveIndex']).toBe(4);
     expect(scene['nextWaveAt']).toBe(33_100);
     expect(scene['spawnWave']).not.toHaveBeenCalled();
     expect(scene['spawnThreatEscorts']).not.toHaveBeenCalled();
     scene['model'].stageElapsedMs = 33_100;
     scene['updateWaveDirector'](33_100);
-    expect(scene['spawnWave']).toHaveBeenCalledExactlyOnceWith(5);
-    expect(scene['waveIndex']).toBe(6);
+    expect(scene['spawnWave']).toHaveBeenCalledExactlyOnceWith(4);
+    expect(scene['waveIndex']).toBe(5);
     expect(scene['nextWaveAt']).toBe(39_500);
     scene['maybeSpawnArmamentCarrier'](.52);
     expect(scene['markCarrier']).toHaveBeenLastCalledWith(enemy, 1, true);
-    expect(scene['waveIndex']).toBe(6);
+    expect(scene['waveIndex']).toBe(5);
     expect(scene['nextWaveAt']).toBe(39_500);
   });
   it('does not consume the replacement wave or carrier cursor when the carrier cannot spawn', () => {
@@ -972,33 +962,42 @@ describe('combat runtime contracts without rendering', () => {
     expect([data.health, data.maxHealth]).toEqual([14, 14]);
     expect(scene['configureDepthArrival']).toHaveBeenCalledExactlyOnceWith(enemy, 1100);
   });
-  it('holds an opening Bomber first volley until 700ms after combat arrival, with a following warning', () => {
-    const scene = harness('coastal'), { enemy, data } = fakeEnemy('bomber');
-    const ring = { setDepth: () => ring, setStrokeStyle: () => ring, setPosition: vi.fn(() => ring), setAlpha: vi.fn(() => ring) };
-    Object.assign(scene, { add: { circle: vi.fn(() => ring) }, steerEnemy: vi.fn(), enemyFire: vi.fn() });
-    Object.assign(data, { state: 'entry', openingFirstSalvoPending: true, nextFire: 0, fireScale: .88 });
-    enemy.y = 100;
-    scene['updateStandardEnemy'](enemy as never, 'bomber', 1000);
-    expect(scene['enemyFire']).not.toHaveBeenCalled();
-    expect(scene.add.circle).not.toHaveBeenCalled();
-    enemy.y = 136;
-    scene['updateStandardEnemy'](enemy as never, 'bomber', 1100);
-    expect(data.state).toBe('combat');
-    expect(data.openingFirstSalvoAt).toBe(1800);
-    expect(data.nextFire).toBe(1800);
-    expect(scene.add.circle).toHaveBeenCalledTimes(1);
-    enemy.x = 580;
-    scene['updateStandardEnemy'](enemy as never, 'bomber', 1799);
-    expect(ring.setPosition).toHaveBeenLastCalledWith(580, 160);
-    expect(scene['enemyFire']).not.toHaveBeenCalled();
-    scene['updateStandardEnemy'](enemy as never, 'bomber', 1800);
-    expect(scene['enemyFire']).toHaveBeenCalledExactlyOnceWith(enemy, 'bomber');
-    expect(scene['destroyEnemyView']).toHaveBeenCalledWith(enemy, 'telegraph');
-    expect(data.openingFirstSalvoPending).toBe(false);
-    expect(data.nextFire).toBeGreaterThan(1800);
-    scene['updateStandardEnemy'](enemy as never, 'bomber', 1801);
-    expect(scene['enemyFire']).toHaveBeenCalledTimes(1);
-    expect(scene.add.circle).toHaveBeenCalledTimes(1);
+  it('tracks a moving wingmate until the Sniper locks and fires down that line', () => {
+    const scene = harness('coastal');
+    const { enemy, data } = fakeEnemy('sniper');
+    const wing = { player: { x: 900, y: 610 }, down: false };
+    const fire = vi.fn();
+    Object.assign(scene, { flyingCoop: true, wing, fireSniperBeam: fire });
+    Object.assign(enemy, { setVelocity: () => enemy });
+    Object.assign(data, { state: 'tracking', telegraph: {}, trackUntil: 700 });
+    const update = (time: number) => scene['updateSniper'](enemy as never, time);
+    update(100);
+    const initial = data.aimAngle;
+    wing.player.x = 340;
+    update(700);
+    const lock = Math.atan2(wing.player.y - enemy.y, wing.player.x - enemy.x);
+    expect(data.aimAngle).toBe(lock);
+    expect(lock).not.toBe(initial);
+    wing.player.x = 1100;
+    update(1350);
+    expect(fire).toHaveBeenCalledExactlyOnceWith(enemy, lock);
+    expect(data.state).toBe('relocate');
+  });
+  it('locks a bomber lane for a full release charge and closes its exposed pod after the salvo', () => {
+    const scene = harness('coastal'), {enemy,data}=fakeEnemy('bomber');
+    const lines={setDepth:()=>lines,fillStyle:()=>lines,fillRect:()=>lines,lineStyle:()=>lines,lineBetween:()=>lines};
+    const fire=vi.fn();
+    Object.assign(scene,{add:{graphics:()=>lines},steerEnemy:vi.fn(),spawnEnemyBullet:fire});
+    Object.assign(enemy,{displayWidth:100,setVelocity:()=>enemy});
+    Object.assign(data,{state:'entry',nextFire:0,fireScale:1});
+    enemy.y=100;scene['updateStandardEnemy'](enemy as never,'bomber',1000);
+    expect(data.podOpen).toBeUndefined();
+    enemy.y=140;scene['updateStandardEnemy'](enemy as never,'bomber',1100);
+    expect(data.podOpen).toBe(true);expect(data.bombLane).toBe(584);
+    scene['updateStandardEnemy'](enemy as never,'bomber',2549);expect(fire).not.toHaveBeenCalled();
+    scene['updateStandardEnemy'](enemy as never,'bomber',2550);
+    expect(fire.mock.calls.map(c=>c[0])).toEqual([570,584,598]);expect(data.podOpen).toBe(false);
+    expect(scene['destroyEnemyView']).toHaveBeenCalledWith(enemy,'telegraph');
   });
   it('forwards real mission starts and frame updates to the Classic space adapter', () => {
     const scene = harness();
@@ -1008,7 +1007,7 @@ describe('combat runtime contracts without rendering', () => {
     scene['startMission'](config('lastLight'));
     expect(space.setMission).toHaveBeenLastCalledWith('lastLight');
     scene['scrollEnvironment'](16);
-    expect(space.update).toHaveBeenLastCalledWith(16, 640, 0);
+    expect(space.update).toHaveBeenLastCalledWith(16, 640, 0, 1);
     // No foreground exists in this harness: reaching legacy scroll would fail.
     scene['startMission'](config('coastal'));
     expect(space.setMission).toHaveBeenLastCalledWith('coastal');
@@ -1260,7 +1259,7 @@ describe('combat runtime contracts without rendering', () => {
     expect(model.creditsEarned).toBe(ENEMIES.seraph.credits);
     expect(scene['finaleApproachWave']).toBe(4);
     callbacks[0]();
-    expect(spawn).toHaveBeenCalledExactlyOnceWith('nullArchitect', 640, -100, 0);
+    expect(spawn).toHaveBeenCalledExactlyOnceWith('nullArchitect', 640, -100, 0, true);
     scene['updateDreadnoughtApproach']();
     expect(spawn).toHaveBeenCalledOnce();
   });
@@ -1295,7 +1294,7 @@ describe('combat runtime contracts without rendering', () => {
     expect(model.latestWaypointId).toBe(1);
     expect(model.finaleBossStage).toBe('seraph');
     callbacks[0]();
-    expect(spawn).toHaveBeenCalledExactlyOnceWith('seraph', 640, -100, 0);
+    expect(spawn).toHaveBeenCalledExactlyOnceWith('seraph', 640, -100, 0, true);
   });
   it('the Dreadnought clears only its mission; only the final Architect produces victory', () => {
     for (const missionId of ['dreadnought', 'lastLight'] as const) {
@@ -1375,7 +1374,7 @@ describe('combat runtime contracts without rendering', () => {
   });
   it.each(['coastal', 'minefield', 'aurora', 'fortress', 'stormbreak', 'graveyard', 'carrierSiege'] as const)('does not commit an unspawned required target in %s', (missionId) => {
     const scene = harness(missionId);
-    scene['model'].stageElapsedMs = scene['model'].stageDurationMs;
+    scene['model'].stageElapsedMs = scene['model'].stageDurationMs - 10_000;
     const spawn = vi.fn(() => undefined);
     Object.assign(scene, { spawnEnemy: spawn });
     scene['maybeSpawnCommandTargets']();
@@ -1510,9 +1509,62 @@ describe('combat runtime contracts without rendering', () => {
     expect(scene['completeMission']).toHaveBeenCalledExactlyOnceWith(false);
     expect(scene['spawnWave']).not.toHaveBeenCalled();
   });
+  it.each(['coastal', 'minefield', 'aurora', 'fortress', 'stormbreak', 'graveyard', 'carrierSiege'] as const)('closes the %s arrival queue exactly six seconds before extraction', missionId => {
+    const scene = harness(missionId), model = scene['model'];
+    model.stageElapsedMs = model.stageDurationMs - 6_001;
+    expect(scene['enemyArrivalsOpen']()).toBe(true);
+    model.stageElapsedMs += 1;
+    expect(scene['enemyArrivalsOpen']()).toBe(false);
+    expect(scene['spawnEnemy']('scout', 640, -80, 0)).toBeUndefined();
+    const spawn = vi.fn();
+    scene['spawnEnemy'] = spawn;
+    scene['commandSpawned'] = true;
+    scene['commandRemaining'] = 1;
+    scene['flyingCoop'] = true;
+    scene['maybeSecureProgressWaypoint'] = vi.fn();
+    scene['updateWaveDirector'](model.stageElapsedMs);
+    scene['spawnWave'](15);
+    scene['spawnThreatEscorts'](12);
+    scene['maybeSpawnArmamentCarrier'](.99);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(scene['enemyBullets'].clear).not.toHaveBeenCalled();
+    expect(scene['pickups'].clear).not.toHaveBeenCalled();
+    expect(scene['enemies'].clear).not.toHaveBeenCalled();
+  });
+
+  it('keeps a visible survivor fighting while an offscreen queued arrival is cancelled at the cutoff', () => {
+    const scene = harness('coastal'), model = scene['model'];
+    model.stageElapsedMs = model.stageDurationMs - 6000;
+    const visible = fakeEnemy('bomber').enemy.setData('seenInBattle', true).setData('combatReady', false);
+    const queued = fakeEnemy('prism').enemy.setData('combatReady', false);
+    const keepFighting = vi.fn(), remove = vi.fn();
+    Object.assign(scene, { updateDepthArrival: keepFighting, removeEscapedEnemy: remove });
+    Object.assign(scene['enemies'].children, { each: (fn: (enemy: typeof visible) => void) => [visible, queued].forEach(fn) });
+    scene['updateEnemies'](model.stageElapsedMs, 16);
+    expect(keepFighting).toHaveBeenCalledExactlyOnceWith(visible, 16);
+    expect(remove).toHaveBeenCalledExactlyOnceWith(queued);
+  });
+
+  it('shuts finale reinforcements while allowing the scheduled Seraph-to-Crown handoff and extraction', () => {
+    const scene = harness('lastLight'), model = scene['model'];
+    model.setFinalePhase('boss');
+    expect(scene['enemyArrivalsOpen']()).toBe(true);
+    model.advanceFinaleBoss();
+    expect(scene['enemyArrivalsOpen']()).toBe(false);
+    expect(scene['spawnEnemy']('bomber', 640, -50, 0)).toBeUndefined();
+    model.complete(true);
+    expect(scene['spawnEnemy']('nullArchitect', 640, -50, 0, true)).toBeUndefined();
+    const dread = harness('dreadnought');
+    dread['model'].setFinalePhase('boss');
+    dread['model'].setBoss('DREADNOUGHT', .3301);
+    expect(dread['enemyArrivalsOpen']()).toBe(true);
+    dread['model'].setBoss('DREADNOUGHT', .33);
+    expect(dread['enemyArrivalsOpen']()).toBe(false);
+  });
+
   it('reserves both Fortress command slots and counts only actual spawned leaders', () => {
     const scene = harness('fortress');
-    scene['model'].stageElapsedMs = scene['model'].stageDurationMs;
+    scene['model'].stageElapsedMs = scene['model'].stageDurationMs - 25_000;
     const { enemy } = fakeEnemy('elite');
     const spawn = vi.fn().mockReturnValueOnce(enemy).mockReturnValue(undefined);
     Object.assign(scene, { spawnEnemy: spawn, markCarrier: vi.fn(), configureDepthArrival: vi.fn() });
@@ -1571,5 +1623,70 @@ describe('combat runtime contracts without rendering', () => {
     expect(velocityFromRotation.mock.calls[0][0]).toBe(angle);
     expect(velocityFromRotation.mock.calls[0][2]).toBe(body.velocity);
     expect(body.enable).toBe(true);
+  });
+});
+
+describe('charged ARC volleys in flight', () => {
+  function fire(full: boolean, spread: 1 | 4) {
+    const scene = harness('coastal');
+    const pilot = scene['lead'];
+    pilot.model.weapons.spread = spread;
+    pilot.model.modifiers.splitCapacitors = spread === 4;
+    pilot.arcCharge.advance(full ? 1200 : 450, false);
+    const projectiles: ReturnType<typeof projectile>[] = [];
+    function projectile(x: number, y: number) {
+      const data = new Map<string, unknown>();
+      const bolt = {
+        x, y, active: true, rotation: 0, body: { enable: true, setSize: vi.fn() },
+        clearTint: () => bolt, setTint: () => bolt, setTexture: () => bolt,
+        setPosition: () => bolt, setActive: () => bolt, setVisible: () => bolt,
+        setDepth: () => bolt, setAlpha: () => bolt, setScale: () => bolt,
+        setDataEnabled: () => bolt, setVelocity: () => bolt,
+        setRotation: (angle: number) => { bolt.rotation = angle; return bolt; },
+        getData: (key: string) => data.get(key),
+        setData: (key: string, value: unknown) => { data.set(key, value); return bolt; },
+        disableBody: () => { bolt.active = false; },
+      };
+      return bolt;
+    }
+    Object.assign(scene, { weaponMuzzle: vi.fn(), damageEnemy: vi.fn(), weaponImpact: vi.fn(),
+      playerBullets: { get(x: number, y: number) {
+        const bolt = projectile(x, y);
+        projectiles.push(bolt);
+        return bolt;
+      } } });
+    scene['fireWeapons'](1000, pilot, true);
+    return { scene, pilot, projectiles };
+  }
+
+  it.each([false, true])('charges one centered bolt in a four-way split volley (full=%s)', full => {
+    const { scene, pilot, projectiles } = fire(full, 4);
+    expect(projectiles.map(b => b.getData('charge'))).toEqual([0, full ? 2 : 1, 0, 0, 0]);
+    const center = projectiles[1], split = projectiles[4];
+    expect([center.x, center.rotation, center.getData('lightPierce')]).toEqual([pilot.player.x, 0, full]);
+    expect(center.getData('damage')).toBeCloseTo(1.05 * (full ? 3 : 2));
+    expect([split.x, split.getData('damage')]).toEqual([pilot.player.x + 8, 1]);
+    scene['fireWeapons'](1200, pilot, true);
+    expect(projectiles.slice(5).map(b => b.getData('charge'))).toEqual([0, 0, 0, 0, 0]);
+    expect(projectiles[6].rotation).toBeCloseTo(-0.0375);
+  });
+
+  it.each([
+    { line: ['scout', 'interceptor', 'charger'], hits: [1, 2] },
+    { line: ['bomber', 'scout'], hits: [1] },
+  ] as const)('stops at the correct hull in $line', ({ line, hits }) => {
+    const { scene, projectiles } = fire(true, 1);
+    const bolt = projectiles[0];
+    line.forEach((kind, index) => {
+      const { enemy, data } = fakeEnemy(kind);
+      data.entityId = index + 1;
+      const zone = { getData: (key: string) => key === 'enemy' ? enemy : 'body' };
+      // Both overlapping hit zones share the hull's entity ID.
+      scene['hitEnemy'](bolt as never, zone as never);
+      scene['hitEnemy'](bolt as never, zone as never);
+    });
+    expect([...bolt.getData('hitTargets') as Set<number>]).toEqual(hits);
+    expect(scene['damageEnemy']).toHaveBeenCalledTimes(hits.length);
+    expect(bolt.active).toBe(false);
   });
 });

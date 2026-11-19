@@ -3,6 +3,7 @@ vi.mock('phaser', () => ({ default: { Scene: class {} } }));
 vi.mock('../view/generateTextures', () => ({ generateTextures: vi.fn() }));
 import { WRECK_SHEETS, wreckAsset, wreckKey } from '../view/fleetWreck';
 import { BREAKUP_SHIPS, breakupAsset, breakupKey } from '../view/shipBreakup';
+import { COMMON_CRAFT, PAINT, KESTREL_EQUIPMENT, paintedHull, paintedWreck } from '../../game/assets/fleetArt';
 import { BootScene } from './BootScene';
 import { generateTextures } from '../view/generateTextures';
 import { CLOUD_KEY, ENVIRONMENT_IDS, SHIP_SIZES, shipFrameSize, shipKey } from '../../game/assets/visuals';
@@ -16,7 +17,7 @@ describe('approved artwork boot and internal recovery', () => {
     const image = vi.fn(), spritesheet = vi.fn(), atlas = vi.fn();
     Object.assign(scene, { load: { image, spritesheet, atlas } });
     scene.preload();
-    expect(atlas).toHaveBeenCalledTimes(BREAKUP_SHIPS.length + WRECK_SHEETS.length);
+    expect(atlas).toHaveBeenCalledTimes(BREAKUP_SHIPS.length + WRECK_SHEETS.length + 1 + COMMON_CRAFT.length * PAINT.length);
     for (const sheet of WRECK_SHEETS) {
       const file = wreckAsset(sheet);
       expect(atlas).toHaveBeenCalledWith(wreckKey(sheet), expect.stringContaining(file + '.webp'), expect.stringContaining(file + '.json'));
@@ -25,7 +26,12 @@ describe('approved artwork boot and internal recovery', () => {
       const file = breakupAsset(kind);
       expect(atlas).toHaveBeenCalledWith(breakupKey(kind), expect.stringContaining(file + '.png'), expect.stringContaining(file + '.json'));
     }
-    expect(spritesheet).toHaveBeenCalledTimes(Object.keys(SHIP_SIZES).length);
+    expect(spritesheet).toHaveBeenCalledTimes(Object.keys(SHIP_SIZES).length + 1 + COMMON_CRAFT.length * PAINT.length);
+    expect(spritesheet).toHaveBeenCalledWith(KESTREL_EQUIPMENT, expect.stringContaining('kestrel-equipment.webp'), {frameWidth:88,frameHeight:104});
+    for (const craft of COMMON_CRAFT) for (const paint of PAINT) {
+      expect(spritesheet.mock.calls.some(([key]) => key === paintedHull(craft,paint))).toBe(true);
+      expect(atlas.mock.calls.some(([key]) => key === paintedWreck(craft,paint))).toBe(true);
+    }
     expect(image).toHaveBeenCalledTimes(3 + ENVIRONMENT_IDS.length + 1);
     expect(image).toHaveBeenCalledWith(CLOUD_KEY, expect.any(String));
     for (const kind of Object.keys(SHIP_SIZES) as Array<keyof typeof SHIP_SIZES>) {

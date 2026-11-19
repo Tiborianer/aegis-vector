@@ -3,8 +3,9 @@ import { getSortieModule, SORTIE_MODULES } from '../content/sortieModules';
 import { getStoryChapter, STORY_CHAPTER_IDS, storyChapterForMission } from '../content/story';
 import { buildCombatModifiers, getSibling, getUpgradeNode, UPGRADE_NODES } from '../content/upgrades';
 import { ENEMIES, WEAPON_MAX_LEVEL } from '../content/balance';
-import { applyRouteReward, ROUTE_REWARDS, routeRewardForClear } from '../content/routeRewards';
+import { applyRouteReward, LATE_ROUTE_REWARDS, ROUTE_REWARDS, routeRewardForClear, sortiePrice } from '../content/routeRewards';
 import { cloneMissionWaypoint, sanitizeMissionWaypoint } from './checkpoints';
+import { resumeArrivalTime } from '../content/missionPacing';
 import type {
   CampaignRoute,
   CampaignSnapshot,
@@ -25,6 +26,7 @@ import type {
 
 const INITIAL_WEAPONS: WeaponLevels = { spread: 1, missile: 0, laser: 0, drone: 0, ion: 0 };
 const LEGACY_MISSIONS: MissionId[] = ['coastal', 'minefield', 'fortress', 'dreadnought'];
+export const CAMPAIGN_SAVE_VERSION = 9;
 const nonnegativeInteger = (value: unknown, fallback = 0): number => typeof value === 'number' && Number.isFinite(value)
   ? Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value))) : fallback;
 
@@ -45,17 +47,18 @@ export class CampaignModel {
   static restore(candidate: unknown): CampaignSnapshot | undefined {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined;
     const saved = candidate as Partial<CampaignSnapshot>;
-    if (!Number.isInteger(saved.version) || saved.version! < 1 || saved.version! > 8
+    if (!Number.isInteger(saved.version) || saved.version! < 1 || saved.version! > CAMPAIGN_SAVE_VERSION
       || !saved.weapons || typeof saved.weapons !== 'object' || Array.isArray(saved.weapons)
       || typeof saved.missionIndex !== 'number' || !Number.isFinite(saved.missionIndex)) return undefined;
     return new CampaignModel(saved as CampaignSnapshot).exportSave();
   }
 
-  static fresh(difficulty: Difficulty): CampaignSnapshot {
+  static fresh(difficulty: Difficulty, adaptiveDifficulty = false): CampaignSnapshot {
     return {
-      version: 8,
+      version: CAMPAIGN_SAVE_VERSION,
       phase: 'briefing',
       difficulty,
+      adaptiveDifficulty,
       missionIndex: 0,
       currentMissionId: 'coastal',
       credits: 0,
@@ -71,8 +74,8 @@ export class CampaignModel {
     };
   }
 
-  startNew(difficulty: Difficulty): void {
-    this.state = CampaignModel.fresh(difficulty);
+  startNew(difficulty: Difficulty, adaptiveDifficulty = false): void {
+    this.state = CampaignModel.fresh(difficulty, adaptiveDifficulty);
   }
 
   currentMission(): MissionDefinition {
@@ -95,8 +98,9 @@ export class CampaignModel {
     if (this.state.phase === 'mission' || this.state.phase === 'story' || this.state.phase === 'victory' || this.state.phase === 'route') return { ok: false, reason: 'unavailable' };
     if (this.state.sortieModule) return { ok: false, reason: 'equipped' };
     const module = getSortieModule(id);
-    if (this.state.credits < module.cost) return { ok: false, reason: 'insufficient' };
-    this.state.credits -= module.cost;
+    const price = sortiePrice(module.cost, this.state.lateRouteReward);
+    if (this.state.credits < price) return { ok: false, reason: 'insufficient' };
+    this.state.credits -= price;
     this.state.sortieModule = id;
     return { ok: true };
   }
@@ -115,7 +119,8 @@ export class CampaignModel {
       score: this.state.score,
       weapons: { ...this.state.weapons },
       shieldBaseMax: this.state.shieldBaseMax,
-      modifiers: applyRouteReward(buildCombatModifiers(this.state.purchased), this.state.routeReward),
+      modifiers: applyRouteReward(buildCombatModifiers(this.state.purchased), this.state.routeReward, this.state.lateRouteReward),
+      adaptiveDifficulty: this.state.adaptiveDifficulty,
       campaignSeed: this.state.campaignSeed ?? CampaignModel.makeSeed(),
       sortieModule: this.state.sortieModule,
       resumeFrom: this.state.activeWaypoint ? cloneMissionWaypoint(this.state.activeWaypoint) : undefined,
@@ -188,6 +193,8 @@ export class CampaignModel {
     this.state.weapons = { ...result.weapons };
     this.state.shieldBaseMax = result.shieldBaseMax;
     this.state.routeReward ??= routeRewardForClear(mission.id, this.state.earlyRoute);
+    const lateReward = this.state.route && LATE_ROUTE_REWARDS[this.state.route];
+    if (lateReward && lateReward.missionId === mission.id) this.state.lateRouteReward = lateReward.id;
     this.state.sortieModule = undefined;
     this.state.activeWaypoint = undefined;
     this.state.lastReport = {
@@ -248,9 +255,15 @@ export class CampaignModel {
     return { ok: true };
   }
 
-  claimArmament(type: import('./types').UpgradeType): void {
-    if (type === 'shield') this.state.shieldBaseMax = Math.min(3, this.state.shieldBaseMax + 1);
-    else this.state.weapons[type] = CampaignModel.weaponLevel(this.state.weapons[type] + 1, 0, WEAPON_MAX_LEVEL[type]);
+  claimArmament(type: import('./types').UpgradeType): boolean {
+    if (type === 'shield') {
+      if (this.state.shieldBaseMax >= 3) return false;
+      this.state.shieldBaseMax += 1;
+    } else {
+      if (this.state.weapons[type] >= WEAPON_MAX_LEVEL[type]) return false;
+      this.state.weapons[type] = CampaignModel.weaponLevel(this.state.weapons[type] + 1, 0, WEAPON_MAX_LEVEL[type]);
+    }
+    return true;
   }
 
   respec(): boolean {
@@ -295,42 +308,51 @@ export class CampaignModel {
     // make the second one until its mission has actually been entered. V1–6
     // always flew Minefield; their late Stormbreak choice is not an Aurora visit.
     const earlyRoute: CampaignRoute | undefined = currentMissionId === 'coastal' ? undefined
-      : currentMissionId === 'aurora' || seenChapters.includes('aurora-key') ? 'storm'
-        : currentMissionId === 'minefield' || seenChapters.includes('warden-key') ? 'salvage'
+      : currentMissionId === 'aurora' || seenChapters.includes('aurora-key') || candidate.lastReport?.missionId === 'aurora' ? 'storm'
+        : currentMissionId === 'minefield' || seenChapters.includes('warden-key') || candidate.lastReport?.missionId === 'minefield' ? 'salvage'
           : candidate.version >= 8 ? validRoute(candidate.earlyRoute) ?? 'salvage'
             : candidate.version === 7 ? legacyRoute ?? 'salvage' : 'salvage';
     const beyondSecondFork = ['stormbreak', 'graveyard', 'carrierSiege', 'dreadnought', 'lastLight'].includes(currentMissionId);
     const route: CampaignRoute | undefined = !beyondSecondFork ? undefined
       : currentMissionId === 'stormbreak' ? 'storm'
         : currentMissionId === 'graveyard' ? 'salvage'
-          : legacyRoute ?? (seenChapters.includes('stillwater-directive') ? 'storm'
-            : seenChapters.includes('project-crown') ? 'salvage' : undefined);
+          : legacyRoute ?? (seenChapters.includes('stillwater-directive') || candidate.lastReport?.missionId === 'stormbreak' ? 'storm'
+            : seenChapters.includes('project-crown') || candidate.lastReport?.missionId === 'graveyard' ? 'salvage' : undefined);
     const validStoryIds = new Set<StoryChapterId>(STORY_CHAPTER_IDS);
     // A stale chapter field must never reopen a completed campaign or skip a mission.
     const pendingStoryChapter = candidate.phase === 'story'
       && validStoryIds.has(candidate.pendingStoryChapter as StoryChapterId)
       && getStoryChapter(candidate.pendingStoryChapter!).afterMission === currentMissionId
       ? candidate.pendingStoryChapter : undefined;
+    // A signed-off story chapter or matching debrief records a clear in older saves.
+    const cleared = (id: MissionId) => candidate.lastReport?.missionId === id
+      || pendingStoryChapter === storyChapterForMission(id) || seenChapters.includes(storyChapterForMission(id));
+    const firstReward = earlyRoute && ROUTE_REWARDS[earlyRoute];
+    const secondReward = route && LATE_ROUTE_REWARDS[route];
     const waypoint = sanitizeMissionWaypoint(candidate.activeWaypoint, currentMissionId);
     const activeWaypoint = candidate.phase === 'mission' && waypoint && waypoint.game.score >= nonnegativeInteger(candidate.score) ? waypoint : undefined;
+    if (activeWaypoint) {
+      const elapsed = resumeArrivalTime(currentMissionId, activeWaypoint.capturedAtMs, getMissionById(currentMissionId).durationMs, activeWaypoint.encounter.commandSpawned);
+      activeWaypoint.capturedAtMs = activeWaypoint.game.stageElapsedMs = elapsed;
+    }
     const phase = pendingStoryChapter ? 'story'
       : candidate.phase === 'victory' ? 'victory'
         : candidate.phase === 'route' && (currentMissionId === 'fortress' || (candidate.version >= 7 && currentMissionId === 'coastal')) ? 'route'
           : candidate.phase === 'mission' && activeWaypoint ? 'mission'
           : candidate.phase === 'hangar' || currentMissionId !== 'coastal' ? 'hangar' : 'briefing';
     return {
-      version: 8,
+      version: CAMPAIGN_SAVE_VERSION,
       phase,
       difficulty: validDifficulty,
+      adaptiveDifficulty: candidate.adaptiveDifficulty === true,
       missionIndex,
       currentMissionId,
       earlyRoute,
       route,
-      // Version-six saves never held an earned reward. Do not infer one from a
-      // route selection, nor grant a reward for a mission that is still pending.
-      routeReward: candidate.version >= 7 && earlyRoute
-        && candidate.routeReward === ROUTE_REWARDS[earlyRoute].id
-        ? candidate.routeReward : undefined,
+      routeReward: firstReward && ((candidate.version >= 7 && candidate.routeReward === firstReward.id) || cleared(firstReward.missionId))
+        ? firstReward.id : undefined,
+      lateRouteReward: secondReward && ((candidate.version >= 9 && candidate.lateRouteReward === secondReward.id) || cleared(secondReward.missionId))
+        ? secondReward.id : undefined,
       sortieModule: SORTIE_MODULES.some(({ id }) => id === candidate.sortieModule) ? candidate.sortieModule : undefined,
       discoveredEnemies: Array.isArray(candidate.discoveredEnemies) ? [...new Set(candidate.discoveredEnemies.filter((kind) => Object.hasOwn(ENEMIES, kind)))] : [],
       credits: nonnegativeInteger(candidate.credits),

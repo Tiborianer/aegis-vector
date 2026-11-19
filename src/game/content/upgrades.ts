@@ -63,6 +63,7 @@ export const DEFAULT_COMBAT_MODIFIERS: CombatModifiers = {
   fireIntervalMultiplier: 1,
   damageMultiplier: 1,
   arcDamageMultiplier: 1,
+  lateralSpeedMultiplier: 1,
   shieldCapacityBonus: 0,
   splitCapacitors: false,
   hunterLogic: false,
@@ -121,6 +122,7 @@ export function buildCombatModifiers(purchased: readonly UpgradeNodeId[]): Comba
   return {
     fireIntervalMultiplier: (owned.has('rapid-cycling') ? 0.9 : 1) * (owned.has('precision-feed') ? 0.94 : 1),
     damageMultiplier: (owned.has('amplified-munitions') ? 1.12 : 1) * (owned.has('precision-feed') ? 1.08 : 1),
+    lateralSpeedMultiplier: 1,
     arcDamageMultiplier: 1,
     shieldCapacityBonus: 0,
     splitCapacitors: owned.has('split-capacitors'),

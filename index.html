@@ -135,6 +135,7 @@
               <button class="selected" data-difficulty="pilot">PILOT<small>Recommended</small></button>
               <button data-difficulty="ace">ACE<small>Intense</small></button>
             </div>
+            <label class="adaptive-choice"><input type="checkbox" id="adaptive-difficulty"> Adaptive enemy health <small>Adjusts medium enemies by up to 8% as you fly.</small></label>
 
             <p id="visual-style-status" class="visual-style-status hidden" role="status"></p>
             <button id="launch-button" class="primary-button">START NEW CAMPAIGN <span>→</span></button>
@@ -162,6 +163,7 @@
 
             <aside class="hangar-sidebar">
               <div class="hangar-sidebar-scroll" tabindex="0" aria-label="Mission report and next operation">
+              <div id="hangar-equipment" class="hangar-panel"></div>
               <section id="mission-report" class="hangar-panel">
                 <div class="panel-title">LAST SORTIE</div>
                 <div class="report-grid">
@@ -182,10 +184,10 @@
               </section>
 
               <section id="route-panel" class="hangar-panel route-panel hidden">
-                <div id="route-panel-title" class="panel-title">FIRST FORK // CHOOSE YOUR ADVANTAGE</div>
-                <p id="route-panel-description">Choose your approach to the fortress. You will make a separate pathway choice after Mission 3.</p>
-                <button data-route="salvage"><b>MINEFIELD // OFFENSE</b><small>Clear the Warden. Earn the ARC Resonator: +12% ARC damage.</small></button>
-                <button data-route="storm"><b>AURORA REACH // DEFENSE</b><small>Recover the shield relay. Earn Aegis Bastion: +1 shield cell.</small></button>
+                <div id="route-panel-title" class="panel-title">SELECT MISSION 2</div>
+                <p id="route-panel-description">Choose your next destination.</p>
+                <button data-route="salvage"></button>
+                <button data-route="storm"></button>
               </section>
               </div>
 
@@ -225,12 +227,9 @@
         <section id="route-map-screen" class="overlay route-map-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="route-map-title">
           <div class="route-map-card">
             <header><div><div class="eyebrow">AEGIS // CAMPAIGN OPERATIONS</div><h2 id="route-map-title">YOUR FLIGHT PATH</h2></div><button id="route-map-close" class="icon-button" aria-label="Close route map">×</button></header>
-            <p class="route-map-explanation">Choose your advantage after Coastal Intercept, then choose your evidence trail independently after Fortress Approach. Keep your earned reward on either path. All four pathways converge at Carrier Siege.</p>
+            <p class="route-map-explanation">Choose a destination after Coastal Intercept and again after Fortress Approach. Clear the chosen destination to earn its reward for both pilots.</p>
             <div id="route-map-content" aria-label="Mission progression"></div>
-            <div class="route-map-rewards">
-              <article><strong>FIRST FORK // EARN YOUR ADVANTAGE</strong><p>Minefield: ARC Resonator, +12% ARC damage. Aurora Reach: Aegis Bastion, +1 shield cell.</p></article>
-              <article><strong>SECOND FORK // CHOOSE YOUR EVIDENCE</strong><p>Graveyard: recover the original command memory. Stormbreak: intercept the live directive. Either path keeps your earned reward.</p></article>
-            </div>
+            <div id="route-map-destinations" class="route-map-rewards"></div>
             <p id="route-reward-status" class="route-reward-status"></p>
           </div>
         </section>

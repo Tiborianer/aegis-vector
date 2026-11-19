@@ -37,6 +37,10 @@ export const DESKTOP_PUBLIC_ASSETS = Object.freeze([
   ].map((name) => `graphics-v2/ships/${name}.png`),
   ...wreckSheets.flatMap(sheet => ['webp', 'json'].map(ext => `graphics-v2/breakups/wreck-${sheet}.${ext}`)),
   ...Object.keys(breakups).flatMap(name => ['png', 'json'].map(ext => `graphics-v2/breakups/${name}.${ext}`)),
+  ...['kestrel-equipment.webp', 'kestrel-hangar.webp', 'formation-parts.webp', 'formation-parts.json', 'charger-original.json']
+    .map(name => 'graphics-v2/roadmap/' + name),
+  ...['scout','interceptor','bomber','charger','sniper'].flatMap(kind => ['patrol','hazard','night']
+    .flatMap(paint => ['', '-original'].map(suffix => `graphics-v2/roadmap/${kind}-${paint}${suffix}.webp`))),
   'graphics-v2/modules/crown-turret.png',
   'graphics-v2/modules/crown-turret.json',
   'graphics-v2/modules/seraph-wing-left.png',

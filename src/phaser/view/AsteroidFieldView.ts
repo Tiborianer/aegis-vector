@@ -97,7 +97,7 @@ export class AsteroidFieldView {
 
   update(deltaMs: number, follow: number, projectileDensity: number): void {
     if (!this.enabled) return;
-    this.elapsedMs += Math.max(0, Math.min(50, deltaMs));
+    this.elapsedMs += Math.max(0, deltaMs);
     this.stars.tilePositionY = -this.elapsedMs * (this.reducedMotion ? .0003 : .004);
     this.stars.tilePositionX = this.reducedMotion ? 0 : follow * 4;
     for (const { definition, view } of this.rocks) {

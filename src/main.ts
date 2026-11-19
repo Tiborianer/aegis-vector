@@ -15,8 +15,11 @@ import { readPlaytestMode } from './game/testing/playtestMode';
 import { renderCampaignMap } from './ui/campaignMap';
 import { campaignResumeLabel, missionLaunchLabel } from './ui/campaignResume';
 import { SoundEngine, STORY_SCORE_STATUS, MISSION_SCORE_STATUS, type RadioCue, type SoundCue, type SoundRequest } from './audio/SoundEngine';
-import { UPGRADE_BRANCHES, UPGRADE_NODES } from './game/content/upgrades';
+import { equipmentRows } from './game/assets/fleetArt';
+import { equipmentPreview } from './ui/equipmentPreview';
+import { buildCombatModifiers, UPGRADE_BRANCHES, UPGRADE_NODES } from './game/content/upgrades';
 import { SORTIE_MODULES } from './game/content/sortieModules';
+import { destinationsAfter, securedRewards, sortiePrice } from './game/content/routeRewards';
 import { WEAPON_LABELS, WEAPON_MAX_LEVEL, WORLD_HEIGHT, WORLD_WIDTH } from './game/content/balance';
 import { chooseArmamentOffer } from './game/content/pickups';
 import { globalCarrierIndex } from './game/content/encounters';
@@ -232,7 +235,7 @@ const shell = required<HTMLElement>('game-shell');
 const lobby = makeLobby(shell);
 const deck = new FlightDeck(shell, (kits:Pair<Kit>) => {
   if (newSquad) {
-    squad = SquadCampaign.fresh(difficulty,kits); campaign = squad.pilots[0]; newSquad=false;
+    squad = SquadCampaign.fresh(difficulty,kits,required<HTMLInputElement>('adaptive-difficulty').checked); campaign = squad.pilots[0]; newSquad=false;
     saveCampaign(); void audio.unlock(); showIntro(startCurrentMission);
   } else startCurrentMission();
 }, saveCampaign, leaveCoop);
@@ -338,7 +341,7 @@ ui.launch.addEventListener('click', () => {
   if (!ready) return;
   void audio.unlock();
   preloadUpgradeIcons();
-  campaign.startNew(difficulty);
+  campaign.startNew(difficulty, required<HTMLInputElement>('adaptive-difficulty').checked);
   saveCampaign();
   showIntro(() => startCurrentMission());
 });
@@ -390,7 +393,7 @@ ui.upgradeTree.addEventListener('click', (raw) => {
   if (!button) return;
   const id = button.dataset.upgradeId as UpgradeNodeId;
   if (campaign.purchase(id).ok) {
-    audio.play('purchase');
+    audio.play('install');
     saveCampaign();
     renderHangar();
   }
@@ -400,20 +403,22 @@ ui.sortieModules.addEventListener('click', (raw) => {
   const button = (raw.target as HTMLElement).closest<HTMLButtonElement>('[data-sortie-module]');
   if (!button) return;
   if (campaign.purchaseSortieModule(button.dataset.sortieModule as SortieModuleId).ok) {
-    audio.play('purchase');
+    audio.play('install');
     saveCampaign();
     renderHangar();
   }
 });
 
-ui.routePanel.addEventListener('click', (raw) => {
-  const button = (raw.target as HTMLElement).closest<HTMLButtonElement>('[data-route]');
-  if (!button) return;
-  if (campaign.selectRoute(button.dataset.route as CampaignRoute)) {
+function chooseHangarDestination(route: CampaignRoute): void {
+  if (campaign.selectRoute(route)) {
     audio.play('purchase');
     saveCampaign();
     renderHangar();
   }
+}
+ui.routePanel.addEventListener('click', (raw) => {
+  const button = (raw.target as HTMLElement).closest<HTMLButtonElement>('[data-route]');
+  if (button) chooseHangarDestination(button.dataset.route as CampaignRoute);
 });
 
 const openManualAt = (tab: ManualTab): void => {
@@ -556,10 +561,12 @@ for (const id of ['start-route-map-button', 'hangar-route-map-button', 'pause-ro
   required<HTMLButtonElement>(id).addEventListener('click', (event) => {
     routeMapOpener = event.currentTarget as HTMLElement;
     const state = campaign.snapshot();
-    renderCampaignMap(ui.routeMapContent, state);
-    required<HTMLElement>('route-reward-status').textContent = state.routeReward === 'arc-resonator'
-      ? 'SECURED // ARC RESONATOR · +12% ARC DAMAGE' : state.routeReward === 'aegis-bastion'
-        ? 'SECURED // AEGIS BASTION · +1 SHIELD CELL' : 'ROUTE REWARD // AWARDED ON SUCCESSFUL MISSION COMPLETION';
+    const choose = id === 'hangar-route-map-button' && state.phase === 'route'
+      ? (route: CampaignRoute) => { closeRouteMap(); chooseHangarDestination(route); ui.hangarLaunch.focus(); } : undefined;
+    renderCampaignMap(ui.routeMapContent, state, required('route-map-destinations'), choose);
+    const earned = securedRewards(state);
+    required<HTMLElement>('route-reward-status').textContent = earned.length
+      ? 'SECURED // ' + earned.join('   /   ') : 'Clear a destination to earn its permanent reward.';
     ui.routeMap.classList.remove('hidden');
     ui.routeMapClose.focus();
   });
@@ -1193,25 +1200,26 @@ function openHangar(victoryVariant?: number): void {
 function renderHangar(): void {
   const state = campaign.snapshot();
   const mission = campaign.currentMission();
+  const hardware = equipmentRows(state.weapons, state.shieldBaseMax + Number(state.routeReward === 'aegis-bastion'), buildCombatModifiers(state.purchased));
+  required<HTMLElement>('hangar-equipment').replaceChildren(equipmentPreview(hardware));
   ui.hangarKicker.textContent = state.lastReport ? 'AEGIS HANGAR // MISSION REPORT' : 'AEGIS HANGAR // CAMPAIGN CHECKPOINT';
   ui.hangarCredits.textContent = String(state.credits);
   const rewardBadge = required<HTMLElement>('hangar-route-reward');
-  rewardBadge.classList.toggle('hidden', !state.routeReward);
-  rewardBadge.textContent = state.routeReward === 'arc-resonator' ? 'SECURED // ARC RESONATOR · +12% ARC DAMAGE'
-    : state.routeReward === 'aegis-bastion' ? 'SECURED // AEGIS BASTION · +1 SHIELD CELL' : '';
+  const earned = securedRewards(state);
+  rewardBadge.classList.toggle('hidden', !earned.length);
+  rewardBadge.textContent = earned.length ? 'SECURED // ' + earned.join('   /   ') : '';
   const choosingRoute = state.phase === 'route';
   ui.hangar.classList.toggle('choosing-route', choosingRoute);
   const secondChoice = state.currentMissionId === 'fortress';
-  required<HTMLElement>('route-panel-title').textContent = secondChoice ? 'SECOND FORK // CHOOSE YOUR EVIDENCE' : 'FIRST FORK // CHOOSE YOUR ADVANTAGE';
+  required<HTMLElement>('route-panel-title').textContent = secondChoice ? 'SELECT MISSION 4' : 'SELECT MISSION 2';
   required<HTMLElement>('route-panel-description').textContent = secondChoice
-    ? 'Both paths are open. Choose the evidence trail to the carrier; keep the reward you already earned.'
-    : 'Choose your approach to the fortress. You will make a separate pathway choice after Mission 3.';
-  ui.routePanel.querySelector<HTMLButtonElement>('[data-route="salvage"]')!.innerHTML = secondChoice
-    ? '<b>GRAVEYARD</b><small>Recover the original command memory.</small>'
-    : '<b>MINEFIELD // OFFENSE</b><small>Clear the Warden. Earn ARC Resonator: +12% ARC damage.</small>';
-  ui.routePanel.querySelector<HTMLButtonElement>('[data-route="storm"]')!.innerHTML = secondChoice
-    ? '<b>STORMBREAK</b><small>Intercept the live containment directive.</small>'
-    : '<b>AURORA REACH // DEFENSE</b><small>Recover the shield relay. Earn Aegis Bastion: +1 shield cell.</small>';
+    ? 'Choose an evidence trail to Carrier Siege. You keep the reward from Mission 2.'
+    : 'Choose your route to the fortress. Both Mission 4 destinations will be available at the next junction.';
+  for (const destination of Object.values(destinationsAfter(state.currentMissionId))) {
+    const button = ui.routePanel.querySelector<HTMLButtonElement>(`[data-route="${destination.route}"]`)!;
+    button.replaceChildren(element('b', '', destination.destination), element('small', '', destination.objective),
+      element('span', 'destination-reward', `On clear · ${destination.name} · ${destination.effect}`));
+  }
   ui.routePanel.classList.toggle('hidden', !choosingRoute);
   ui.nextVectorPanel.classList.toggle('hidden', choosingRoute);
   ui.hangarLaunch.classList.toggle('hidden', choosingRoute);
@@ -1243,12 +1251,13 @@ function renderSortieModules(state: CampaignSnapshot): void {
     const occupied = Boolean(state.sortieModule && !equipped);
     const button = document.createElement('button');
     button.dataset.sortieModule = module.id;
-    button.disabled = equipped || occupied || state.phase === 'route' || state.credits < module.cost;
+    const price = sortiePrice(module.cost, state.lateRouteReward);
+    button.disabled = equipped || occupied || state.phase === 'route' || state.credits < price;
     button.className = `sortie-module${equipped ? ' equipped' : ''}`;
     const scannerOffer = equipped && module.id === 'armament-scanner'
       ? chooseArmamentOffer(state.weapons, state.shieldBaseMax, state.campaignSeed ?? 1, globalCarrierIndex(mission.id, 0), [], undefined).options
       : undefined;
-    button.innerHTML = `<img src="${module.icon}" alt="" aria-hidden="true"><span><b>${module.name}</b><small>${scannerOffer ? `FIRST OFFER: ${scannerOffer.map(upgradeName).join(' / ')}` : module.description}</small></span><em>${equipped ? 'EQUIPPED' : `${module.cost} C`}</em>`;
+    button.innerHTML = `<img src="${module.icon}" alt="" aria-hidden="true"><span><b>${module.name}</b><small>${scannerOffer ? `FIRST OFFER: ${scannerOffer.map(upgradeName).join(' / ')}` : module.description}</small></span><em>${equipped ? 'EQUIPPED' : `${price} C`}</em>`;
     return button;
   }));
 }
@@ -1409,6 +1418,7 @@ function updateHud(snapshot: GameSnapshot): void {
       ? `${snapshot.missionTitle} // ${snapshot.bossName || (snapshot.finaleBossStage === 'nullArchitect' ? 'OBSIDIAN CROWN' : snapshot.missionId === 'lastLight' ? 'SERAPH' : 'CORE')}`
       : `M${snapshot.missionNumber} // ${snapshot.missionTitle}`;
   ui.threatLevel.textContent = finaleApproach ? 'ESCORT' : finaleBoss ? 'CORE' : `THREAT ${snapshot.threatLevel}`;
+  ui.threatLevel.title = snapshot.adaptiveHealthPercent === undefined ? '' : `Adaptive medium-enemy health · ${snapshot.adaptiveHealthPercent > 0 ? '+' : ''}${snapshot.adaptiveHealthPercent}%`;
   ui.threatLevel.dataset.level = String(snapshot.threatLevel);
 
   const timedDuration = finaleApproach ? (MISSIONS.find((mission) => mission.id === snapshot.missionId)?.approachDurationMs ?? 30_000) : snapshot.stageDurationMs;
@@ -1624,7 +1634,7 @@ function loadSquad(): SquadCampaign | undefined {
 function loadCampaign(): CampaignSnapshot | undefined {
   try {
     const raw = localStorage.getItem(CAMPAIGN_SAVE_KEY);
-    return raw ? JSON.parse(raw) as CampaignSnapshot : undefined;
+    return raw ? CampaignModel.restore(JSON.parse(raw)) : undefined;
   } catch {
     return undefined;
   }

@@ -20,11 +20,19 @@
 .map-node.current small, .map-node.choice small { color: var(--cyan); }
 .map-node.complete .map-node-number { border-color: #64bfa8; color: #8eeed3; }
 .map-node.bypassed { opacity: .40; }
-.route-map-rewards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.route-map-rewards article { border-left: 2px solid #ad8a54; padding: 9px 13px; background: #cba76a09; }
-.route-map-rewards article:last-child { border-color: #59bdca; background: #59bdca09; }
+.route-map-rewards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.route-map-rewards > * { border: 0; border-left: 2px solid #ad8a54; padding: 9px 13px; background: #cba76a09; text-align: left; text-transform: none; }
+.route-map-rewards > [data-junction="2"] { border-color: #59bdca; background: #59bdca09; }
+.route-map-rewards button { cursor: pointer; outline: 1px solid #486472; }
+.route-map-rewards button:hover, .route-map-rewards button:focus-visible { outline: 2px solid var(--cyan); background: #16323f; }
+.route-map-rewards button strong::after { content: ' →'; color: var(--cyan); }
 .route-map-rewards strong { display: block; color: #e0bf85; font-size: 12px; }
-.route-map-rewards article:last-child strong { color: #9ae4ee; }
+.route-map-rewards [data-junction="2"] strong { color: #9ae4ee; }
+.destination-reward { display: block; margin-top: 6px; color: #d9bf8e; font: 600 11px/1.45 monospace; }
+.adaptive-choice { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: #d6e8ef; cursor: pointer; }
+.adaptive-choice input { accent-color: var(--cyan); }
+.adaptive-choice small { color: #a4beca; font-size: 10px; }
+@media (max-width: 650px) { .route-map-rewards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .adaptive-choice { flex-wrap: wrap; } }
 .route-map-rewards p { color: #a4beca; font-size: 11px; line-height: 1.5; margin: 5px 0 0; }
 .route-reward-status { color: var(--amber); font: 11px monospace; margin: 0; }
 /* Route selection is a primary decision, not a clipped panel beneath upgrades. */
@@ -45,7 +53,7 @@
   .map-node-number { width: 26px; height: 26px; font-size: 11px; }
   .map-node { gap: 2px; transform: translate(-50%, -13px); }
   .map-node small { font-size: 7px; }
-  .route-map-rewards article { padding: 7px 9px; }
+  .route-map-rewards > * { padding: 7px 9px; }
   .route-map-rewards strong { font-size: 10px; }
   .route-map-rewards p { font-size: 10px; }
   .choosing-route .route-panel { gap: 8px; }

@@ -7,7 +7,7 @@ tmp/
 web-dist/
 
 # Private authoring library and reference inputs, not game runtime assets.
-/assets/
+/assets
 /docs/story/references/
 /docs/story/v3/references/
 /docs/audio/production-budget-*.json

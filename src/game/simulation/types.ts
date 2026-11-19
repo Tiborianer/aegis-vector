@@ -35,6 +35,7 @@ export type MissionId = 'coastal' | 'minefield' | 'aurora' | 'fortress' | 'storm
 export type CampaignPhase = 'briefing' | 'mission' | 'story' | 'hangar' | 'route' | 'victory';
 export type CampaignRoute = 'storm' | 'salvage';
 export type RouteRewardId = 'arc-resonator' | 'aegis-bastion';
+export type LateRouteRewardId = 'vector-vanes' | 'salvagers-license';
 export type SortieModuleId = 'reserve-emp' | 'armament-scanner' | 'emergency-nanites' | 'wingman-beacon';
 export type UpgradeBranch = 'weapons' | 'defense' | 'systems';
 export type ThreatLevel = 1 | 2 | 3 | 4 | 5;
@@ -157,6 +158,7 @@ export interface GameCheckpointSnapshot {
 }
 
 export interface EncounterCheckpointSnapshot {
+  adaptive?: import('./adaptiveDifficulty').AdaptiveCheckpoint;
   waveIndex: number;
   nextCarrierIndex: number;
   killsSinceUtilityDrop: number;
@@ -281,6 +283,7 @@ export interface UpgradeNode {
 }
 
 export interface CombatModifiers {
+  lateralSpeedMultiplier: number;
   fireIntervalMultiplier: number;
   damageMultiplier: number;
   arcDamageMultiplier: number;
@@ -324,6 +327,7 @@ export interface CombatModifiers {
 }
 
 export interface MissionStartConfig {
+  adaptiveDifficulty?: boolean;
   wingmate?: MissionStartConfig;
   coopOffers?: import('../../coop/campaign').PilotOffers;
   difficulty: Difficulty;
@@ -351,7 +355,8 @@ export interface MissionReport {
 }
 
 export interface CampaignSnapshot {
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  adaptiveDifficulty?: boolean;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   phase: CampaignPhase;
   difficulty: Difficulty;
   missionIndex: number;
@@ -361,6 +366,7 @@ export interface CampaignSnapshot {
   /** Independent evidence fork after Fortress: salvage = Graveyard, storm = Stormbreak. */
   route?: CampaignRoute;
   routeReward?: RouteRewardId;
+  lateRouteReward?: LateRouteRewardId;
   sortieModule?: SortieModuleId;
   discoveredEnemies?: EnemyKind[];
   credits: number;
@@ -386,6 +392,7 @@ export interface SortieModuleDefinition {
 }
 
 export interface GameSnapshot {
+  adaptiveHealthPercent?: number;
   squad?: import('../../coop/campaign').SquadStatus;
   mode: GameMode;
   difficulty: Difficulty;

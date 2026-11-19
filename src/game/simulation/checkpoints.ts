@@ -1,5 +1,6 @@
 import { WEAPON_MAX_LEVEL } from '../content/balance';
 import { isFinaleMission } from '../content/finale';
+import { AdaptiveDifficulty } from './adaptiveDifficulty';
 import type { EncounterCheckpointSnapshot, MissionId, MissionWaypointSnapshot, UpgradeType, WeaponType } from './types';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -12,6 +13,7 @@ const utilityTypes = new Set(['repair', 'overdrive', 'tractor', 'emp']);
 export function restoreEncounterCursor(checkpoint: EncounterCheckpointSnapshot): EncounterCheckpointSnapshot {
   return {
     ...checkpoint,
+    ...(checkpoint.adaptive ? { adaptive: new AdaptiveDifficulty(checkpoint.adaptive).checkpoint() } : {}),
     armamentOfferHistory: checkpoint.armamentOfferHistory.map((pair) => [pair[0], pair[1]] as const),
   };
 }

@@ -316,6 +316,9 @@ export class PrivateRooms {
         this.waiting?.append(copy);
         this.status.textContent = 'Waiting for the second pilot. Share this link with your wingmate.';
       } else if (m.type === 'joined') {
+        // A key pressed while disconnected was never sent to the host.
+        // Suppress it until release, just like a key held across the disconnect.
+        squadInput.clear();
         wingArcTrigger.connect();
         connection.guestInFlight = false;
         connection.connected = true;

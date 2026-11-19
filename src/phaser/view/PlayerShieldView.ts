@@ -1,97 +1,73 @@
 import Phaser from 'phaser';
-import { shieldPresentation, shieldShellPixels, type ShieldStyle } from './shieldStyles';
+import type { ChargeLevel } from '../../coop/wingArc';
+import { FIELD_EDGE, fieldLight, SHIELD_BREAK_MS, SHIELD_RESTORE_MS, type ShieldStyle } from './shieldStyles';
 
-function prepareShell(scene: Phaser.Scene): string | undefined {
-  const key = 'player-ion-fresnel-shell-v1';
-  if (scene.textures.exists(key)) return key;
-  const texture = scene.textures.createCanvas(key, 256, 256);
-  if (!texture) return undefined;
-  const context = texture.getContext();
-  const material = context.createImageData(256, 256);
-  material.data.set(shieldShellPixels(256));
-  context.putImageData(material, 0, 0);
-  texture.refresh();
-  return key;
-}
-
-/** View-only shell: neither style changes the fighter's collision or charges.
- * The spherical material is baked once; only a few energy arcs animate. */
+/** These short line segments are mirrored alongside the pilot on the guest. */
 export class PlayerShieldView {
-  private readonly graphics: Phaser.GameObjects.Graphics;
-  private readonly shell: Phaser.GameObjects.Image;
-  private readonly hasShell: boolean;
-  private readonly reducedMotion: boolean;
+  private readonly field: Phaser.GameObjects.Graphics;
+  private readonly nose: Phaser.GameObjects.Graphics;
+  private readonly reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   private lastHitAt = -Infinity;
-  constructor(scene: Phaser.Scene, private style: ShieldStyle) {
-    this.reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const shellTexture = prepareShell(scene);
-    this.hasShell = Boolean(shellTexture);
-    this.shell = scene.add.image(0, 0, shellTexture ?? '__WHITE').setDisplaySize(130, 130)
-      .setDepth(6.25).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
-    this.graphics = scene.add.graphics().setDepth(6.3).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
+  private lastBreakAt = -Infinity;
+  private lastRestoreAt = -Infinity;
+  private direction = -Math.PI/2;
+  private previousCells?: number;
+  private level: ChargeLevel = 0;
+  constructor(scene: Phaser.Scene, _style: ShieldStyle) {
+    this.field = scene.add.graphics().setDepth(6.25).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
+    this.nose = scene.add.graphics().setDepth(6.4).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
   }
-  get objects(): Phaser.GameObjects.GameObject[] { return [this.shell,this.graphics]; }
-  setStyle(style: ShieldStyle): void { this.style = style; }
-  /** A new mission or checkpoint changes the combat clock's origin. */
-  reset(): void { this.lastHitAt = -Infinity; }
-  hit(time: number): void { this.lastHitAt = time; }
+  get objects(): Phaser.GameObjects.GameObject[] { return [this.field, this.nose]; }
+  charge(level: ChargeLevel): void { this.level = level; }
+  reset(): void {
+    this.lastHitAt = this.lastBreakAt = this.lastRestoreAt = -Infinity;
+    this.previousCells = undefined;
+    this.level = 0;
+    for (const view of [this.field, this.nose]) view.clear().setVisible(false);
+  }
+  hit(time: number, direction = -Math.PI/2, broken = false): void {
+    this.direction = direction;
+    this.lastHitAt = time;
+    this.lastRestoreAt = -Infinity;
+    if (broken) this.lastBreakAt = time;
+  }
   update(x: number, y: number, angle: number, cells: number, maximum: number, time: number, visible: boolean): void {
-    const state = shieldPresentation(cells, maximum, time - this.lastHitAt, visible);
-    const g = this.graphics.clear().setPosition(x, y - 2).setRotation(angle).setVisible(state.visible);
-    this.shell.setPosition(x, y - 2).setRotation(angle * .22)
-      .setVisible(this.hasShell && state.visible && this.style === 'bubble')
-      .setAlpha(Math.min(1, .68 + state.opacity + state.flash * .35));
-    if (!state.visible) return;
-    const glow = 0x49d9ff, core = 0xc1faff;
-    if (this.style === 'bubble') {
-      // Round, lightly refractive edge with separated upper/lower speculars.
-      // No flat filled disk: the fighter and hostile projectiles remain clear.
-      g.lineStyle(.85, glow, .13 + state.flash * .25).strokeCircle(0, 0, 56);
-      for (const [start, end, width, alpha] of [[3.65, 4.65, 1.5, .24], [.55, 1.28, .85, .18]] as const) {
-        g.lineStyle(width + state.flash, core, alpha + state.flash * .48)
-          .beginPath().arc(0, 0, 55, start, end).strokePath();
-      }
-      // Slow curved currents hug the sphere instead of orbiting as hard rings.
-      const flow = this.reducedMotion ? 0 : time * .000055;
-      for (let band = 0; band < 2; band++) {
-        g.lineStyle(.7, band ? 0xaab7ff : glow, .09 + state.flash * .12).beginPath();
-        for (let point = 0; point <= 20; point++) {
-          const theta = -.35 + point / 20 * 2.5 + band * Math.PI + flow;
-          const px = Math.cos(theta) * 50;
-          const py = Math.sin(theta) * 21 + (band ? 8 : -8);
-          if (point === 0) g.moveTo(px, py); else g.lineTo(px, py);
-        }
-        g.strokePath();
-      }
-      if (state.flash > 0) {
-        // A wave traverses the curved field after a hit. It contracts at the
-        // poles, giving depth without enlarging the apparent collision radius.
-        const progress = this.reducedMotion ? .25 : 1 - state.flash;
-        const latitude = -.86 + progress * 1.72;
-        const width = 108 * Math.sqrt(1 - latitude * latitude);
-        g.lineStyle(1.3, 0xebfcff, state.flash * .38)
-          .strokeEllipse(0, latitude * 54, width, 7 + (1 - Math.abs(latitude)) * 12);
-        g.lineStyle(4, glow, state.flash * .07).strokeCircle(0, 0, 56);
-      }
-    } else {
-      const edge = [[0, -67], [44, -37], [53, 21], [29, 60], [-29, 60], [-53, 21], [-44, -37]].map(([px, py]) => new Phaser.Geom.Point(px, py));
-      g.fillStyle(glow, state.opacity * .34).fillPoints(edge, true);
-      g.lineStyle(7, glow, .04 + state.flash * .1).strokePoints(edge, true);
-      g.lineStyle(1.6 + state.flash, core, .4 + state.flash * .55).strokePoints(edge, true);
-      for (const side of [-1, 1]) for (let row = 0; row < 3; row++) {
-        const cx = side * (row === 0 ? 29 : 38), cy = -31 + row * 28;
-        const hex = Array.from({ length: 6 }, (_, i) => new Phaser.Geom.Point(cx + Math.cos(i * Math.PI / 3) * 10, cy + Math.sin(i * Math.PI / 3) * 10));
-        g.lineStyle(1, glow, .13 + state.flash * .37).strokePoints(hex, true);
-      }
+    if (this.previousCells !== undefined && cells > this.previousCells) {
+      this.lastBreakAt = this.lastHitAt = -Infinity;
+      this.lastRestoreAt = time;
     }
-    // Charge marks remain a quiet secondary readout; they are not extra layers.
-    const spacing = Math.min(.32, 1.5 / Math.max(1, maximum));
-    const start = Math.PI / 2 - maximum * spacing / 2;
-    for (let cell = 0; cell < maximum; cell++) {
-      g.lineStyle(2, cell < cells ? core : 0x345e72, cell < cells ? .48 : .10)
-        .beginPath().arc(0, 0, this.style === 'bubble' ? 63 : 70,
-          start + cell * spacing, start + (cell + .65) * spacing).strokePath();
+    this.previousCells = cells;
+    const breaking = Math.max(0, 1 - (time - this.lastBreakAt) / SHIELD_BREAK_MS);
+    const restoring = Math.max(0, 1 - (time - this.lastRestoreAt) / SHIELD_RESTORE_MS);
+    const g = this.field.clear().setPosition(x,y).setRotation(angle).setVisible(visible && (cells > 0 || breaking > 0));
+    const nose = this.nose.clear().setPosition(x,y).setRotation(angle).setVisible(visible && this.level > 0);
+    if (nose.visible) {
+      nose.lineStyle(this.level === 2 ? 3 : 2, this.level === 2 ? 0xffdea0 : 0x9efbff, .98)
+        .lineBetween(-3, -40, 0, -45).lineBetween(0, -45, 3, -40);
+      if (this.level === 2) nose.lineStyle(2, 0xffffff, .92).lineBetween(0,-48,0,-53);
+    }
+    if (!g.visible) return;
+    const count = FIELD_EDGE.length - 1;
+    for (const side of [-1, 1]) for (let i=0; i<count; i++) {
+      const [ax,ay] = FIELD_EDGE[i], [bx,by] = FIELD_EDGE[i+1];
+      const theta = Math.atan2(ay+by, side*(ax+bx));
+      const flash = fieldLight(this.direction, theta, time-this.lastHitAt);
+      const chargeWave = restoring * Math.max(0, 1 - Math.abs((1-restoring) - (count-i)/count)*3.5);
+      const base = cells > 0 ? .17 + .07 * cells/Math.max(1,maximum) : 0;
+      const alpha = Math.min(1, base + flash*.87 + chargeWave*.9 + breaking*.4);
+      const gap = breaking && !this.reduced ? (1-breaking)*.62 : .09;
+      const factor = breaking && !this.reduced ? 1 + (1-breaking)*.29 : 1;
+      const x1 = (ax + (bx-ax)*gap)*side*factor, y1 = (ay + (by-ay)*gap)*factor;
+      const x2 = bx*side*factor, y2 = by*factor;
+      const color = breaking ? 0xffb783 : restoring ? 0xa4ffe6 : 0x80e9ff;
+      g.lineStyle(4, color, alpha*.20).lineBetween(x1,y1,x2,y2);
+      g.lineStyle(flash > .4 ? 3.5 : 1.35, flash > .55 ? 0xf3ffff : color, alpha).lineBetween(x1,y1,x2,y2);
+    }
+    // Small stern ticks count remaining cells without occupying the weapon nose.
+    for (let i=0; i<Math.min(7,cells); i++) {
+      const xx=(i-(Math.min(7,cells)-1)/2)*4;
+      g.lineStyle(1.8, 0xb3f5ff, .8).lineBetween(xx,38,xx,41);
     }
   }
-  destroy(): void { this.graphics.destroy(); this.shell.destroy(); }
+  destroy(): void { this.field.destroy(); this.nose.destroy(); }
 }
