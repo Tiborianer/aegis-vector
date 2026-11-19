@@ -30,6 +30,7 @@ export class PlayerShieldView {
       .setDepth(6.25).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
     this.graphics = scene.add.graphics().setDepth(6.3).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
   }
+  get objects(): Phaser.GameObjects.GameObject[] { return [this.shell,this.graphics]; }
   setStyle(style: ShieldStyle): void { this.style = style; }
   /** A new mission or checkpoint changes the combat clock's origin. */
   reset(): void { this.lastHitAt = -Infinity; }

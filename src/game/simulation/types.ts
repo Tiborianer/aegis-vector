@@ -324,6 +324,8 @@ export interface CombatModifiers {
 }
 
 export interface MissionStartConfig {
+  wingmate?: MissionStartConfig;
+  coopOffers?: import('../../coop/campaign').PilotOffers;
   difficulty: Difficulty;
   mission: MissionDefinition;
   score: number;
@@ -384,6 +386,7 @@ export interface SortieModuleDefinition {
 }
 
 export interface GameSnapshot {
+  squad?: import('../../coop/campaign').SquadStatus;
   mode: GameMode;
   difficulty: Difficulty;
   missionId: MissionId;

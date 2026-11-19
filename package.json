@@ -14,10 +14,17 @@
     "desktop:start": "node scripts/desktop-start.mjs",
     "desktop:package:windows": "npm run build && node scripts/desktop-package.mjs win32 x64",
     "desktop:package:mac": "npm run build && node scripts/desktop-package.mjs darwin arm64",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "coop:local": "node scripts/launch-coop.mjs --local",
+    "coop:lan": "node scripts/launch-coop.mjs --lan",
+    "coop:relay": "node server/coop/start.mjs --relay",
+    "coop:prepare": "node scripts/launch-coop.mjs --prepare",
+    "coop:test": "node --test server/coop/rooms.node-test.mjs",
+    "coop:internet": "node server/coop/start.mjs --internet"
   },
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "ws": "8.23.0"
   },
   "devDependencies": {
     "electron": "45.2.1",

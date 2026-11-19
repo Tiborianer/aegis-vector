@@ -4,6 +4,12 @@ A polished, desktop-first 2D browser arcade campaign built with Phaser, TypeScri
 
 **Live game:** <https://tiborianer.github.io/aegis-vector/>
 
+## Two-player co-op
+
+Choose **Two Pilots → Start local co-op** to share a keyboard. P1 uses WASD, holds F to fire and presses G for EMP. P2 uses the arrow keys, holds J to fire and presses K for EMP. Either pilot can choose either weapon kit. Each has a separate wallet and upgrade panel.
+
+For two computers on the same Wi-Fi, the host can run `npm run coop:lan` and share the private invite with the guest. Internet rooms use a secure relay. See the [playing and hosting guide](docs/TWO_PILOTS.md).
+
 ## Play locally
 
 ```bash

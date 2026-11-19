@@ -1,3 +1,10 @@
+import { PrivateRooms } from './coop/network';
+import { connection } from './coop/mirror';
+import { SquadCampaign, SEATS, type Kit, type Pair, type PilotOffers, type Seat } from './coop/campaign';
+import { FlightDeck, element } from './coop/panel';
+import { makeLobby } from './coop/lobby';
+import { squadInput } from './coop/input';
+import './styles/coop.css';
 import Phaser from 'phaser';
 import './styles.css';
 import './styles/campaignMap.css';
@@ -48,6 +55,8 @@ import {
 } from './ui/introVideo';
 
 const CAMPAIGN_SAVE_KEY = 'aegis-vector-campaign-v1';
+const COOP_SAVE_KEY = 'aegis-vector-coop-v1';
+const COOP_ARCHIVE_KEY = 'aegis-vector-coop-archive-v1';
 const STORY_ARCHIVE_KEY = 'aegis-vector-story-archive-v1';
 const playtest = readPlaytestMode(window.location.search);
 const missionLab = import.meta.env.DEV && playtest.lab;
@@ -217,6 +226,68 @@ const debugInitialTrack = debugMode && [
   ? requestedDebugTrack as MusicTrack
   : 'menu';
 const audio = new SoundEngine();
+let squad: SquadCampaign | undefined;
+let newSquad = false;
+const shell = required<HTMLElement>('game-shell');
+const lobby = makeLobby(shell);
+const deck = new FlightDeck(shell, (kits:Pair<Kit>) => {
+  if (newSquad) {
+    squad = SquadCampaign.fresh(difficulty,kits); campaign = squad.pilots[0]; newSquad=false;
+    saveCampaign(); void audio.unlock(); showIntro(startCurrentMission);
+  } else startCurrentMission();
+}, saveCampaign, leaveCoop);
+const rooms = new PrivateRooms(deck, {
+  start: resume => {
+    const previous=resume ? loadSquad() : undefined;
+    if(previous){resumeSquad(previous);return;}
+    lobby.screen.classList.add('hidden');newSquad=true;deck.preflight();
+  },
+  world: frame => {
+    for(const e of [ui.start,ui.story,ui.intro,ui.result,ui.hangar,lobby.screen])e.classList.add('hidden');
+    shell.classList.add('coop-flight');ui.hud.classList.remove('hidden');
+    window.dispatchEvent(new CustomEvent('aegis:state',{detail:frame.state}));
+  },
+  screen: () => {
+    const visible=(e:HTMLElement)=>!e.classList.contains('hidden');
+    if(visible(ui.story)) return {kind:'story',title:ui.storyTitle.textContent||'Transmission',detail:(ui.storySpeaker.textContent||'')+' · '+(ui.storyCaption.textContent||''),
+      image:ui.storyImage.getAttribute('src')?.replace(/^.*?(story(?:-v[2-6])?\/)/,'$1')};
+    if(visible(ui.intro))return {kind:'intro',title:'Opening transmission',detail:'The host controls the cinematic.',time:ui.introVideo.currentTime};
+    if(visible(ui.result))return {kind:'result',title:ui.resultTitle.textContent||'Debrief',detail:ui.resultKicker.textContent||'Waiting for the host.'};
+    if(visible(ui.pause))return {kind:'paused',title:'Squadron paused',detail:'Either pilot can resume.'};
+    if(visible(required<HTMLElement>('ending-screen')))return {kind:'victory',title:'The fleet is home',detail:'Campaign complete · '+(latestSnapshot?.score??0)+' points'};
+    if(visible(ui.hud))return {kind:'flight',title:'In flight',detail:''};
+    return {kind:'waiting',title:'Squadron hangar',detail:'Waiting for the host.'};
+  },
+  pause: value=>{if(!squad||!['playing','paused'].includes(latestSnapshot?.mode??''))return;
+    const paused=value??ui.pause.classList.contains('hidden');window.dispatchEvent(new CustomEvent(paused?'aegis:pause':'aegis:resume'));},
+  exit:leaveCoop, unlock:()=>{void audio.unlock();}
+},shell);
+squadInput.install();
+const coopButton = element('button','secondary-button','TWO PILOTS');
+coopButton.id='two-pilots';
+if (!graphicsPreview && !missionLab && !endingPreview) required<HTMLElement>('manual-button').before(coopButton);
+coopButton.onclick = () => { if (ready) openCoopLobby(); };
+
+function leaveCoop(): void {
+  if(squad)saveCampaign();
+  window.location.assign(window.location.pathname);
+}
+function openCoopLobby(): void {
+  ui.start.classList.add('hidden');
+  const previous=loadSquad();
+  const networkArea=lobby.open(() => { rooms.cancelWaiting();newSquad=true;lobby.screen.classList.add('hidden');deck.preflight(); },
+    previous ? ()=>{rooms.cancelWaiting();resumeSquad(previous);} : undefined, ()=>{rooms.cancelWaiting();lobby.screen.classList.add('hidden');showStart();});
+  if(location.protocol==='http:'||location.protocol==='https:')void rooms.controls(networkArea,Boolean(previous));
+}
+function resumeSquad(previous:SquadCampaign):void {
+  squad=previous;campaign=squad.pilots[0];newSquad=false;squadInput.active=true;
+  lobby.screen.classList.add('hidden');void audio.unlock();
+  const state=campaign.snapshot();
+  if(state.phase==='story'&&state.pendingStoryChapter)openStory(state.pendingStoryChapter);
+  else if(state.phase==='briefing'||state.activeWaypoint)startCurrentMission();
+  else if(state.phase==='victory')showVictory(state);
+  else openHangar();
+}
 
 if (import.meta.env.DEV) {
   const labButton = document.createElement('button');
@@ -287,14 +358,14 @@ ui.continue.addEventListener('click', () => {
 });
 
 ui.hangarLaunch.addEventListener('click', () => startCurrentMission());
-ui.pauseButton.addEventListener('click', () => window.dispatchEvent(new CustomEvent('aegis:pause')));
+ui.pauseButton.addEventListener('click', () => { if(connection.role==='guest')rooms.guestPause(); else window.dispatchEvent(new CustomEvent('aegis:pause')); });
 ui.empButton.addEventListener('click', () => window.dispatchEvent(new CustomEvent('aegis:emp')));
 ui.resume.addEventListener('click', () => {
   void audio.unlock();
   window.dispatchEvent(new CustomEvent('aegis:resume'));
 });
 ui.restart.addEventListener('click', () => {
-  campaign.failMission();
+  if (squad) squad.fail(); else campaign.failMission();
   audio.setMusicDucked(false);
   startCurrentMission();
 });
@@ -556,6 +627,7 @@ window.addEventListener('aegis:audio-state', (raw) => {
 
 window.addEventListener('aegis:ready', () => {
   ready = true;
+  if(!graphicsPreview && (location.hash==='#host'||location.hash==='#two-pilots'||new URLSearchParams(location.hash.slice(1)).has('room'))) openCoopLobby();
   ui.launch.disabled = false;
   ui.launch.innerHTML = 'START NEW CAMPAIGN <span>→</span>';
   refreshContinueButton();
@@ -596,6 +668,15 @@ window.addEventListener('aegis:ready', () => {
 window.addEventListener('aegis:state', (raw) => {
   latestSnapshot = (raw as CustomEvent<GameSnapshot>).detail;
   updateHud(latestSnapshot);
+  if (latestSnapshot.squad) {
+    const pilots=latestSnapshot.squad.pilots;
+    deck.hud.replaceChildren(...SEATS.map(i=>{
+      const p=pilots[i];
+      return element('div','pilot-readout seat-'+i,'P'+(i+1)+'  '+(i?'WINGMATE':'KESTREL')+'\n'+
+        (p.down ? (p.rescueAvailable?'RESCUE '+Math.floor(p.rescueMs/15)+'%':'NEXT WAYPOINT') : 'HULL '+p.hull+'/'+p.hullMax+'   SHIELD '+p.shield+'/'+p.shieldMax+'   EMP '+p.emp));
+    }));
+    deck.hud.classList.toggle('hidden',latestSnapshot.mode!=='playing');
+  }
 });
 
 window.addEventListener('aegis:enemy-seen', (raw) => {
@@ -653,6 +734,7 @@ window.addEventListener('aegis:music', (raw) => {
 
 window.addEventListener('aegis:pause-state', (raw) => {
   const paused = (raw as CustomEvent<boolean>).detail;
+  if(squad){squadInput.clear();ui.pauseAbandon.textContent='SAVE & RETURN TO TITLE';}
   ui.pause.classList.toggle('hidden', !paused);
   const waypoint = latestSnapshot?.latestWaypointId;
   ui.restart.textContent = waypoint ? `RETRY FROM WAYPOINT ${waypoint}` : 'RETRY MISSION';
@@ -672,6 +754,10 @@ window.addEventListener('aegis:mission-clear', (raw) => {
   ui.missionClear.classList.add('show');
 });
 
+window.addEventListener('aegis:squad-waypoint', (raw) => {
+  const d=(raw as CustomEvent<{primary:NonNullable<CampaignSnapshot['activeWaypoint']>;wing:NonNullable<CampaignSnapshot['activeWaypoint']>;offers:PilotOffers}>).detail;
+  if(squad?.waypoint(d.primary,d.wing,d.offers)) saveCampaign();
+});
 window.addEventListener('aegis:waypoint-secured', (raw) => {
   const waypoint = (raw as CustomEvent<CampaignSnapshot['activeWaypoint']>).detail;
   if (!waypoint || !campaign.saveWaypoint(waypoint)) return;
@@ -679,13 +765,15 @@ window.addEventListener('aegis:waypoint-secured', (raw) => {
 });
 
 window.addEventListener('aegis:defense-consumed', (raw) => {
-  const detail = (raw as CustomEvent<{ missionId: MissionId; game: GameCheckpointSnapshot }>).detail;
+  const detail = (raw as CustomEvent<{ missionId: MissionId; game: GameCheckpointSnapshot; seat?:Seat }>).detail;
+  if (squad) { if(squad.pilots[detail.seat ?? 0].recordConsumedDefenses(detail.game,detail.missionId))saveCampaign();return; }
   if (detail && campaign.recordConsumedDefenses(detail.game, detail.missionId)) saveCampaign();
 });
 
 window.addEventListener('aegis:mission-ended', (raw) => {
   const snapshot = (raw as CustomEvent<GameSnapshot>).detail;
   latestSnapshot = snapshot;
+  deck.hud.classList.add('hidden');
   audio.setMusicDucked(false);
   ui.pause.classList.add('hidden');
   ui.missionClear.classList.add('hidden');
@@ -713,11 +801,12 @@ window.addEventListener('aegis:mission-ended', (raw) => {
     return;
   }
   if (snapshot.mode === 'complete' || snapshot.mode === 'victory') {
-    const state = campaign.completeMission(snapshot);
+    const info=snapshot.squad;
+    const state = squad && info ? squad.finish(snapshot,{...snapshot,weapons:info.pilots[1].weapons,shieldBaseMax:info.pilots[1].shieldBaseMax},info.offers) : campaign.completeMission(snapshot);
     saveCampaign();
     if (state.pendingStoryChapter) openStory(state.pendingStoryChapter);
   } else {
-    campaign.failMission();
+    if (squad) squad.fail(); else campaign.failMission();
     saveCampaign();
     showFailure(snapshot);
   }
@@ -1058,7 +1147,7 @@ function finishStory(): void {
     return;
   }
   storyChapter = undefined;
-  const state = campaign.completeStoryChapter();
+  const state = squad ? squad.story() : campaign.completeStoryChapter();
   rememberStoryChapter(state.seenStoryChapters ?? []);
   saveCampaign();
   if (state.phase === 'victory') showVictory(state, latestSnapshot);
@@ -1071,7 +1160,7 @@ function startCurrentMission(): void {
   transitionInputLatched = false;
   void audio.unlock();
   const debugDurationMs = quickDebugMode ? 24_000 : undefined;
-  const config = campaign.beginMission(debugDurationMs);
+  const config = squad ? squad.begin(debugDurationMs) : campaign.beginMission(debugDurationMs);
   saveCampaign();
   resultIsVictory = false;
   ui.start.classList.add('hidden');
@@ -1083,6 +1172,8 @@ function startCurrentMission(): void {
   ui.intro.classList.add('hidden');
   ui.missionClear.classList.add('hidden');
   ui.missionClear.classList.remove('show', 'finale');
+  shell.classList.toggle('coop-flight',Boolean(squad));
+  deck.hide();
   ui.hud.classList.remove('hidden');
   window.dispatchEvent(new CustomEvent('aegis:start-mission', { detail: config }));
 }
@@ -1093,8 +1184,8 @@ function openHangar(victoryVariant?: number): void {
   ui.pause.classList.add('hidden');
   ui.result.classList.add('hidden');
   ui.hud.classList.add('hidden');
-  ui.hangar.classList.remove('hidden');
-  renderHangar();
+  if (squad) { ui.hangar.classList.add('hidden');deck.hangar(squad); }
+  else { ui.hangar.classList.remove('hidden'); renderHangar(); }
   if (victoryVariant === undefined) void audio.playMusic('hangar');
   else void audio.playMusic('victory', 'hangar', victoryVariant);
 }
@@ -1242,7 +1333,7 @@ function showFailure(snapshot: GameSnapshot): void {
     ? `MISSION FAILED // WAYPOINT ${waypoint} RESTORED`
     : 'MISSION FAILED // SORTIE RESET';
   if (missionLab) ui.resultKicker.textContent += ' · SAVES OFF';
-  ui.resultTitle.textContent = 'FIGHTER DOWN';
+  ui.resultTitle.textContent = squad ? 'SQUADRON DOWN' : 'FIGHTER DOWN';
   ui.resultTitle.style.color = 'var(--danger)';
   ui.resultScore.textContent = formatScore(snapshot.score);
   ui.resultScoreLabel.textContent = 'ATTEMPT SCORE';
@@ -1257,7 +1348,7 @@ function showFailure(snapshot: GameSnapshot): void {
 
 function showVictory(state: CampaignSnapshot, snapshot?: GameSnapshot): void {
   resultIsVictory = true;
-  clearCampaignSave();
+  if (!squad) clearCampaignSave();
   for (const overlay of [ui.start, ui.hangar, ui.pause, ui.result, ui.hud, ui.story, ui.intro, ui.manual, ui.missionClear, ui.routeMap]) overlay.classList.add('hidden');
   if (snapshot) latestSnapshot = snapshot;
   ending.show(state, {
@@ -1273,6 +1364,7 @@ function showVictory(state: CampaignSnapshot, snapshot?: GameSnapshot): void {
 }
 
 function showStart(): void {
+  if(squad){leaveCoop();return;}
   ending.hide();
   ui.routeMap.classList.add('hidden');
   ui.start.classList.remove('hidden');
@@ -1287,6 +1379,7 @@ function showStart(): void {
 }
 
 function abandonCampaign(): void {
+  if (squad) {leaveCoop();return;}
   if (missionLab) {
     window.location.assign(missionLabUrl(window.location.href, { ...labOptions, mission: undefined }));
     return;
@@ -1474,7 +1567,7 @@ function visibleBaseScreen(): HTMLElement {
 function unlockedStoryChapters(): Set<StoryChapterId> {
   const campaignSeen = campaign.snapshot().seenStoryChapters ?? [];
   try {
-    const stored = JSON.parse(localStorage.getItem(STORY_ARCHIVE_KEY) ?? '[]') as StoryChapterId[];
+    const stored = JSON.parse(localStorage.getItem(squad ? COOP_ARCHIVE_KEY : STORY_ARCHIVE_KEY) ?? '[]') as StoryChapterId[];
     return new Set([...stored, ...campaignSeen]);
   } catch {
     return new Set(campaignSeen);
@@ -1486,7 +1579,7 @@ function rememberStoryChapter(ids: StoryChapterId[]): void {
   try {
     const existing = unlockedStoryChapters();
     ids.forEach((id) => existing.add(id));
-    localStorage.setItem(STORY_ARCHIVE_KEY, JSON.stringify([...existing]));
+    localStorage.setItem(squad ? COOP_ARCHIVE_KEY : STORY_ARCHIVE_KEY, JSON.stringify([...existing]));
   } catch { /* optional */ }
 }
 
@@ -1506,6 +1599,11 @@ function formatScore(score: number): string {
 }
 
 function saveCampaign(): void {
+  if (squad) {
+    try { localStorage.setItem(COOP_SAVE_KEY, JSON.stringify(squad.save())); }
+    catch { ui.announcement.textContent = 'CO-OP SAVE UNAVAILABLE'; }
+    return;
+  }
   if (graphicsPreview) return;
   try {
     savedCampaign = campaign.exportSave();
@@ -1514,6 +1612,13 @@ function saveCampaign(): void {
     // A denied localStorage write should not prevent play.
   }
   refreshContinueButton();
+}
+
+function loadSquad(): SquadCampaign | undefined {
+  try {
+    const raw = localStorage.getItem(COOP_SAVE_KEY);
+    return raw ? SquadCampaign.restore(JSON.parse(raw)) : undefined;
+  } catch { return undefined; }
 }
 
 function loadCampaign(): CampaignSnapshot | undefined {

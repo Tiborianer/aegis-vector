@@ -1,0 +1,359 @@
+.coop-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #071423f5, #05101df2);
+  color: #e5f4fb;
+  pointer-events: auto;
+  overflow: auto;
+}
+.coop-wrap {
+  width: min(920px, 96%);
+  height: min(92%, 580px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 22px;
+  border: 1px solid #2e5063;
+  background: linear-gradient(115deg, #101f30, #091623);
+  box-sizing: border-box;
+}
+.coop-header {
+  border-bottom: 1px solid #29495a;
+  padding-bottom: 8px;
+}
+.coop-header small,
+.coop-footer {
+  letter-spacing: 0.12em;
+  color: #8ee3ea;
+}
+.coop-header h2 {
+  font-size: clamp(22px, 3.6vw, 38px);
+  margin: 3px 0;
+  text-transform: uppercase;
+}
+.coop-header p,
+.coop-wrap > p {
+  font-size: 13px;
+  margin: 2px 0;
+  color: #bed1db;
+}
+.coop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+  flex: 1;
+  min-height: 0;
+}
+.seat-0 {
+  --pilot: #7ce7fa;
+}
+.seat-1 {
+  --pilot: #ffd18b;
+}
+.coop-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid #294051;
+  border-top: 3px solid var(--pilot);
+  background: #0a1826;
+}
+.coop-card h3,
+.coop-card .wallet {
+  margin: 0;
+  color: var(--pilot);
+}
+.coop-card h3 {
+  text-transform: uppercase;
+  font-size: 18px;
+}
+.coop-card .wallet {
+  font-size: 13px;
+  margin: 3px 0 9px;
+}
+.coop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+}
+.coop-choice,
+.coop-key {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  color: #e4eff7;
+  background: #142838;
+  border: 1px solid #355064;
+  padding: 6px 9px;
+}
+.coop-choice small {
+  display: block;
+  color: #a9c1d0;
+  font-size: 11px;
+}
+.coop-choice.selected {
+  background: #233849;
+}
+.coop-choice.cursor,
+.coop-choice:focus-visible,
+.coop-choice:hover {
+  border-color: var(--pilot);
+  box-shadow: inset 3px 0 var(--pilot);
+}
+.coop-choice:disabled {
+  opacity: 0.52;
+  cursor: default;
+}
+.coop-choice.ready-choice {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  border-color: var(--pilot);
+  background: #172c39;
+  color: var(--pilot);
+}
+.coop-choice.ready-choice:disabled {
+  background: #11202d;
+  opacity: 0.85;
+  color: #81929c;
+}
+.coop-footer,
+.coop-keys,
+.coop-keyboard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.coop-footer button {
+  min-height: 25px;
+}
+.coop-keys {
+  font-size: 11px;
+}
+.coop-keys kbd {
+  padding: 3px 5px;
+  color: var(--pilot);
+  background: #152638;
+  margin-right: 2px;
+}
+.coop-keys .lit {
+  background: var(--pilot);
+  color: #03121b;
+}
+.coop-hud {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 7;
+}
+.coop-hud .pilot-readout {
+  background: #061421de;
+  color: var(--pilot);
+  border-top: 2px solid var(--pilot);
+  padding: 7px 10px;
+  font: 700 12px/1.3 system-ui;
+  white-space: pre-line;
+}
+#game-shell.coop-flight .hud-status,
+#game-shell.coop-flight .ability-rack,
+#game-shell.coop-flight .weapon-rack {
+  display: none;
+}
+#game-shell.coop-flight .hud-score {
+  top: auto;
+  bottom: 12px;
+  left: 18px;
+  right: auto;
+}
+.coop-screen.hidden,
+.coop-hud.hidden {
+  display: none;
+}
+.coop-menu {
+  display: flex;
+  gap: 6px;
+}
+.coop-menu button {
+  flex: 1;
+}
+.coop-room-input {
+  background: #0a1826;
+  color: white;
+  border: 1px solid #507484;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.coop-lobby {
+  height: auto;
+  max-height: 95%;
+  overflow: auto;
+  max-width: 620px;
+}
+.coop-lobby button {
+  min-height: 32px;
+}
+.coop-lobby .coop-header {
+  margin-bottom: 3px;
+}
+.coop-lobby details {
+  color: #bdd4df;
+  font-size: 13px;
+}
+.coop-lobby details > * {
+  margin: 5px 0;
+}
+@media (max-height: 540px) {
+  .coop-wrap {
+    height: 96%;
+    padding: 9px 14px;
+    gap: 5px;
+  }
+  .coop-card {
+    padding: 6px;
+  }
+  .coop-header h2 {
+    font-size: 23px;
+  }
+  .coop-header small {
+    font-size: 9px;
+  }
+  .coop-card .wallet {
+    margin: 1px 0 4px;
+  }
+  .coop-lobby {
+    height: auto;
+  }
+  .coop-hud {
+    top: 5px;
+    left: 6px;
+    right: 6px;
+  }
+  .coop-hud .pilot-readout {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  .start-card #two-pilots {
+    grid-column: 1;
+    grid-row: 6/8;
+    align-self: center;
+  }
+}
+
+.coop-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin-bottom: 5px;
+}
+.coop-tabs:empty {
+  display: none;
+}
+.coop-tabs button {
+  font-size: 10px;
+  padding: 6px 2px;
+  text-align: center;
+}
+.coop-card > .ready-choice {
+  flex-shrink: 0;
+  margin-top: auto;
+}
+.coop-footer .text-button {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #bdd8e1;
+}
+.coop-bay {
+  position: relative;
+  min-height: 65px;
+  height: clamp(65px, 13vh, 108px);
+  margin: 3px 0 8px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse, #254352 0%, #132836 45%, transparent 72%);
+}
+.coop-jet {
+  position: relative;
+  width: 88px;
+  height: 104px;
+  background: var(--coop-ship) -264px -104px / 352px 416px no-repeat;
+}
+.seat-1 .coop-jet {
+  filter: sepia(0.7) saturate(1.55);
+}
+.seat-1 .wing-bars {
+  position: absolute;
+  left: 22px;
+  top: 55px;
+  width: 9px;
+  height: 3px;
+  border-block: 2px solid #ffedcc;
+  box-shadow: 33px 7px 0 -1px #ffedcc;
+  transform: rotate(-14deg);
+}
+.coop-jet.firing::before {
+  content: '';
+  position: absolute;
+  bottom: 96%;
+  left: 48%;
+  width: 3px;
+  height: 20px;
+  background: #c2f8ff;
+  box-shadow: 0 0 8px #52edff;
+}
+@media (max-height: 540px) {
+  .coop-bay {
+    min-height: 44px;
+    height: 50px;
+  }
+  .coop-jet {
+    zoom: 0.59;
+  }
+  .coop-keys {
+    font-size: 9px;
+  }
+  .coop-list {
+    scroll-padding: 5px;
+  }
+  .coop-tabs button {
+    font-size: 9px;
+  }
+}
+
+.coop-room-controls {
+  display: grid;
+  gap: 7px;
+}
+.coop-room-controls h3 {
+  margin: 3px 0;
+}
+.coop-room-controls p {
+  margin: 0;
+  color: #bed1db;
+  font-size: 13px;
+}
+.coop-lobby video,
+.coop-lobby img {
+  width: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+}
+.coop-room-controls label {
+  font-size: 12px;
+  color: #bfceda;
+}

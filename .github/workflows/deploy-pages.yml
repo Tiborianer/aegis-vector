@@ -35,9 +35,11 @@ jobs:
         run: npm test
 
       - name: Test release packaging
-        run: npm run desktop:test && npm run web:test
+        run: npm run desktop:test && npm run web:test && npm run coop:test
 
       - name: Build production game
+        env:
+          VITE_COOP_RELAY: ${{ vars.VITE_COOP_RELAY }}
         run: npm run build
 
       - name: Stage only active game assets

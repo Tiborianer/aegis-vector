@@ -40,6 +40,17 @@ export class CampaignModel {
     this.state = saved ? CampaignModel.sanitize(saved) : CampaignModel.fresh('pilot');
   }
 
+  /** Untrusted disk data is progress, not ownership. Reject unrelated or newer
+   * schemas before migration, and explicitly sanitize the known gameplay fields. */
+  static restore(candidate: unknown): CampaignSnapshot | undefined {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined;
+    const saved = candidate as Partial<CampaignSnapshot>;
+    if (!Number.isInteger(saved.version) || saved.version! < 1 || saved.version! > 8
+      || !saved.weapons || typeof saved.weapons !== 'object' || Array.isArray(saved.weapons)
+      || typeof saved.missionIndex !== 'number' || !Number.isFinite(saved.missionIndex)) return undefined;
+    return new CampaignModel(saved as CampaignSnapshot).exportSave();
+  }
+
   static fresh(difficulty: Difficulty): CampaignSnapshot {
     return {
       version: 8,
@@ -118,11 +129,17 @@ export class CampaignModel {
       : this.currentMission().id === 'coastal' ? 'briefing' : 'hangar';
   }
 
-  saveWaypoint(waypoint: MissionWaypointSnapshot): boolean {
-    if (this.state.phase !== 'mission' || waypoint.missionId !== this.currentMission().id) return false;
-    if (this.state.activeWaypoint && this.state.activeWaypoint.waypointId >= waypoint.waypointId) return false;
+  eligibleWaypoint(waypoint: MissionWaypointSnapshot): MissionWaypointSnapshot | undefined {
+    if (this.state.phase !== 'mission' || waypoint.missionId !== this.currentMission().id) return undefined;
+    if (this.state.activeWaypoint && this.state.activeWaypoint.waypointId >= waypoint.waypointId) return undefined;
     const validated = sanitizeMissionWaypoint(waypoint, this.currentMission().id);
-    if (!validated || validated.game.score < this.state.score) return false;
+    if (!validated || validated.game.score < this.state.score) return undefined;
+    return validated;
+  }
+
+  saveWaypoint(waypoint: MissionWaypointSnapshot): boolean {
+    const validated=this.eligibleWaypoint(waypoint);
+    if(!validated)return false;
     this.state.activeWaypoint = validated;
     return true;
   }
@@ -152,7 +169,7 @@ export class CampaignModel {
     this.state.phase = this.currentMission().id === 'coastal' ? 'briefing' : 'hangar';
   }
 
-  completeMission(result: GameSnapshot): CampaignSnapshot {
+  completeMission(result: GameSnapshot, squadCompletionCredits?: number): CampaignSnapshot {
     const mission = this.currentMission();
     if (this.state.phase !== 'mission') throw new Error('This mission is not awaiting a result.');
     if (result.missionId !== mission.id) throw new Error('Mission result does not match the active campaign mission.');
@@ -162,7 +179,7 @@ export class CampaignModel {
     }
     const chapter = storyChapterForMission(mission.id);
 
-    const completionCredits = Math.round(mission.completionCredits * buildCombatModifiers(this.state.purchased).creditMultiplier);
+    const completionCredits = squadCompletionCredits ?? Math.round(mission.completionCredits * buildCombatModifiers(this.state.purchased).creditMultiplier);
     const missionScore = Math.max(0, result.score - this.state.score);
     const shotsFired = Math.max(0, result.shotsFired);
     this.state.score = result.score;
@@ -229,6 +246,11 @@ export class CampaignModel {
     this.state.credits -= node.cost;
     this.state.purchased.push(id);
     return { ok: true };
+  }
+
+  claimArmament(type: import('./types').UpgradeType): void {
+    if (type === 'shield') this.state.shieldBaseMax = Math.min(3, this.state.shieldBaseMax + 1);
+    else this.state.weapons[type] = CampaignModel.weaponLevel(this.state.weapons[type] + 1, 0, WEAPON_MAX_LEVEL[type]);
   }
 
   respec(): boolean {

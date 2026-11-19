@@ -238,7 +238,7 @@ export class GameModel {
     this.latestWaypointId = id;
   }
 
-  tick(deltaMs: number): false | 'shield' | 'hull' {
+  tick(deltaMs: number, down = false): false | 'shield' | 'hull' {
     if (this.mode !== 'playing') return false;
     this.stageElapsedMs += deltaMs;
     if (this.multiplier > 1 && this.stageElapsedMs >= this.comboUntil) {
@@ -246,6 +246,7 @@ export class GameModel {
       this.comboKills = 0;
     }
 
+    if (down) return false;
     if (this.shield < this.shieldMax && this.stageElapsedMs >= this.nextShieldRechargeAt) {
       // Every Aegis bank recharges one cell at a time. Harmonics improves cadence,
       // not the recharge rule; even a delayed frame may restore only one cell.
@@ -259,6 +260,14 @@ export class GameModel {
       return 'hull';
     }
     return false;
+  }
+
+  reviveWingmate(): void {
+    this.hull = 1;
+    this.shield = Math.min(1, this.shieldMax);
+    this.mode = 'playing';
+    this.invulnerableUntil = this.stageElapsedMs + 2_000;
+    this.nextShieldRechargeAt = this.stageElapsedMs + this.shieldRechargeIntervalMs;
   }
 
   takeDamage(source: 'projectile' | 'ram' | 'hazard' = 'projectile'): DamageResult {
@@ -379,28 +388,28 @@ export class GameModel {
     this.shotsHit += 1;
   }
 
-  registerKill(baseScore: number, baseCredits: number, specialist = false): KillResult {
+  registerKill(baseScore: number, baseCredits: number, specialist = false, pilot: GameModel = this): KillResult {
     this.kills += 1;
     this.comboKills += 1;
-    this.multiplier = Math.min(this.modifiers.comboMax, 1 + Math.floor(this.comboKills / 5));
-    this.comboUntil = this.stageElapsedMs + this.modifiers.comboWindowMs;
-    const points = Math.round(baseScore * this.multiplier * this.difficultyScoreScale() * (specialist && this.modifiers.threatAnalyzer ? 1.1 : 1));
+    this.multiplier = Math.min(pilot.modifiers.comboMax, 1 + Math.floor(this.comboKills / 5));
+    this.comboUntil = this.stageElapsedMs + pilot.modifiers.comboWindowMs;
+    const points = Math.round(baseScore * this.multiplier * this.difficultyScoreScale() * (specialist && pilot.modifiers.threatAnalyzer ? 1.1 : 1));
     // Preserve fractional salvage bonuses across small rewards and waypoint retries.
     // Tractor also salvages more from kills, so it is useful between utility drops.
-    const tractorSalvage = this.stageElapsedMs < this.tractorUntil ? ACTIVE_TRACTOR_CREDIT_MULTIPLIER : 1;
-    const exactCredits = Math.max(0, baseCredits) * this.modifiers.creditMultiplier * tractorSalvage + this.creditRemainder;
+    const tractorSalvage = this.stageElapsedMs < pilot.tractorUntil ? ACTIVE_TRACTOR_CREDIT_MULTIPLIER : 1;
+    const exactCredits = Math.max(0, baseCredits) * pilot.modifiers.creditMultiplier * tractorSalvage + this.creditRemainder;
     const credits = Math.floor(exactCredits + 1e-9);
     this.creditRemainder = Math.max(0, exactCredits - credits);
     this.creditsEarned += credits;
     this.addFlatScore(points);
 
-    const overdriveTriggered = this.modifiers.overdriveReactor && this.comboKills === 10;
-    if (overdriveTriggered) this.reactorUntil = this.stageElapsedMs + 6_000;
-    const fabricationInterval = this.modifiers.fabricationMatrix ? 24 : 30;
+    const overdriveTriggered = pilot.modifiers.overdriveReactor && this.comboKills === 10;
+    if (overdriveTriggered) pilot.reactorUntil = this.stageElapsedMs + 6_000;
+    const fabricationInterval = pilot.modifiers.fabricationMatrix ? 24 : 30;
     let fabricatedPickup: UtilityPickupType | undefined;
-    if ((this.modifiers.fieldFabricator || this.modifiers.fabricationMatrix) && this.kills % fabricationInterval === 0) {
-      if (this.hull < this.hullMax) fabricatedPickup = 'repair';
-      else if (this.empCharges < this.empMax) fabricatedPickup = 'emp';
+    if ((pilot.modifiers.fieldFabricator || pilot.modifiers.fabricationMatrix) && this.kills % fabricationInterval === 0) {
+      if (pilot.hull < pilot.hullMax) fabricatedPickup = 'repair';
+      else if (pilot.empCharges < pilot.empMax) fabricatedPickup = 'emp';
       // A healthy full-capacity fighter receives Overdrive only every third cycle.
       else fabricatedPickup = Math.floor(this.kills / fabricationInterval) % 3 === 0 ? 'overdrive' : 'tractor';
     }

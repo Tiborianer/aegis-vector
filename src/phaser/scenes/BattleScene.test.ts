@@ -68,12 +68,15 @@ describe('Mission Lab God-mode switching', () => {
     expect(setItem).toHaveBeenCalledExactlyOnceWith('aegis-vector-high-score', '100');
   });
 });
+function assignBattleFixtures(scene: BattleScene, fields: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(fields)) Object.assign(key in scene['lead'] ? scene['lead'] : scene, { [key]:value });
+}
 function harness(missionId: MissionId = 'lastLight') {
   vi.stubGlobal('window', { dispatchEvent: vi.fn(), location: { search: '' }, matchMedia: () => ({ matches: true }) });
   const scene = new BattleScene();
   scene['model'].start(config(missionId));
   const group = { clear: vi.fn(), children: { each: vi.fn() }, getMatching: () => [], countActive: () => 0 };
-  Object.assign(scene, {
+  assignBattleFixtures(scene, {
     player: { x: 640, y: 600 }, enemyBullets: group, playerBullets: group, enemies: group,
     enemyHitZones: group, mines: group, pickups: group,
     particles: { setParticleTint: vi.fn(), explode: vi.fn() }, cameras: { main: { shake: vi.fn() } },
@@ -95,7 +98,7 @@ function installStartViews(scene: BattleScene): Array<() => void> {
     setVisible(_value: boolean) { return this; }, setActive(_value: boolean) { return this; }, setAlpha(_value: number) { return this; },
   };
   const callbacks: Array<() => void> = [];
-  Object.assign(scene, {
+  assignBattleFixtures(scene, {
     player: view, playerShadow: view, contrails: view,
     ocean: view, clouds: view, horizonHaze: view, midground: view, ambientWash: view,
     physics: { world: { resume: vi.fn(), pause: vi.fn() } },
@@ -164,7 +167,7 @@ function installPickupViews(scene: BattleScene) {
     } } },
   });
   scene['createCollisions']();
-  return { pickups, sprite, collect: (pickup: ReturnType<typeof sprite>) => collect(scene['player'], pickup) };
+  return { pickups, sprite, collect: (pickup: ReturnType<typeof sprite>) => collect(scene['lead'].player, pickup) };
 }
 function installCompletedDirectorViews(scene: BattleScene): void {
   Object.assign(scene, {
@@ -276,7 +279,7 @@ describe('combat runtime contracts without rendering', () => {
       advance(200);
       scene['setPaused'](true);
       advance(30_000);
-      scene['player'].x = 100;
+      scene['lead'].player.x = 100;
       scene['setPaused'](false);
       advance(16);
       expect(scene['spawnEnemyBullet']).not.toHaveBeenCalled();
@@ -365,7 +368,7 @@ describe('combat runtime contracts without rendering', () => {
       advance(1499);
       expect(scene['activateTemporalEcho']).not.toHaveBeenCalled();
       advance(1);
-      expect(scene['activateTemporalEcho']).toHaveBeenCalledExactlyOnceWith(640, 600);
+      expect(scene['activateTemporalEcho']).toHaveBeenCalledExactlyOnceWith(640, 600, scene['lead']);
     });
     it('clears old timers/tweens and re-enables their progression when retry replaces a paused run', () => {
       const scene = harness('aurora');
@@ -382,7 +385,7 @@ describe('combat runtime contracts without rendering', () => {
       const pendingOldCallback = vi.fn();
       clock.delayedCall(100, pendingOldCallback); // Not yet inserted into Clock's active list.
       const shield = { reset: vi.fn(), setStyle: vi.fn(), update: vi.fn() };
-      Object.assign(scene, { playerShield: shield });
+      assignBattleFixtures(scene, { playerShield: shield });
       scene['startMission'](config('coastal'));
       expect(clock.paused).toBe(false);
       expect(tweens.timeScale).toBe(1);
@@ -407,7 +410,7 @@ describe('combat runtime contracts without rendering', () => {
         const { advance } = installCombatLoop(scene);
         const surge = { scale: 1, alpha: 1, setDepth: () => surge, setStrokeStyle: () => surge, setBlendMode: () => surge, destroy: vi.fn() };
         const trails = { clear: () => trails, lineStyle: () => trails, lineBetween: () => trails };
-        Object.assign(scene, { add: { circle: () => surge }, contrails: trails });
+        assignBattleFixtures(scene, { add: { circle: () => surge }, contrails: trails });
         if (mode === 'complete') scene['completeMission'](false);
         else {
           scene['model'].mode = mode;
@@ -476,6 +479,23 @@ describe('combat runtime contracts without rendering', () => {
     scene['createInput']();
     listeners.get('T')!.get('down')!();
     expect(scene['collectPickup']).toHaveBeenCalledExactlyOnceWith('tractor');
+  });
+  it('preserves scout health while scaling two-pilot elites, the Crown hull and all six turrets', () => {
+    const scene = harness();
+    installEnemySpawnViews(scene);
+    scene['model'].stageElapsedMs = 35000;
+    const spawn = (kind: EnemyKind) => scene['spawnEnemy'](kind, 640, -100, 0)!;
+    const solo = { scout: spawn('scout').getData('maxHealth'), elite: spawn('elite').getData('maxHealth'),
+      hull: spawn('nullArchitect').getData('maxHealth') };
+    scene['flyingCoop'] = true;
+    expect(spawn('scout').getData('maxHealth')).toBe(solo.scout);
+    expect(Math.abs(spawn('elite').getData('maxHealth') - solo.elite * 1.25)).toBeLessThanOrEqual(1);
+    const crown = spawn('nullArchitect');
+    const hp = crown.getData('maxHealth');
+    expect(Math.abs(hp - solo.hull * 1.65)).toBeLessThanOrEqual(1);
+    const modules = crown.getData('modularBoss') as ModularBossState;
+    expect(modules.turrets).toHaveLength(6);
+    expect(modules.turrets.every(t => t.health === Math.round(hp * .055))).toBe(true);
   });
   it('the real spawn path fixes finale hull/module health while regular enemies still scale with time', () => {
     const scene = harness();
@@ -546,7 +566,7 @@ describe('combat runtime contracts without rendering', () => {
     expect(data.state).toBe('volleyWarning');
     const plan = structuredClone(data.attackPlan) as { shots: Array<{ x: number; y: number; angle: number; heavy: boolean; ion?: boolean }> };
     const fireAt = data.attackAt as number;
-    scene['player'].x = 100;
+    scene['lead'].player.x = 100;
     scene['updateExpansionEnemy'](enemy as never, kind, fireAt - 1);
     expect(scene['spawnEnemyBullet']).not.toHaveBeenCalled();
     expect(scene['steerEnemy']).toHaveBeenLastCalledWith(enemy, kind, true);
@@ -627,9 +647,9 @@ describe('combat runtime contracts without rendering', () => {
     };
     it('fires once at the original EMP location during the same active mission', () => {
       const { scene, pending, echo } = setup();
-      scene['player'].x = 900;
+      scene['lead'].player.x = 900;
       pending.shift()!.callback();
-      expect(echo).toHaveBeenCalledExactlyOnceWith(640, 600);
+      expect(echo).toHaveBeenCalledExactlyOnceWith(640, 600, scene['lead']);
       expect(pending).toHaveLength(0);
     });
     it.each(['restart', 'isolate'] as const)('discards a pending echo after %s replaces the battlefield', (action) => {
@@ -658,7 +678,7 @@ describe('combat runtime contracts without rendering', () => {
       }
       scene['setPaused'](false);
       pending.shift()!.callback();
-      expect(echo).toHaveBeenCalledExactlyOnceWith(640, 600);
+      expect(echo).toHaveBeenCalledExactlyOnceWith(640, 600, scene['lead']);
       expect(pending).toHaveLength(0);
     });
     it('cancels an already-deferred echo when retry replaces the paused run', () => {
@@ -683,7 +703,7 @@ describe('combat runtime contracts without rendering', () => {
     scene['model'].weapons.ion = 1;
     scene['damageEnemy'](enemy as never, 75, 'weakpoint', 0);
     scene['fireIon'](5000);
-    expect(scene['ionArc']).toHaveBeenLastCalledWith(scene['player'].x, scene['player'].y - 38, zones[1].x, zones[1].y);
+    expect(scene['ionArc']).toHaveBeenLastCalledWith(scene['lead'].player.x, scene['lead'].player.y - 38, zones[1].x, zones[1].y);
     expect(state().turrets[1].health).toBeCloseTo(51.8);
     expect(state().hull).toBe(1000);
   });
@@ -703,7 +723,7 @@ describe('combat runtime contracts without rendering', () => {
     expect(scene['model'].exportCheckpoint()).toEqual(before);
     expect(scene['destroyEnemy']).not.toHaveBeenCalled();
     scene['damageEnemy'](enemy as never, 1000, 'core', 6);
-    expect(scene['destroyEnemy']).toHaveBeenCalledExactlyOnceWith(enemy);
+    expect(scene['destroyEnemy']).toHaveBeenCalledExactlyOnceWith(enemy, scene['lead']);
   });
   it('keeps the tactical breach reward exclusive to Last Light', () => {
     const { scene, enemy } = modularHarness('coastal');
@@ -778,7 +798,7 @@ describe('combat runtime contracts without rendering', () => {
     data.attackIndex = 0;
     data.nextFire = 2000;
     data.fireScale = 1;
-    scene['player'].x = 1040;
+    scene['lead'].player.x = 1040;
     const original = state();
     scene['updateExpansionEnemy'](enemy as never, 'nullArchitect', 1000);
     state().turrets.forEach((turret, index) => {
@@ -789,7 +809,7 @@ describe('combat runtime contracts without rendering', () => {
     const locked = state();
     const plan = data.attackPlan as ReturnType<typeof buildTurretVolley>;
     expect(data.state).toBe('volleyWarning');
-    scene['player'].x = 140;
+    scene['lead'].player.x = 140;
     scene['updateExpansionEnemy'](enemy as never, 'nullArchitect', 2200);
     expect(state()).toBe(locked);
     plan.shots.forEach((shot) => {
@@ -997,10 +1017,10 @@ describe('combat runtime contracts without rendering', () => {
     Object.assign(scene, { physics: { add: { overlap: (_a: unknown, _b: unknown, action: (a: unknown, b: unknown) => void) => callbacks.push(action) } } });
     scene['createCollisions']();
     const projectile = { active: true, disableBody: () => { projectile.active = false; } };
-    callbacks[2](scene['player'], projectile);
+    callbacks[2](scene['lead'].player, projectile);
     expect(scene['model'].shield).toBe(2);
     scene['model'].tick(1000);
-    callbacks[2](scene['player'], projectile);
+    callbacks[2](scene['lead'].player, projectile);
     expect(scene['model'].shield).toBe(2);
     expect(scene['damageAttempts']).toBe(1);
   });
@@ -1010,8 +1030,8 @@ describe('combat runtime contracts without rendering', () => {
     const callbacks: Array<(a: unknown, b: unknown) => void> = [];
     Object.assign(scene, { physics: { add: { overlap: (_a: unknown, _b: unknown, action: (a: unknown, b: unknown) => void) => callbacks.push(action) } } });
     scene['createCollisions']();
-    callbacks[3](scene['player'], { getData: () => enemy });
-    callbacks[3](scene['player'], { getData: () => enemy });
+    callbacks[3](scene['lead'].player, { getData: () => enemy });
+    callbacks[3](scene['lead'].player, { getData: () => enemy });
     expect(scene['model'].shield).toBe(2);
     expect(scene['damageAttempts']).toBe(1);
   });
