@@ -60,5 +60,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   });
   const { stageFriendsPage } = await import('./stage-friends-page.mjs');
   await stageFriendsPage(projectRoot, path.resolve(process.argv[3] ?? 'web-dist'));
+  const { stageMobilePage } = await import('./stage-mobile-page.mjs');
+  await stageMobilePage(projectRoot, path.resolve(process.argv[3] ?? 'web-dist'));
   console.log(`Web release staged: ${result.activeAssets} active assets; ${(result.bytes / 1024 / 1024).toFixed(1)} MiB. No legacy media, review pages, source maps or authoring files.`);
 }

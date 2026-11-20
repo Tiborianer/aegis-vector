@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#071019">
+    <meta name="description" content="Fly a twelve-second Coastal Intercept in Aegis Vector. Compare drag and stick steering and land a charged shot on the Bomber.">
+    <link rel="icon" href="data:,">
+    <title>Coastal Intercept · Aegis Vector</title>
+    <script type="module" crossorigin src="./assets/index-BEsyG7Xc.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CvaqfRFh.css">
+  </head>
+  <body>
+    <main id="app" data-mobile-cockpit="ready" aria-label="Aegis Vector Coastal Intercept">
+      <div id="game-shell">
+        <div id="game-canvas" aria-label="Coastal flight area"></div>
+        <section id="hud" aria-label="Fighter status">
+          <div class="hud-status">
+            <div class="survival-row"><span class="hud-label">HULL</span><span class="pip-row" id="hull-pips"></span></div>
+            <div class="survival-row"><span class="hud-label">SHIELD</span><span class="pip-row" id="shield-pips"></span></div>
+          </div>
+        </section>
+      </div>
+      <small id="emp-count" hidden>1 / 2</small>
+      <button type="button" id="coastal-pause" aria-label="Pause flight">Ⅱ</button>
+    </main>
+  </body>
+</html>

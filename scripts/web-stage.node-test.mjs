@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { stageWeb } from './web-stage.mjs';
+import { stageMobilePage } from './stage-mobile-page.mjs';
 import { DESKTOP_PUBLIC_ASSETS } from './desktop-assets.mjs';
 
 async function fixture(t) {
@@ -63,4 +65,23 @@ test('web staging rejects symlinked bundles', async (t) => {
   await put('private-key', 'not-a-real-secret');
   await symlink(path.join(projectRoot, 'private-key'), path.join(projectRoot, 'dist/assets/sneaky.js'));
   await assert.rejects(stageWeb({ projectRoot }), /symlink/);
+});
+
+test('the separate phone page stages only the files and bytes approved for the encounter', async (t) => {
+  const projectRoot = await mkdtemp(path.join(tmpdir(), 'coastal-pages-test-'));
+  t.after(() => rm(projectRoot, { recursive: true, force: true }));
+  const source = path.join(projectRoot, 'mobile-release');
+  const output = path.join(projectRoot, 'site');
+  await mkdir(source);
+  const html = '<title>Coastal Intercept</title>';
+  const sum = createHash('sha256').update(html).digest('hex');
+  const manifest = path.join(source, 'manifest.json');
+  await writeFile(manifest, JSON.stringify({ 'index.html': sum }));
+  await writeFile(path.join(source, 'index.html'), html);
+  await writeFile(path.join(source, 'notes.md'), 'local notes');
+  await stageMobilePage(projectRoot, output);
+  assert.deepEqual(await readdir(path.join(output, 'mobile')), ['index.html']);
+  assert.equal(await readFile(path.join(output, 'mobile/index.html'), 'utf8'), html);
+  await writeFile(path.join(source, 'index.html'), 'different build');
+  await assert.rejects(stageMobilePage(projectRoot, output), /checksum mismatch/);
 });
