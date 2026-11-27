@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Launch screen review · Aegis Vector</title>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.4 Inter, system-ui, sans-serif; background: #0b1014; color: #e9eef1; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(100%, 1680px); margin: auto; padding: 0 clamp(12px, 3vw, 52px) 20px; }
+    header { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 24px; padding: 16px 0; }
+    h1 { margin: 0 auto 0 0; font-size: clamp(16px, 1.6vw, 23px); font-weight: 580; }
+    nav { display: flex; flex-wrap: wrap; gap: 5px; }
+    header button { color: #bfced3; border: 1px solid #41505a; background: #141d23; padding: 8px 13px; min-height: 40px; font: inherit; cursor: pointer; border-radius: 3px; }
+    header button[aria-pressed="true"] { color: #e8fcff; border-color: #8cdbec; background: #22343e; }
+    header button:hover, header button:focus-visible { outline: 2px solid #a1dce8; outline-offset: 1px; }
+    #screen { position: relative; aspect-ratio: 16/9; max-height: calc(100svh - 106px); max-width: 100%; width: min(100%, (100svh - 106px) * 16/9); margin: 0 auto; background: #02050a; }
+    #screen:fullscreen { max-width: none; max-height: none; width: 100%; height: 100%; display: grid; place-items: center; }
+    #screen:fullscreen .intro-endcard { position: relative; width: min(100vw, 177.7778vh); aspect-ratio: 16/9; }
+    @media (max-width: 740px) { header { gap: 7px; padding: 8px 0; } h1 { flex-basis: 100%; } header button { font-size: 13px; min-height: 38px; padding: 6px 9px; } #screen { width: 100%; max-height: none; } }
+    @media (max-height: 520px) and (orientation: landscape) { header { padding: 4px 0; gap: 9px; } h1 { flex-basis: auto; } header button { min-height: 32px; } #screen { width: min(100%, (100svh - 48px) * 16/9); max-height: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Launch screen review</h1>
+      <nav aria-label="Launch scene">
+        <button type="button" data-scene="coast">Kestrel over the coast</button>
+        <button type="button" data-scene="cockpit">Inside Hana’s cockpit</button>
+        <button type="button" data-scene="title">Title reveal</button>
+      </nav>
+      <button type="button" id="full">Full screen</button>
+    </header>
+    <section id="screen" aria-label="Interactive launch screen"><div id="review-card"></div></section>
+  </main>
+  <script type="module" src="/src/ui/introReview.ts"></script>
+</body>
+</html>

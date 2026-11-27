@@ -8,7 +8,8 @@ import {
 
 describe('uploaded opening cinematic', () => {
   it('maps the approved versioned MP4 and web size limit', () => {
-    expect(INTRO_VIDEO.file).toBe('cinematics/video/aegis-vector-intro-v2.mp4');
+    expect(INTRO_VIDEO.file).toBe('cinematics/video/aegis-vector-intro-1080p-v3.mp4');
+    expect(INTRO_VIDEO.fallbackFile).toBe('cinematics/video/aegis-vector-intro-v2.mp4');
     expect(INTRO_VIDEO.maximumBytes).toBe(95 * 1024 * 1024);
     expect(INTRO_VIDEO.hasBakedAudio).toBe(true);
   });
@@ -26,6 +27,8 @@ describe('uploaded opening cinematic', () => {
 
   it('accepts only the approved duration and minimum resolution', () => {
     expect(introMetadataIsValid(96.87, 1280, 720)).toBe(true);
+    expect(introMetadataIsValid(96.87, 1920, 1080, 'hd')).toBe(true);
+    expect(introMetadataIsValid(96.87, 1280, 720, 'hd')).toBe(false);
     expect(introMetadataIsValid(34.02, 1920, 1080)).toBe(false);
     expect(introMetadataIsValid(96.87, 960, 540)).toBe(false);
   });

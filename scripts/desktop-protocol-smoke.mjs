@@ -20,11 +20,11 @@ app.whenReady().then(async () => {
   ses.protocol.handle(APP_SCHEME, createAssetHandler(assets));
   const index = await ses.fetch('app://aegis/index.html');
   assert.equal(index.status, 200); assert.match(await index.text(), /Aegis Vector/);
-  const video = await ses.fetch('app://aegis/cinematics/video/aegis-vector-intro-v2.mp4', { headers: { Range: 'bytes=0-31' } });
+  const video = await ses.fetch('app://aegis/cinematics/video/aegis-vector-intro-1080p-v3.mp4', { headers: { Range: 'bytes=0-31' } });
   assert.equal(video.status, 206); assert.equal(video.headers.get('Content-Type'), 'video/mp4');
   assert.match(video.headers.get('Content-Range'), /^bytes 0-31\/\d+$/);
   const bytes = Buffer.from(await video.arrayBuffer()); assert.equal(bytes.length, 32); assert.equal(bytes.toString('ascii', 4, 8), 'ftyp');
-  const tail = await ses.fetch('app://aegis/cinematics/video/aegis-vector-intro-v2.mp4', { headers: { Range: 'bytes=-16' } });
+  const tail = await ses.fetch('app://aegis/cinematics/video/aegis-vector-intro-1080p-v3.mp4', { headers: { Range: 'bytes=-16' } });
   assert.equal(tail.status, 206); assert.equal((await tail.arrayBuffer()).byteLength, 16);
   await assert.rejects(ses.fetch('https://example.com/'));
   console.log(JSON.stringify({ status: 'passed', runtime: process.versions.electron, assets, range: video.headers.get('Content-Range'), externalNetwork: 'blocked', windowsOpened: 0 }));

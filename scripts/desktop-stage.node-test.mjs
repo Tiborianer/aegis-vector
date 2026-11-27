@@ -38,7 +38,10 @@ test('packaging allowlist copies only dist and the three shell files, never proj
 test('desktop asset contract keeps current media and excludes retained legacy originals', () => {
   assert.equal(new Set(DESKTOP_PUBLIC_ASSETS).size, DESKTOP_PUBLIC_ASSETS.length);
   const roadmap = DESKTOP_PUBLIC_ASSETS.filter(file => file.startsWith('graphics-v2/roadmap/'));
-  assert.equal(DESKTOP_PUBLIC_ASSETS.length - roadmap.length, 196);
+  const extraLaunchArt = DESKTOP_PUBLIC_ASSETS.filter(file => file.startsWith('cinematics/launch/'));
+  assert.equal(DESKTOP_PUBLIC_ASSETS.length - roadmap.length - extraLaunchArt.length, 197);
+  assert(isDesktopAsset('cinematics/video/aegis-vector-intro-1080p-v3.mp4'));
+  assert(isDesktopAsset('cinematics/video/aegis-vector-intro-v2.mp4'));
   for (const kind of ['scout','interceptor','bomber','charger','sniper']) for (const paint of ['patrol','hazard','night']) {
     assert(roadmap.includes('graphics-v2/roadmap/' + kind + '-' + paint + '.webp'));
     assert(roadmap.includes('graphics-v2/roadmap/' + kind + '-' + paint + '-original.webp'));

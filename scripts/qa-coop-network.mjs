@@ -68,7 +68,14 @@ try {
   assert(await host.locator('[data-seat="1"] [data-choice="ready"]').isDisabled());
   await guest.locator('[data-seat="1"] [data-choice="ready"]').click();
   await host.locator('[data-seat="0"] [data-choice="ready"]').click();
-  await host.locator('#intro-skip-button').click();
+  // Exercise the host's launch card at a real media end without spending the
+  // whole room test watching the movie. The guest stays in the waiting seat.
+  await host.waitForFunction(() => {
+    const video = document.querySelector('#intro-video');
+    return video?.readyState >= 2 && !video.paused;
+  });
+  await host.locator('#intro-video').evaluate(video => { video.currentTime = video.duration - .4; });
+  await host.getByRole('button', { name: 'Launch Coastal Intercept' }).click();
   await Promise.all(
     [host, guest].map((p) => p.waitForFunction(() => window.squadObservation?.squad.pilots.length === 2)),
   );

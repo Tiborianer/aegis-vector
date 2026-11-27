@@ -1,0 +1,112 @@
+.intro-endcard {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  isolation: isolate;
+  container-type: inline-size;
+  color: #f1f7f8;
+  background: #05080d;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  --beam-x: 50%;
+  --beam-y: 50%;
+}
+.intro-endcard[hidden] { display: none; }
+.launch-art, .launch-art > *, .launch-art::after { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.launch-art { isolation: isolate; }
+.launch-art img { object-fit: cover; }
+.launch-art::after {
+  content: '';
+  background: linear-gradient(0deg, rgb(2 10 17 / 62%), transparent 30%),
+    radial-gradient(ellipse at center, transparent 55%, rgb(1 8 13 / 17%));
+}
+.launch-ambient, .launch-detail, .launch-reflection { mix-blend-mode: screen; }
+.launch-reflection { opacity: 0; transition: opacity .32s ease; }
+.intro-endcard.lit .launch-reflection { opacity: 1; }
+
+.intro-endcard[data-scene="coast"] .launch-ambient {
+  background: linear-gradient(108deg, transparent 30%, rgb(10 20 27 / 55%) 49%, transparent 63%);
+  mix-blend-mode: multiply;
+  mask-image: linear-gradient(to bottom, transparent 39%, black 64%);
+  animation: launch-cloud 15s ease-in-out infinite alternate;
+}
+.intro-endcard[data-scene="coast"] .launch-detail {
+  background: radial-gradient(ellipse 3% 3.2% at 24.5% 47.2%, rgb(44 138 255 / 60%), transparent),
+    radial-gradient(ellipse 3% 3.2% at 31.2% 52.5%, rgb(52 150 255 / 55%), transparent);
+  animation: launch-engine 3.2s ease-in-out infinite alternate;
+}
+.intro-endcard[data-scene="coast"] .launch-reflection {
+  background: radial-gradient(ellipse 14% 13% at var(--beam-x) var(--beam-y), rgb(183 225 255 / 49%), transparent);
+  clip-path: polygon(4% 30%, 7% 29%, 28% 36%, 36% 35%, 40% 35%, 42% 38%, 44% 46%, 59% 68%, 58% 71%, 54% 68%, 40% 58%, 35% 58%, 31% 57%, 25% 52%, 21% 51%, 20% 45%, 17% 40%, 5% 32%);
+}
+.intro-endcard[data-scene="cockpit"] .launch-ambient {
+  background: radial-gradient(ellipse 6% 3% at 74% 79%, rgb(41 108 165 / 36%), transparent),
+    radial-gradient(ellipse 3% 5% at 3.7% 74%, rgb(84 144 236 / 31%), transparent),
+    radial-gradient(ellipse 2% 3% at 1.1% 54%, rgb(83 150 236 / 30%), transparent);
+  animation: launch-engine 5s ease-in-out infinite alternate;
+}
+.intro-endcard[data-scene="cockpit"] .launch-reflection {
+  background: radial-gradient(ellipse 16% 22% at var(--beam-x) var(--beam-y), rgb(123 182 229 / 24%), transparent),
+    radial-gradient(ellipse 2.4% 12% at var(--beam-x) var(--beam-y), rgb(182 218 240 / 14%), transparent);
+  clip-path: polygon(32% 7%, 70% 5%, 99% 39%, 99% 80%, 83% 69%, 49% 63%, 34% 47%, 35% 33%);
+}
+.intro-endcard[data-scene="title"] .launch-detail,
+.intro-endcard[data-scene="title"] .launch-reflection {
+  background-image: var(--title-art);
+  background-size: cover;
+  background-position: center;
+}
+.intro-endcard[data-scene="title"] .launch-detail {
+  opacity: .32;
+  mask-image: linear-gradient(108deg, transparent 40%, black 50%, transparent 60%);
+  mask-size: 290% 100%;
+  animation: launch-sheen 9s ease-in-out infinite;
+}
+.intro-endcard[data-scene="title"] .launch-reflection {
+  mask-image: radial-gradient(ellipse 12% 15% at var(--beam-x) var(--beam-y), black 5%, transparent 90%);
+}
+.launch-action {
+  position: absolute;
+  left: 5.4%;
+  bottom: 7.2%;
+  z-index: 2;
+}
+.intro-endcard[data-scene="title"] .launch-action { left: 50%; transform: translateX(-50%); text-align: center; }
+.launch-action p {
+  margin: 0 0 clamp(5px, .8cqw, 12px);
+  color: #e2edf2;
+  font: 650 clamp(10px, .84cqw, 14px)/1.3 Inter, system-ui, sans-serif;
+  letter-spacing: .16em;
+  text-shadow: 0 1px 6px #081019;
+  text-transform: uppercase;
+}
+.launch-action button {
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(14px, 2.5cqw, 44px);
+  min-height: 44px;
+  padding: clamp(9px, 1.05cqw, 17px) clamp(13px, 1.55cqw, 25px);
+  border: 1px solid #a3c0cc;
+  border-left: 3px solid #91e4ed;
+  border-radius: 2px;
+  color: #f3faff;
+  background: linear-gradient(115deg, #142832f5, #0a1823ed);
+  font: 620 clamp(14px, 1.26cqw, 21px)/1.2 Inter, system-ui, sans-serif;
+  letter-spacing: .015em;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 15px #0006;
+}
+.launch-action button i { color: #a0e9f1; font: normal 1.2em/1 system-ui; transition: transform .2s; }
+.launch-action button:is(:hover,:focus-visible) { background: #193540; border-color: #b7f3ff; }
+.launch-action button:focus-visible { outline: 2px solid #e0faff; outline-offset: 4px; }
+.launch-action button:hover i { transform: translateX(3px); }
+.cinematic-stage:has(.intro-endcard:not([hidden])) > .cinematic-meta { visibility: hidden; }
+@keyframes launch-cloud { from { transform: translateX(-14%); } to { transform: translateX(18%); } }
+@keyframes launch-engine { from { opacity: .32; } to { opacity: .86; } }
+@keyframes launch-sheen { 0%, 28% { mask-position: 100% 0; } 68%, 100% { mask-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .intro-endcard *, .launch-action button:hover i { animation: none !important; transition: none; }
+  .launch-ambient, .launch-detail, .launch-reflection { display: none; }
+  .launch-action button:hover i { transform: none; }
+}

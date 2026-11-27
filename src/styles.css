@@ -356,8 +356,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid white; outline-of
 .cinematic-controls { position: absolute; z-index: 6; top: 3%; right: 3%; display: flex; gap: 7px; }
 .cinematic-control { padding: 9px 13px; cursor: pointer; color: #c9eaf2; background: rgba(2,10,21,.76); border: 1px solid rgba(122,224,255,.32); font: 900 9px "Arial Narrow", sans-serif; letter-spacing: .12em; }
 .cinematic-control:hover, .cinematic-control:focus-visible { color: white; border-color: var(--cyan); box-shadow: 0 0 18px rgba(53,232,255,.15); outline: none; }
-.primary-button.cinematic-play, .primary-button.cinematic-continue { position: absolute; z-index: 6; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(260px, 68vw); }
-.cinematic-continue { top: auto; bottom: 9%; box-shadow: 0 0 34px rgba(53,232,255,.24); }
+.primary-button.cinematic-play { position: absolute; z-index: 6; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(260px, 68vw); }
 .cinematic-meta { position: absolute; z-index: 5; left: 3%; right: 3%; bottom: 3%; display: flex; justify-content: space-between; color: rgba(201,240,249,.72); font: 800 9px "Arial Narrow", sans-serif; letter-spacing: .14em; text-shadow: 0 1px 4px #000; pointer-events: none; }
 .cinematic-meta b { font-weight: 800; font-variant-numeric: tabular-nums; }
 @keyframes cinematic-loader { to { transform: rotate(360deg); } }

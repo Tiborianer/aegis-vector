@@ -46,7 +46,7 @@ describe('desktop asset contract against actual runtime catalogues', () => {
   it('covers the real music, intro, ships, environments and reused upgrade icons', () => {
     const required = uniqueSorted([
       ...Object.values(MUSIC_ASSETS).flatMap((track) => track.files),
-      INTRO_VIDEO.file, INTRO_VIDEO.poster,
+      INTRO_VIDEO.file, INTRO_VIDEO.fallbackFile, INTRO_VIDEO.poster,
       ...Object.keys(SHIP_SIZES).map((kind) => `graphics-v2/ships/${kind}.png`),
       ...BREAKUP_SHIPS.flatMap(kind => ['.png', '.json'].map(ext => breakupAsset(kind) + ext)),
       ...ENVIRONMENT_IDS.map(environmentAsset), 'graphics-v2/environments/cirrus.webp',

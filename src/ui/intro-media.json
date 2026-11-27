@@ -1,0 +1,10 @@
+{
+  "hd": "cinematics/video/aegis-vector-intro-1080p-v3.mp4",
+  "sd": "cinematics/video/aegis-vector-intro-v2.mp4",
+  "selectedScene": "coast",
+  "scenes": {
+    "coast": "story-v5/first-signal/01.webp",
+    "cockpit": "cinematics/launch/cockpit.webp",
+    "title": "cinematics/launch/title.webp"
+  }
+}

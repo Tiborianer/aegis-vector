@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 const missionScores = JSON.parse(readFileSync(new URL('../src/audio/mission-scores.json', import.meta.url), 'utf8'));
 const radioFiles = JSON.parse(readFileSync(new URL('../src/audio/radio-files.json', import.meta.url), 'utf8'));
+const introMedia = JSON.parse(readFileSync(new URL('../src/ui/intro-media.json', import.meta.url), 'utf8'));
 const wreckShips = JSON.parse(readFileSync(new URL('../src/game/assets/wreck-ships.json', import.meta.url), 'utf8'));
 const wreckSheets = [...new Set([...Object.values(wreckShips), 'plumes'])];
 const breakups = JSON.parse(readFileSync(new URL('../src/game/assets/ship-breakups.json', import.meta.url), 'utf8'));
@@ -10,7 +11,7 @@ const breakups = JSON.parse(readFileSync(new URL('../src/game/assets/ship-breaku
 const numbered = (directory, count, extension, prefix = '') => Array.from({ length: count }, (_, i) =>
   `${directory}/${prefix}${String(i + 1).padStart(2, '0')}.${extension}`);
 
-export const DESKTOP_PUBLIC_ASSETS = Object.freeze([
+export const DESKTOP_PUBLIC_ASSETS = Object.freeze([...new Set([
   ...Object.values(missionScores).filter((score) => score.status === 'reviewed').map((score) => score.file),
   ...[
     'menu', 'hangar', 'mission-coastal', 'mission-minefield', 'mission-fortress',
@@ -64,8 +65,8 @@ export const DESKTOP_PUBLIC_ASSETS = Object.freeze([
     'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'share-card-v1.jpg'].map((name) => `brand/${name}`),
   'site.webmanifest',
   'cinematics/keyframes/scene-01-start.webp',
-  'cinematics/video/aegis-vector-intro-v2.mp4',
-]);
+  introMedia.hd, introMedia.sd, introMedia.scenes[introMedia.selectedScene],
+])]);
 
 const assetSet = new Set(DESKTOP_PUBLIC_ASSETS);
 export function isDesktopAsset(relative) {

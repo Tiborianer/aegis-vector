@@ -1,5 +1,8 @@
+import media from './intro-media.json';
+
 export interface IntroVideoDefinition {
   file: string;
+  fallbackFile: string;
   poster: string;
   expectedDurationSeconds: number;
   maximumBytes: number;
@@ -23,7 +26,8 @@ export interface IntroCaption {
 }
 
 export const INTRO_VIDEO: IntroVideoDefinition = {
-  file: 'cinematics/video/aegis-vector-intro-v2.mp4',
+  file: media.hd,
+  fallbackFile: media.sd,
   poster: 'cinematics/keyframes/scene-01-start.webp',
   expectedDurationSeconds: 96.87,
   maximumBytes: 95 * 1024 * 1024,
@@ -51,9 +55,16 @@ export function introCaptionAt(seconds: number): IntroCaption | undefined {
   return INTRO_CAPTIONS.find((caption) => seconds >= caption.startsAtSeconds && seconds < caption.endsAtSeconds);
 }
 
-export function introMetadataIsValid(durationSeconds: number, width: number, height: number): boolean {
+export type IntroQuality = 'hd' | 'sd';
+
+export function preferredIntroQuality(): IntroQuality {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  return connection?.saveData || window.matchMedia('(prefers-reduced-data: reduce)').matches ? 'sd' : 'hd';
+}
+
+export function introMetadataIsValid(durationSeconds: number, width: number, height: number, quality: IntroQuality = 'sd'): boolean {
   return durationSeconds >= 96.6
     && durationSeconds <= 97.2
-    && width >= 1280
-    && height >= 720;
+    && width === (quality === 'hd' ? 1920 : 1280)
+    && height === (quality === 'hd' ? 1080 : 720);
 }

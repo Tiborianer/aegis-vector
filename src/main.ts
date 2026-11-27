@@ -7,6 +7,8 @@ import { squadInput } from './coop/input';
 import './styles/coop.css';
 import Phaser from 'phaser';
 import './styles.css';
+import './styles/introEndCard.css';
+import { mountIntroEndCard, selectedIntroScene } from './ui/introEndCard';
 import './styles/campaignMap.css';
 import './styles/missionLab.css';
 import { mountMissionLab } from './ui/missionLab';
@@ -54,6 +56,7 @@ import {
   formatIntroTime,
   introCaptionAt,
   introMetadataIsValid,
+  preferredIntroQuality,
   type IntroPlaybackState,
 } from './ui/introVideo';
 
@@ -137,7 +140,7 @@ const ui = {
   introCaptionSpeaker: required<HTMLElement>('intro-caption-speaker'),
   introCaptionText: required<HTMLElement>('intro-caption-text'),
   introPlay: required<HTMLButtonElement>('intro-play-button'),
-  introContinue: required<HTMLButtonElement>('intro-continue-button'),
+  introEnd: required<HTMLElement>('intro-endcard'),
   introPause: required<HTMLButtonElement>('intro-pause-button'),
   introTime: required<HTMLElement>('intro-time'),
   introSkip: required<HTMLButtonElement>('intro-skip-button'),
@@ -207,6 +210,10 @@ let introCompletion: (() => void) | undefined;
 let introPlaybackState: IntroPlaybackState = 'preloading';
 let introEnding = false;
 let introVisibilityPaused = false;
+let introQuality = preferredIntroQuality();
+let introSeekAfterLoad = 0;
+let launchSpaceHeld = false;
+const introCard = mountIntroEndCard(ui.introEnd, () => { void finishIntro(false); });
 let replayReturnScreen: HTMLElement = ui.start;
 let routeMapOpener: HTMLElement | undefined;
 const GAMEPLAY_KEY_CODES = new Set([
@@ -441,7 +448,7 @@ ui.manualContent.addEventListener('click', (raw) => {
     showIntro(() => {
       replayReturnScreen.classList.remove('hidden');
       openManualAt('archive');
-    });
+    }, true);
     return;
   }
   const chapterButton = (raw.target as HTMLElement).closest<HTMLElement>('[data-story-id]');
@@ -469,7 +476,6 @@ ui.storySkip.addEventListener('click', () => {
 });
 ui.introSkip.addEventListener('click', () => { void finishIntro(true); });
 ui.introPlay.addEventListener('click', () => { void startIntroPlayback(introSequenceToken); });
-ui.introContinue.addEventListener('click', () => { void finishIntro(false); });
 ui.introPause.addEventListener('click', () => {
   if (ui.introVideo.paused) void resumeIntroPlayback();
   else ui.introVideo.pause();
@@ -492,6 +498,14 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (!ui.intro.classList.contains('hidden')) {
+    // Phaser captures Space for firing. Give a fresh press on the focused
+    // end card its usual button action on release, before flight receives it.
+    if (event.code === 'Space' && event.target === introCard.button && !ui.introEnd.hidden) {
+      if (!event.repeat) launchSpaceHeld = true;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (event.key === 'Escape' && !event.repeat && !transitionInputLatched) {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -529,11 +543,20 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('keyup', (event) => {
   heldGameplayKeys.delete(event.code);
   if (heldGameplayKeys.size === 0) transitionInputLatched = false;
+  if (event.code === 'Space' && launchSpaceHeld) {
+    launchSpaceHeld = false;
+    if (event.target === introCard.button && !ui.introEnd.hidden) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      introCard.button.click();
+    }
+  }
 }, { capture: true });
 
 window.addEventListener('blur', () => {
   heldGameplayKeys.clear();
   transitionInputLatched = false;
+  launchSpaceHeld = false;
 });
 
 document.addEventListener('visibilitychange', () => {
@@ -819,12 +842,16 @@ window.addEventListener('aegis:mission-ended', (raw) => {
   }
 });
 
-function showIntro(onComplete: () => void): void {
+function showIntro(onComplete: () => void, archive = false): void {
   const token = ++introSequenceToken;
   introCompletion = onComplete;
   window.clearTimeout(introTimer);
   introEnding = false;
   introVisibilityPaused = false;
+  introSeekAfterLoad = 0;
+  introCard.hide();
+  introCard.prepare(selectedIntroScene, archive);
+  ui.introFallback.querySelector('span')!.textContent = archive ? 'Returning to the flight archive…' : 'Launching Coastal Intercept…';
   transitionInputLatched = transitionInputLatched || heldGameplayKeys.size > 0;
   ui.start.classList.add('hidden');
   ui.manual.classList.add('hidden');
@@ -834,7 +861,6 @@ function showIntro(onComplete: () => void): void {
   ui.introLoading.classList.remove('hidden');
   ui.introFallback.classList.add('hidden');
   ui.introPlay.classList.add('hidden');
-  ui.introContinue.classList.add('hidden');
   ui.introPause.classList.add('hidden');
   ui.introSkip.classList.remove('hidden');
   ui.introCaption.classList.add('hidden');
@@ -848,7 +874,8 @@ function showIntro(onComplete: () => void): void {
 
 function prepareIntroVideo(eager: boolean): void {
   ui.introVideo.preload = eager ? 'auto' : 'metadata';
-  const source = new URL(INTRO_VIDEO.file, document.baseURI).href;
+  const file = introQuality === 'hd' ? INTRO_VIDEO.file : INTRO_VIDEO.fallbackFile;
+  const source = new URL(file, document.baseURI).href;
   if (ui.introVideo.src !== source) {
     introPlaybackState = 'preloading';
     ui.introVideo.src = source;
@@ -857,55 +884,68 @@ function prepareIntroVideo(eager: boolean): void {
 }
 
 async function startIntroPlayback(token: number): Promise<void> {
-  if (token !== introSequenceToken || ui.intro.classList.contains('hidden')) return;
+  if (token !== introSequenceToken || ui.intro.classList.contains('hidden') || !ui.introEnd.hidden || introEnding) return;
   prepareIntroVideo(true);
   introPlaybackState = 'buffering';
   ui.introLoading.classList.remove('hidden');
   ui.introFallback.classList.add('hidden');
   ui.introPlay.classList.add('hidden');
   ui.introVideo.volume = audio.getSettings().cinematic;
-  if (ui.introVideo.ended || ui.introVideo.currentTime > 0.25) ui.introVideo.currentTime = 0;
+  watchIntroBuffer();
   try {
     await ui.introVideo.play();
     if (token !== introSequenceToken || ui.intro.classList.contains('hidden')) return;
     ui.introVideo.classList.remove('hidden');
     ui.introImage.classList.add('hidden');
   } catch (error) {
-    if (token !== introSequenceToken) return;
+    if (token !== introSequenceToken || introEnding || ui.intro.classList.contains('hidden')) return;
+    if (error instanceof DOMException && error.name === 'AbortError') return;
     if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      window.clearTimeout(introTimer);
       introPlaybackState = 'ready';
       ui.introLoading.classList.add('hidden');
       ui.introPlay.classList.remove('hidden');
       ui.introPlay.focus({ preventScroll: true });
       return;
     }
-    showIntroFallback();
+    recoverIntroVideo();
   }
 }
 
-async function resumeIntroPlayback(): Promise<void> {
-  if (ui.intro.classList.contains('hidden')) return;
-  try {
-    await ui.introVideo.play();
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'NotAllowedError') {
-      introPlaybackState = 'ready';
-      ui.introPlay.classList.remove('hidden');
-    } else {
-      showIntroFallback();
-    }
+function resumeIntroPlayback(): Promise<void> {
+  return startIntroPlayback(introSequenceToken);
+}
+
+function watchIntroBuffer(): void {
+  window.clearTimeout(introTimer);
+  if (!document.hidden) introTimer = window.setTimeout(recoverIntroVideo, 12_000);
+}
+
+function recoverIntroVideo(): void {
+  if (introEnding || !ui.introEnd.hidden || !ui.introVideo.hasAttribute('src')) return;
+  const active = !ui.intro.classList.contains('hidden');
+  if (introQuality === 'sd') {
+    if (active) showIntroFallback();
+    return;
   }
+  window.clearTimeout(introTimer);
+  introSeekAfterLoad = ui.introVideo.currentTime || 0;
+  introQuality = 'sd';
+  const token = ++introSequenceToken;
+  prepareIntroVideo(active);
+  if (active && !document.hidden && !introVisibilityPaused) void startIntroPlayback(token);
 }
 
 function showIntroFallback(): void {
   if (ui.intro.classList.contains('hidden') || introEnding) return;
   introPlaybackState = 'fallback';
+  introSequenceToken += 1;
   ui.introVideo.pause();
   ui.introVideo.classList.add('hidden');
   ui.introImage.classList.remove('hidden');
   ui.introLoading.classList.add('hidden');
   ui.introPlay.classList.add('hidden');
-  ui.introContinue.classList.add('hidden');
+  introCard.hide();
   ui.introPause.classList.add('hidden');
   ui.introCaption.classList.add('hidden');
   ui.introFallback.classList.remove('hidden');
@@ -916,6 +956,7 @@ function showIntroFallback(): void {
 async function finishIntro(fadeAudio: boolean): Promise<void> {
   if (ui.intro.classList.contains('hidden') || introEnding) return;
   introEnding = true;
+  launchSpaceHeld = false;
   window.clearTimeout(introTimer);
   introSequenceToken += 1;
   if (fadeAudio && !ui.introVideo.paused) await fadeIntroVideoVolume(0.16);
@@ -924,7 +965,7 @@ async function finishIntro(fadeAudio: boolean): Promise<void> {
   ui.introVideo.load();
   ui.introVideo.volume = audio.getSettings().cinematic;
   ui.introCaption.classList.add('hidden');
-  ui.introContinue.classList.add('hidden');
+  introCard.hide();
   ui.intro.classList.add('hidden');
   introPlaybackState = 'complete';
   const callback = introCompletion;
@@ -935,6 +976,7 @@ async function finishIntro(fadeAudio: boolean): Promise<void> {
 
 function completeIntroPlayback(): void {
   if (ui.intro.classList.contains('hidden') || introEnding) return;
+  window.clearTimeout(introTimer);
   introPlaybackState = 'complete';
   ui.introVideo.classList.remove('hidden');
   ui.introImage.classList.add('hidden');
@@ -945,8 +987,7 @@ function completeIntroPlayback(): void {
   ui.introSkip.classList.add('hidden');
   ui.introCaption.classList.add('hidden');
   ui.introTime.textContent = formatIntroTime(ui.introVideo.duration, ui.introVideo.duration);
-  ui.introContinue.classList.remove('hidden');
-  ui.introContinue.focus({ preventScroll: true });
+  introCard.show();
 }
 
 function fadeIntroVideoVolume(seconds: number): Promise<void> {
@@ -965,10 +1006,16 @@ function fadeIntroVideoVolume(seconds: number): Promise<void> {
 
 function bindIntroVideoEvents(): void {
   ui.introVideo.addEventListener('loadedmetadata', () => {
-    const valid = introMetadataIsValid(ui.introVideo.duration, ui.introVideo.videoWidth, ui.introVideo.videoHeight);
-    if (!valid && !ui.intro.classList.contains('hidden')) showIntroFallback();
-    else introPlaybackState = 'ready';
-    ui.introTime.textContent = formatIntroTime(0, ui.introVideo.duration);
+    if (!introMetadataIsValid(ui.introVideo.duration, ui.introVideo.videoWidth, ui.introVideo.videoHeight, introQuality)) {
+      recoverIntroVideo();
+      return;
+    }
+    if (introSeekAfterLoad > 0) {
+      ui.introVideo.currentTime = Math.min(introSeekAfterLoad, ui.introVideo.duration - 0.05);
+      introSeekAfterLoad = 0;
+    }
+    introPlaybackState = 'ready';
+    ui.introTime.textContent = formatIntroTime(ui.introVideo.currentTime, ui.introVideo.duration);
   });
   ui.introVideo.addEventListener('loadeddata', () => {
     if (ui.intro.classList.contains('hidden')) return;
@@ -986,12 +1033,14 @@ function bindIntroVideoEvents(): void {
     }
   });
   ui.introVideo.addEventListener('waiting', () => {
-    if (ui.intro.classList.contains('hidden')) return;
+    if (ui.intro.classList.contains('hidden') || introEnding || !ui.introEnd.hidden || introPlaybackState === 'fallback') return;
     introPlaybackState = 'buffering';
     ui.introLoading.classList.remove('hidden');
+    watchIntroBuffer();
   });
   ui.introVideo.addEventListener('playing', () => {
     if (ui.intro.classList.contains('hidden')) return;
+    window.clearTimeout(introTimer);
     introPlaybackState = 'playing';
     ui.introVideo.classList.remove('hidden');
     ui.introImage.classList.add('hidden');
@@ -1001,13 +1050,14 @@ function bindIntroVideoEvents(): void {
     ui.introPause.textContent = 'PAUSE';
   });
   ui.introVideo.addEventListener('pause', () => {
-    if (ui.intro.classList.contains('hidden') || introEnding || ui.introVideo.ended) return;
+    if (ui.intro.classList.contains('hidden') || introEnding || ui.introVideo.ended || introPlaybackState === 'fallback' || !ui.introVideo.paused) return;
+    window.clearTimeout(introTimer);
     introPlaybackState = 'paused';
     ui.introPause.textContent = 'RESUME';
   });
   ui.introVideo.addEventListener('ended', completeIntroPlayback);
   ui.introVideo.addEventListener('error', () => {
-    if (!ui.intro.classList.contains('hidden') && !introEnding) showIntroFallback();
+    if (ui.introVideo.error) recoverIntroVideo();
   });
 }
 

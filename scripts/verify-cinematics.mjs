@@ -21,7 +21,7 @@ const keyframes = Array.from({ length: 5 }, (_, index) => [
   `cinematics/keyframes/scene-0${index + 1}-start.webp`,
   `cinematics/keyframes/scene-0${index + 1}-end.webp`,
 ]).flat();
-const introVideo = 'cinematics/video/aegis-vector-intro-v2.mp4';
+const media = JSON.parse(await readFile(new URL('../src/ui/intro-media.json', import.meta.url), 'utf8'));
 
 function jpegDimensions(bytes) {
   let offset = 2;
@@ -129,46 +129,51 @@ if (storyV5Files.length !== 19) throw new Error(`Expected exactly 19 mandatory V
 if (storyFiles.length !== 46) throw new Error(`Expected exactly 46 active story images including route variants, mapped ${storyFiles.length}`);
 if (storyBytes > 16 * 1024 * 1024) throw new Error(`Story panel set exceeds 16MiB (${storyBytes} bytes)`);
 
-const videoPath = join(root, introVideo);
-const videoInfo = await stat(videoPath).catch(() => undefined);
-if (!videoInfo?.isFile() || videoInfo.size < 256 * 1024) throw new Error(`Missing or truncated intro video: ${videoPath}`);
-if (videoInfo.size > 95 * 1024 * 1024) throw new Error(`Intro video exceeds the 95MiB GitHub-safe limit: ${videoPath} (${videoInfo.size} bytes)`);
-const video = await readFile(videoPath);
-if (video.subarray(4, 8).toString('ascii') !== 'ftyp') throw new Error(`Intro video does not have an ISO/QuickTime media signature: ${videoPath}`);
-if (!video.includes(Buffer.from('avc1'))) throw new Error(`Intro video is missing H.264/AVC video: ${videoPath}`);
-if (!video.includes(Buffer.from('mp4a'))) throw new Error(`Intro video is missing AAC audio: ${videoPath}`);
+async function verifyIntroVideo(file, expectedWidth, expectedHeight) {
+  const videoPath = join(root, file);
+  const videoInfo = await stat(videoPath).catch(() => undefined);
+  if (!videoInfo?.isFile() || videoInfo.size < 256 * 1024) throw new Error(`Missing or truncated intro video: ${videoPath}`);
+  if (videoInfo.size > 95 * 1024 * 1024) throw new Error(`Intro video exceeds the 95MiB GitHub-safe limit: ${videoPath} (${videoInfo.size} bytes)`);
+  const video = await readFile(videoPath);
+  if (video.subarray(4, 8).toString('ascii') !== 'ftyp') throw new Error(`Intro video does not have an ISO/QuickTime media signature: ${videoPath}`);
+  if (!video.includes(Buffer.from('avc1'))) throw new Error(`Intro video is missing H.264/AVC video: ${videoPath}`);
+  if (!video.includes(Buffer.from('mp4a'))) throw new Error(`Intro video is missing AAC audio: ${videoPath}`);
 
-const moovOffset = video.indexOf(Buffer.from('moov'));
-const mdatOffset = video.indexOf(Buffer.from('mdat'));
-if (moovOffset < 0 || mdatOffset < 0 || moovOffset > mdatOffset) {
-  throw new Error(`Intro video is not optimized for progressive web playback: ${videoPath}`);
-}
-
-const mvhdOffset = video.indexOf(Buffer.from('mvhd'));
-if (mvhdOffset < 0) throw new Error(`Intro video is missing movie timing metadata: ${videoPath}`);
-const mvhdData = mvhdOffset + 4;
-const mvhdVersion = video[mvhdData];
-const timescale = mvhdVersion === 0 ? video.readUInt32BE(mvhdData + 12) : video.readUInt32BE(mvhdData + 20);
-const durationUnits = mvhdVersion === 0 ? video.readUInt32BE(mvhdData + 16) : Number(video.readBigUInt64BE(mvhdData + 24));
-const durationSeconds = durationUnits / timescale;
-if (!Number.isFinite(durationSeconds) || durationSeconds < 96.6 || durationSeconds > 97.2) {
-  throw new Error(`Intro video duration is outside the approved 96.6–97.2 second range: ${durationSeconds}`);
-}
-
-let avcOffset = -1;
-let avcSearchOffset = -1;
-while ((avcSearchOffset = video.indexOf(Buffer.from('avc1'), avcSearchOffset + 1)) >= 0) {
-  if (avcSearchOffset + 31 >= video.length) continue;
-  const candidateWidth = video.readUInt16BE(avcSearchOffset + 28);
-  const candidateHeight = video.readUInt16BE(avcSearchOffset + 30);
-  if (candidateWidth > 0 && candidateHeight > 0) {
-    avcOffset = avcSearchOffset;
-    break;
+  const moovOffset = video.indexOf(Buffer.from('moov'));
+  const mdatOffset = video.indexOf(Buffer.from('mdat'));
+  if (moovOffset < 0 || mdatOffset < 0 || moovOffset > mdatOffset) {
+    throw new Error(`Intro video is not optimized for progressive web playback: ${videoPath}`);
   }
-}
-if (avcOffset < 0) throw new Error(`Intro video is missing an H.264 sample entry: ${videoPath}`);
-const width = video.readUInt16BE(avcOffset + 28);
-const height = video.readUInt16BE(avcOffset + 30);
-if (width < 1280 || height < 720) throw new Error(`Intro video resolution is below 1280×720: ${width}×${height}`);
 
-console.log(`Verified ${storyFiles.length} story panels, ${keyframes.length} intro keyframes, and the ${durationSeconds.toFixed(2)}s ${width}×${height} ${(videoInfo.size / 1024 / 1024).toFixed(1)}MiB intro video in ${root}.`);
+  const mvhdOffset = video.indexOf(Buffer.from('mvhd'));
+  if (mvhdOffset < 0) throw new Error(`Intro video is missing movie timing metadata: ${videoPath}`);
+  const mvhdData = mvhdOffset + 4;
+  const mvhdVersion = video[mvhdData];
+  const timescale = mvhdVersion === 0 ? video.readUInt32BE(mvhdData + 12) : video.readUInt32BE(mvhdData + 20);
+  const durationUnits = mvhdVersion === 0 ? video.readUInt32BE(mvhdData + 16) : Number(video.readBigUInt64BE(mvhdData + 24));
+  const durationSeconds = durationUnits / timescale;
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 96.6 || durationSeconds > 97.2) {
+    throw new Error(`Intro video duration is outside the approved 96.6–97.2 second range: ${durationSeconds}`);
+  }
+
+  let avcOffset = -1;
+  let avcSearchOffset = moovOffset;
+  while ((avcSearchOffset = video.indexOf(Buffer.from('avc1'), avcSearchOffset + 1)) >= 0) {
+    if (avcSearchOffset + 31 >= video.length) continue;
+    const candidateWidth = video.readUInt16BE(avcSearchOffset + 28);
+    const candidateHeight = video.readUInt16BE(avcSearchOffset + 30);
+    if (candidateWidth === expectedWidth && candidateHeight === expectedHeight) {
+      avcOffset = avcSearchOffset;
+      break;
+    }
+  }
+  if (avcOffset < 0) throw new Error(`Expected a ${expectedWidth}×${expectedHeight} H.264 track in ${videoPath}`);
+  console.log(`Verified ${durationSeconds.toFixed(2)}s ${expectedWidth}×${expectedHeight} ${(videoInfo.size / 2 ** 20).toFixed(1)} MiB intro in ${root}.`);
+}
+
+await verifyIntroVideo(media.hd, 1920, 1080);
+await verifyIntroVideo(media.sd, 1280, 720);
+const platePath = media.scenes[media.selectedScene];
+const plate = webpDimensions(await readFile(join(root, platePath)));
+if (plate.width < 1600 || plate.width * 9 !== plate.height * 16) throw new Error(`Invalid launch artwork: ${platePath}`);
+console.log(`Verified ${storyFiles.length} story panels, ${keyframes.length} intro keyframes and the selected launch artwork in ${root}.`);
