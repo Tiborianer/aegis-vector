@@ -19,6 +19,7 @@ export type PilotOffers = Pair<Offer[]>;
 export const SEATS: readonly Seat[] = [0, 1];
 const upgrades: UpgradeType[] = ['spread', 'laser', 'missile', 'drone', 'ion', 'shield'];
 export interface PilotStatus {
+  lateralSpeedMultiplier?: number;
   hull: number;
   hullMax: number;
   shield: number;
@@ -52,8 +53,8 @@ export class SquadCampaign {
     public offers: PilotOffers,
     private checkpointOffers: PilotOffers,
   ) {}
-  static fresh(difficulty: Difficulty, kits: Pair<Kit>): SquadCampaign {
-    const base = CampaignModel.fresh(difficulty);
+  static fresh(difficulty: Difficulty, kits: Pair<Kit>, adaptiveDifficulty = false): SquadCampaign {
+    const base = CampaignModel.fresh(difficulty, adaptiveDifficulty);
     const pilot = (kit: Kit) =>
       new CampaignModel({
         ...base,
@@ -98,6 +99,13 @@ export class SquadCampaign {
     const offers = readOffers(raw.offers),
       checkpoint = readOffers(raw.checkpointOffers);
     if (!offers || !checkpoint) return;
+    // A shared mission clear is evidence for both seats. Older paired saves can
+    // retain a debrief or chapter on only one of the two matching pilot records.
+    const firstReward = a.routeReward ?? b.routeReward;
+    const secondReward = a.lateRouteReward ?? b.lateRouteReward;
+    a.routeReward = b.routeReward = firstReward;
+    a.lateRouteReward = b.lateRouteReward = secondReward;
+    b.adaptiveDifficulty = a.adaptiveDifficulty;
     return new SquadCampaign([new CampaignModel(a), new CampaignModel(b)], offers, checkpoint);
   }
   save(): SquadSave {
@@ -152,11 +160,11 @@ export class SquadCampaign {
     this.pilots[1].selectRoute(route);
     return true;
   }
-  claim(seat: Seat, option: number): boolean {
+  claim(seat: Seat, option: number, onInstall?: () => void): boolean {
     const offer = this.offers[seat][0];
     if (!offer || (option !== 0 && option !== 1) || !['route', 'hangar'].includes(this.pilots[0].snapshot().phase))
       return false;
-    this.pilots[seat].claimArmament(offer[option]);
+    if (this.pilots[seat].claimArmament(offer[option])) onInstall?.();
     this.offers[seat].shift();
     return true;
   }

@@ -357,3 +357,21 @@
   font-size: 12px;
   color: #bfceda;
 }
+
+.equipment-inspection { display:flex; align-items:center; gap:.8rem; margin:0; min-width:0; }
+.equipment-inspection canvas { flex:none; width:82px; height:96px; background:radial-gradient(ellipse, #133246aa, transparent 70%); }
+.equipment-inspection figcaption { min-width:0; display:grid; gap:.3rem; }
+.equipment-inspection strong { text-transform:uppercase; color:#d6eaff; font-size:.72rem; letter-spacing:.08em; }
+.equipment-inspection figcaption span { font-size:.71rem; line-height:1.4; color:#a0b7c7; }
+#hangar-equipment .equipment-inspection canvas { width:105px; height:124px; }
+.coop-card .equipment-inspection { min-height:0; }
+@media (max-height:650px) { .coop-card .equipment-inspection canvas { width:55px; height:65px; } }
+.equipment-inspect-button { position:relative; padding:0; border:0; background:none; color:#8fd3e1; cursor:zoom-in; }
+.equipment-inspect-button::after { content:'+'; position:absolute; bottom:.1rem; right:0; display:grid; place-items:center; width:1rem; height:1rem; border:1px solid #476375; border-radius:50%; font:14px/1 sans-serif; }
+.equipment-inspect-button:hover, .equipment-inspect-button:focus-visible { outline:1px solid #65dae8; }
+.equipment-closeup { box-sizing:border-box; width:min(360px,90vw); max-height:90vh; padding:1.25rem; text-align:center; color:#d6eaff; border:1px solid #527483; background:#0b1b28; }
+.equipment-closeup::backdrop { background:#020912c9; }
+.equipment-closeup h2 { margin:0; text-transform:uppercase; font-size:1.25rem; }
+.equipment-closeup canvas { display:block; margin:auto; width:auto; height:min(330px,48vh); background:radial-gradient(ellipse, #24455b99, transparent 72%); }
+.equipment-closeup p { font-size:.82rem; line-height:1.45; color:#b8cad5; }
+.equipment-closeup button { background:#183347; color:#d9eff8; border:1px solid #668694; padding:.45rem .9rem; }

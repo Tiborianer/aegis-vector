@@ -293,7 +293,7 @@ export class WorldMirror {
       dt = Math.min(50, delta) / 1000;
     const age = Math.min(0.12, (performance.now() - this.received) / 1000);
     const moving = f.state.mode === 'playing' && !pilot.down;
-    const vx = moving ? (axis.x / d) * 430 : 0,
+    const vx = moving ? (axis.x / d) * 430 * (pilot.lateralSpeedMultiplier ?? 1) : 0,
       vy = moving ? (axis.y / d) * 430 : 0;
     const blend = 1 - Math.exp(-dt * 16);
     this.displayX = Phaser.Math.Clamp(

@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import { ASSET_KEYS } from '../game/assets/manifest';
 import { getArcVolley, WORLD_WIDTH } from '../game/content/balance';
-import { ARC_BOLT_SPEED, arcPattern, wingArcTrigger, type ArcPart, type WingArcState } from './wingArc';
+import { ARC_BOLT_SPEED, ArcCharge, arcPattern, chargedBoltScale, wingArcTrigger, type ArcPart, type WingArcState } from './wingArc';
 
 interface Bolt {
   image?: Phaser.GameObjects.Image;
@@ -21,19 +21,23 @@ export class GuestArcView {
   private clock = 0;
   private nextAt = 0;
   private total = 0;
+  private charge = new ArcCharge();
+  private awaitingFirstFrame = true;
 
   constructor(private scene: Phaser.Scene, private muzzle: (x: number, y: number, gold: boolean) => void) {}
 
   update(delta: number, state: WingArcState, fire: boolean, level: number, x: number, y: number): void {
     this.clock += delta;
+    this.charge.advance(delta, fire);
     if (fire && this.clock >= this.nextAt) {
       this.nextAt = this.clock + state.intervalMs;
       const id = wingArcTrigger.next(state.session);
       this.total++;
       const gold = state.overdrive || (state.helios && this.total % 8 === 0);
       const texture = gold ? ASSET_KEYS.playerBulletOverdrive : ASSET_KEYS.playerBullet;
-      const bolts = arcPattern(getArcVolley(level).angles, state.split).map(part => ({
-        image: this.scene.add.image(x + part.x, y + part.y, texture).setRotation(part.angle).setDepth(4),
+      const bolts = arcPattern(getArcVolley(level).angles, state.split, this.charge.spend()).map(part => ({
+        image: this.scene.add.image(x + part.x, y + part.y, texture).setRotation(part.angle).setDepth(4)
+          .setScale(...chargedBoltScale(part.charge)).setTint(part.charge === 2 ? 0xffefd0 : part.charge ? 0xc0faff : 0xffffff),
         vx: Math.sin(part.angle) * ARC_BOLT_SPEED, vy: -Math.cos(part.angle) * ARC_BOLT_SPEED,
       }));
       this.volleys.set(id, { press: wingArcTrigger.press, index: wingArcTrigger.volley, bolts });
@@ -81,6 +85,11 @@ export class GuestArcView {
   confirm(state: WingArcState, frame: number): void {
     if (state.press === wingArcTrigger.press && state.volley > wingArcTrigger.volley)
       this.nextAt = this.clock + state.intervalMs;
+    // A snapshot from before the predicted shot can still show the old full bank.
+    const caughtUp = state.press === wingArcTrigger.press && (state.volley >= wingArcTrigger.volley || !state.held);
+    if (state.chargeMs !== undefined && (this.awaitingFirstFrame || (!wingArcTrigger.held && caughtUp)))
+      this.charge.elapsedMs = state.chargeMs;
+    this.awaitingFirstFrame = false;
     wingArcTrigger.synchronize(state);
     this.total = Math.max(this.total, state.total);
     for (const volley of this.volleys.values()) {
@@ -99,6 +108,8 @@ export class GuestArcView {
   clear(): void {
     for (const volley of this.volleys.values()) volley.bolts.forEach(bolt => this.retire(bolt));
     this.volleys.clear();
+    this.charge.spend();
+    this.awaitingFirstFrame = true;
     this.clock = this.nextAt = this.total = 0;
   }
 }

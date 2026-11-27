@@ -53,6 +53,14 @@ export function structuralGapFractionLowerBound(): number {
   return 1 - occupied / (STRUCTURE_TILE_WIDTH * STRUCTURE_TILE_HEIGHT);
 }
 
+export type FortressDepth = 'off' | 'edge' | 'cloud';
+export function fortressDepth(query = ''): FortressDepth {
+  const options = new URLSearchParams(query);
+  const mode = options.get('fortressDepth');
+  if (mode === 'off' || options.get('structuralPlane') === 'off') return 'off';
+  return mode === 'cloud' ? 'cloud' : 'edge';
+}
+
 export function structuralPlaneEnabled(mission: MissionId, query = ''): boolean {
-  return mission === 'fortress' && new URLSearchParams(query).get('structuralPlane') !== 'off';
+  return mission === 'fortress' && fortressDepth(query) === 'edge';
 }

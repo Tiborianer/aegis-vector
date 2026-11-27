@@ -1,8 +1,11 @@
 import { publicAssetUrl } from '../game/assets/publicAsset';
 import { ACTIONS, keyLabel, squadInput, type Action } from './input';
 import { SEATS, type Kit, type Pair, type Seat, type SquadCampaign } from './campaign';
-import { UPGRADE_NODES } from '../game/content/upgrades';
+import { equipmentRows } from '../game/assets/fleetArt';
+import { closeEquipmentInspection, equipmentPreview } from '../ui/equipmentPreview';
+import { buildCombatModifiers, UPGRADE_NODES } from '../game/content/upgrades';
 import { SORTIE_MODULES } from '../game/content/sortieModules';
+import { destinationsAfter, sortiePrice } from '../game/content/routeRewards';
 import type { CampaignRoute, SortieModuleId, UpgradeBranch, UpgradeNodeId } from '../game/simulation/types';
 
 export interface Choice {
@@ -13,6 +16,7 @@ export interface Choice {
   selected?: boolean;
 }
 export interface PilotCard {
+  equipment?: number[];
   title: string;
   summary: string;
   ready: boolean;
@@ -111,6 +115,7 @@ export class FlightDeck {
     squadInput.active = true;
   }
   hide(): void {
+    closeEquipmentInspection();
     cancelAnimationFrame(this.demoFrame);
     this.panel.classList.add('hidden');
     this.view = undefined;
@@ -152,11 +157,13 @@ export class FlightDeck {
       this.cursors[seat] = 0;
     } else if (this.squad) {
       const pilot = this.squad.pilots[seat];
+      let installed = false;
       if (id.startsWith('route-')) this.squad.chooseRoute(seat, id.slice(6) as CampaignRoute);
-      else if (id.startsWith('claim-')) this.squad.claim(seat, Number(id.slice(6)));
-      else if (id.startsWith('buy-')) pilot.purchase(id.slice(4) as UpgradeNodeId);
-      else if (id.startsWith('mod-')) pilot.purchaseSortieModule(id.slice(4) as SortieModuleId);
+      else if (id.startsWith('claim-')) this.squad.claim(seat, Number(id.slice(6)), () => { installed = true; });
+      else if (id.startsWith('buy-')) installed = pilot.purchase(id.slice(4) as UpgradeNodeId).ok;
+      else if (id.startsWith('mod-')) installed = pilot.purchaseSortieModule(id.slice(4) as SortieModuleId).ok;
       else if (id === 'respec') pilot.respec();
+      if (installed) window.dispatchEvent(new CustomEvent('aegis:sound', { detail: { cue: 'install', pan: seat ? .28 : -.28 } }));
       this.save();
     }
     if (this.ready.every(Boolean)) {
@@ -196,20 +203,14 @@ export class FlightDeck {
       const p = this.squad.pilots[seat],
         state = p.snapshot(),
         offers = this.squad.offers[seat];
+      card.equipment = equipmentRows(state.weapons, state.shieldBaseMax + Number(state.routeReward === 'aegis-bastion'), buildCombatModifiers(state.purchased));
       card.summary = state.credits + ' C  ·  ' + state.purchased.length + ' modifications';
       if (state.phase === 'route' && (state.currentMissionId === 'fortress' ? 1 : 0) === seat) {
-        choices.push(
-          {
-            id: 'route-salvage',
-            label: state.currentMissionId === 'fortress' ? 'Graveyard Salvage' : 'Minefield Run',
-            note: 'Choose squad route',
-          },
-          {
-            id: 'route-storm',
-            label: state.currentMissionId === 'fortress' ? 'Stormbreak Pursuit' : 'Aurora Reach',
-            note: 'Choose squad route',
-          },
-        );
+        for (const route of ['salvage', 'storm'] as const) {
+          const destination = destinationsAfter(state.currentMissionId)[route];
+          choices.push({ id: 'route-' + route, label: destination.destination,
+            note: `${destination.objective} On clear · ${destination.name} · ${destination.effect}` });
+        }
       }
       if (offers.length)
         offers[0].forEach((type, i) =>
@@ -224,13 +225,15 @@ export class FlightDeck {
       );
       const tab = tabs[this.branches[seat]];
       if (tab === 'module')
-        for (const module of SORTIE_MODULES)
+        for (const module of SORTIE_MODULES) {
+          const price = sortiePrice(module.cost, state.lateRouteReward);
           choices.push({
             id: 'mod-' + module.id,
-            label: module.name + ' · ' + module.cost + ' C',
+            label: module.name + ' · ' + price + ' C',
             note: module.description,
-            disabled: !!state.sortieModule || state.credits < module.cost || state.phase === 'route',
+            disabled: !!state.sortieModule || state.credits < price || state.phase === 'route',
           });
+        }
       else {
         const branch = UPGRADE_NODES.filter((n) => n.branch === (tab as UpgradeBranch));
         const tier = branch.find(
@@ -294,6 +297,7 @@ export class FlightDeck {
         card = element('section', 'coop-card seat-' + seat);
       card.dataset.seat = String(seat);
       card.append(element('h3', '', data.title), element('strong', 'wallet', data.summary));
+      if (view.page === 'hangar' && data.equipment) card.append(equipmentPreview(data.equipment, seat === 1));
       if (view.page === 'preflight') {
         const bay = element('div', 'coop-bay'),
           jet = element('div', 'coop-jet');

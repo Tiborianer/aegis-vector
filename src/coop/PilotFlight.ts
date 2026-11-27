@@ -1,11 +1,14 @@
 import type Phaser from 'phaser';
+import type { KestrelEquipment } from '../phaser/view/KestrelEquipment';
 import { GameModel } from '../game/simulation/GameModel';
 import type { PlayerShieldView } from '../phaser/view/PlayerShieldView';
+import { ArcCharge } from './wingArc';
 import type { Seat } from './campaign';
 
 export class PilotFlight {
   readonly model: GameModel;
   player!: Phaser.Physics.Arcade.Sprite;
+  equipment?: KestrelEquipment;
   playerShadow!: Phaser.GameObjects.Ellipse;
   playerShield?: PlayerShieldView;
   contrails!: Phaser.GameObjects.Graphics;
@@ -14,6 +17,8 @@ export class PilotFlight {
   escapePod?: Phaser.GameObjects.Image;
   stripes?: Phaser.GameObjects.Graphics;
   playerBank = 0;
+  readonly arcCharge = new ArcCharge();
+  arcFiring = false;
   nextPrimaryAt = 0;
   nextMissileAt = 0;
   nextLaserAt = 0;
@@ -34,6 +39,8 @@ export class PilotFlight {
   }
   reset(): void {
     this.playerBank = 0;
+    this.arcCharge.spend();
+    this.arcFiring = false;
     this.nextPrimaryAt = 0;
     this.nextMissileAt = 0;
     this.nextLaserAt = 0;

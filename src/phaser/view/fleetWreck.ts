@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { BANK_ANGLES, NEUTRAL_BANK, shipKey, shipTextureDensity } from '../../game/assets/visuals';
+import { paintedWreck, type SquadronPaint } from '../../game/assets/fleetArt';
 import catalog from '../../game/assets/wreck-ships.json';
 
 export type WreckShip = keyof typeof catalog;
@@ -41,8 +42,10 @@ export function playFleetWreck(
   transients: Set<Phaser.GameObjects.GameObject>, sound: SeatSound,
   rescue?: Point & { takePod: (pod: Image) => void },
 ): number {
-  const sheet = wreckKey(catalog[kind]);
-  if ((kind !== 'player' && ship.texture.key !== shipKey(kind)) || !scene.textures.exists(sheet) || !scene.textures.exists(plumeKey)) return 0;
+  const paint = ship.getData('squadronPaint') as SquadronPaint | undefined;
+  const marked = kind === 'charger' && paint ? paintedWreck(kind, paint) : undefined;
+  const sheet = marked && scene.textures.exists(marked) ? marked : wreckKey(catalog[kind]);
+  if ((!paint && kind !== 'player' && ship.texture.key !== shipKey(kind)) || !scene.textures.exists(sheet) || !scene.textures.exists(plumeKey)) return 0;
   const data = scene.textures.get(sheet).customData as { meta?: { ships?: Record<string, Shot> } };
   const definition = data.meta?.ships?.[kind];
   if (!definition?.parts.length) return 0;

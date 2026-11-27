@@ -1,4 +1,5 @@
 import type { CampaignRoute, CampaignSnapshot, MissionId } from '../game/simulation/types';
+import { LATE_ROUTE_REWARDS, ROUTE_REWARDS } from '../game/content/routeRewards';
 
 export interface RouteMapNode {
   id: MissionId;
@@ -6,16 +7,15 @@ export interface RouteMapNode {
   column: number;
   lane: number;
   route?: CampaignRoute;
-  reward?: string;
 }
 
 export const ROUTE_MAP_NODES: readonly RouteMapNode[] = [
   { id: 'coastal', label: 'Coastal Intercept', column: 0, lane: 1 },
-  { id: 'minefield', label: 'Minefield Run', column: 1, lane: 0, route: 'salvage', reward: 'ARC RESONATOR · +12% ARC damage' },
-  { id: 'aurora', label: 'Aurora Reach', column: 1, lane: 2, route: 'storm', reward: 'AEGIS BASTION · +1 shield cell' },
+  { id: 'minefield', label: ROUTE_REWARDS.salvage.destination, column: 1, lane: 0, route: 'salvage' },
+  { id: 'aurora', label: ROUTE_REWARDS.storm.destination, column: 1, lane: 2, route: 'storm' },
   { id: 'fortress', label: 'Fortress Approach', column: 2, lane: 1 },
-  { id: 'graveyard', label: 'Graveyard', column: 3, lane: 0, route: 'salvage' },
-  { id: 'stormbreak', label: 'Stormbreak', column: 3, lane: 2, route: 'storm' },
+  { id: 'graveyard', label: LATE_ROUTE_REWARDS.salvage.destination, column: 3, lane: 0, route: 'salvage' },
+  { id: 'stormbreak', label: LATE_ROUTE_REWARDS.storm.destination, column: 3, lane: 2, route: 'storm' },
   { id: 'carrierSiege', label: 'Carrier Siege', column: 4, lane: 1 },
   { id: 'dreadnought', label: 'Dreadnought', column: 5, lane: 1 },
   { id: 'lastLight', label: 'Last Light', column: 6, lane: 1 },
@@ -27,13 +27,14 @@ export const ROUTE_MAP_EDGES: readonly (readonly [MissionId, MissionId])[] = [
 ];
 
 /** Presentation only. Merely opening the map cannot advance or award anything. */
-export function routeNodeStatus(node: RouteMapNode, state: CampaignSnapshot): 'current' | 'complete' | 'future' | 'bypassed' | 'choice' {
+export function routeNodeStatus(node: RouteMapNode, state: CampaignSnapshot): 'current' | 'complete' | 'future' | 'bypassed' | 'choice' | 'unrecorded' {
   const current = ROUTE_MAP_NODES.find((candidate) => candidate.id === state.currentMissionId) ?? ROUTE_MAP_NODES[0];
   // Version-6 campaigns always visited Minefield, even if they chose Stormbreak
   // later. Never invent an Aurora visit from that older, late route selection.
   const earlyRoute = state.earlyRoute ?? (state.routeReward === 'aegis-bastion' || state.currentMissionId === 'aurora' || state.seenStoryChapters?.includes('aurora-key') ? 'storm'
     : state.routeReward === 'arc-resonator' || state.currentMissionId === 'minefield' || state.seenStoryChapters?.includes('warden-key') || current.column >= 2 ? 'salvage' : undefined);
   const selectedRoute = node.column === 1 ? earlyRoute : state.route;
+  if (node.route && node.column < current.column && !selectedRoute) return 'unrecorded';
   if (selectedRoute && node.route && node.route !== selectedRoute) return 'bypassed';
   if (state.phase === 'route' && node.column === (current.column === 0 ? 1 : 3)) return 'choice';
   if (state.phase === 'victory') return 'complete';
@@ -41,7 +42,7 @@ export function routeNodeStatus(node: RouteMapNode, state: CampaignSnapshot): 'c
   return node.column < current.column ? 'complete' : 'future';
 }
 
-export function renderCampaignMap(host: HTMLElement, state: CampaignSnapshot): void {
+export function renderCampaignMap(host: HTMLElement, state: CampaignSnapshot, destinations: HTMLElement, choose?: (route: CampaignRoute) => void): void {
   const map = document.createElement('div');
   map.className = 'campaign-map';
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -74,4 +75,24 @@ export function renderCampaignMap(host: HTMLElement, state: CampaignSnapshot): v
     map.append(card);
   }
   host.replaceChildren(map);
+  destinations.replaceChildren(...[ROUTE_REWARDS, LATE_ROUTE_REWARDS].flatMap((fork, index) =>
+    Object.values(fork).map(destination => {
+      const currentFork = state.currentMissionId === 'fortress' ? 1 : 0;
+      const card = document.createElement(choose && index === currentFork ? 'button' : 'article');
+      if (card instanceof HTMLButtonElement) {
+        card.type = 'button';
+        card.dataset.route = destination.route;
+        card.addEventListener('click', () => choose?.(destination.route));
+      }
+      const title = document.createElement('strong');
+      title.textContent = destination.destination;
+      const objective = document.createElement('p');
+      objective.textContent = destination.objective;
+      const reward = document.createElement('span');
+      reward.className = 'destination-reward';
+      reward.textContent = `On clear · ${destination.name} · ${destination.effect}`;
+      card.dataset.junction = String(index + 1);
+      card.append(title, objective, reward);
+      return card;
+    })));
 }

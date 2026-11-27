@@ -83,10 +83,30 @@ describe('two-pilot base campaign', () => {
           difficulty,
           earlyRoute: early,
           route: late,
+          routeReward: early === 'storm' ? 'aegis-bastion' : 'arc-resonator',
+          lateRouteReward: late === 'storm' ? 'vector-vanes' : 'salvagers-license',
           campaignKills: 7,
         });
     },
   );
+  it('restores the opt-in setting and applies both route bonuses to both captains independently', () => {
+    const save = SquadCampaign.fresh('ace', ['precision', 'coverage'], true).save();
+    for (const pilot of save.pilots) Object.assign(pilot, { phase: 'hangar', currentMissionId: 'carrierSiege',
+      credits: 20, earlyRoute: 'storm', route: 'salvage', seenStoryChapters: ['aurora-key', 'project-crown'] });
+    save.pilots[1].seenStoryChapters = [];
+    const squad = SquadCampaign.restore(save)!;
+    for (const p of squad.pilots) {
+      expect(p.purchaseSortieModule('reserve-emp').ok).toBe(true);
+      expect(p.snapshot().credits).toBe(0);
+    }
+    for (const pilot of save.pilots) Object.assign(pilot, { route: 'storm', seenStoryChapters: ['aurora-key', 'stillwater-directive'] });
+    const flight = SquadCampaign.restore(save)!.begin();
+    for (const config of [flight, flight.wingmate!]) {
+      expect(config.adaptiveDifficulty).toBe(true);
+      expect(config.modifiers).toMatchObject({ lateralSpeedMultiplier: 1.08, shieldCapacityBonus: 1 });
+    }
+  });
+
   it('persists separate carrier claims, prevents repeat claims and mirrors exactly 80 credits', () => {
     const squad = SquadCampaign.fresh('pilot', ['coverage', 'coverage']);
     const { lead, wing } = games(squad);

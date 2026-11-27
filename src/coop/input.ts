@@ -64,7 +64,7 @@ export class SquadInput {
       e.metaKey ||
       e.ctrlKey ||
       e.altKey ||
-      (e.target instanceof HTMLElement && e.target.matches('input,textarea'))
+      (e.target instanceof HTMLElement && (e.target.matches('input,textarea') || e.target.closest('.equipment-closeup,.equipment-inspect-button')))
     )
       return;
     const down = e.type === 'keydown';

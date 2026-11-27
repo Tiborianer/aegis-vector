@@ -38,6 +38,7 @@ export type SoundCue =
   | 'hull-hit'
   | 'warning'
   | 'emp'
+  | 'install'
   | 'purchase'
   | 'victory'
   | 'defeat';
@@ -492,6 +493,11 @@ export class SoundEngine {
         this.tone(92, 920, 0.38, 'sawtooth', 0.09);
         this.noise(0.28, 0.045);
         break;
+      case 'install':
+        this.noise(.063, .072, 2_900, pan);
+        this.tone(218, 82, .086, 'triangle', .082, pan);
+        this.tone(1_620, 620, .026, 'triangle', .075, pan, .077);
+        break;
       case 'purchase': this.sequence([330, 494, 659], 0.07, 'triangle', 0.07); break;
       case 'victory': this.sequence([330, 440, 554, 660], 0.16, 'triangle', 0.09); break;
       case 'defeat': this.sequence([220, 165, 110], 0.18, 'triangle', 0.07); break;
@@ -874,9 +880,9 @@ export class SoundEngine {
     this.emitState();
   }
 
-  private tone(startHz: number, endHz: number, duration: number, type: OscillatorType, volume: number, pan = 0): void {
+  private tone(startHz: number, endHz: number, duration: number, type: OscillatorType, volume: number, pan = 0, delay = 0): void {
     if (!this.context || !this.sfxBus) return;
-    const now = this.context.currentTime;
+    const now = this.context.currentTime + delay;
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
     oscillator.type = type;

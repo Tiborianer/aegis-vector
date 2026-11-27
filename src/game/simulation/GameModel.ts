@@ -8,6 +8,7 @@ import {
   WEAPON_MAX_LEVEL,
 } from '../content/balance';
 import { isFinaleMission } from '../content/finale';
+import { resumeArrivalTime } from '../content/missionPacing';
 import { sanitizeMissionWaypoint } from './checkpoints';
 import type {
   CombatModifiers,
@@ -155,6 +156,7 @@ export class GameModel {
     this.fortressRamAvailable = this.modifiers.fortressFrame;
     const resume = sanitizeMissionWaypoint(config.resumeFrom, config.mission.id);
     if (resume) {
+      resume.game.stageElapsedMs = resumeArrivalTime(config.mission.id, resume.game.stageElapsedMs, this.stageDurationMs, resume.encounter.commandSpawned);
       this.restoreCheckpoint(resume.game, resume.waypointId);
       if (this.mission.id === 'dreadnought' && resume.bossHealthRatio !== undefined) this.bossHealthRatio = resume.bossHealthRatio;
     }

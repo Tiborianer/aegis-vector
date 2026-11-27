@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { BANK_ANGLES, NEUTRAL_BANK, shipKey } from '../../game/assets/visuals';
+import { isCommonCraft, paintedWreck, type SquadronPaint } from '../../game/assets/fleetArt';
 import catalog from '../../game/assets/ship-breakups.json';
 
 type BreakupShip = keyof typeof catalog;
@@ -21,8 +22,10 @@ export function playShipBreakup(
   transientViews: Set<Phaser.GameObjects.GameObject>,
   playSecondary: (cue: 'rack-ignition' | 'field-collapse', x: number) => void,
 ): boolean {
-  const key = breakupKey(kind);
-  if (enemy.texture.key !== shipKey(kind) || !scene.textures.exists(key)) return false;
+  const paint = enemy.getData('squadronPaint') as SquadronPaint | undefined;
+  const painted = paint && isCommonCraft(kind) ? paintedWreck(kind, paint) : undefined;
+  const key = painted && scene.textures.exists(painted) ? painted : breakupKey(kind);
+  if ((!paint && enemy.texture.key !== shipKey(kind)) || !scene.textures.exists(key)) return false;
   const { meta: bake } = scene.textures.get(key).customData as { meta?: Bake };
   if (!bake?.length || !bake.fps || !bake.sharedTail) return false;
 

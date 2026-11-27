@@ -34,9 +34,9 @@ export class ClassicSpaceEnvironment {
   }
 
   /** True means the shared space field rendered this frame; skip legacy scroll. */
-  update(deltaMs: number, playerX: number, projectileDensity: number): boolean {
+  update(deltaMs: number, playerX: number, projectileDensity: number, speed = 1): boolean {
     if (!this.active) return false;
-    const dt = Math.min(50, Math.max(0, deltaMs));
+    const dt = Math.min(50, Math.max(0, deltaMs)) * speed;
     const target = (playerX - WORLD_WIDTH / 2) / WORLD_WIDTH;
     this.follow += (target - this.follow) * (1 - Math.exp(-dt / 700));
     if (this.mission === 'lastLight') this.field?.update(dt, this.follow, projectileDensity);

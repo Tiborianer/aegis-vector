@@ -1,7 +1,11 @@
 import { connection, WorldMirror } from '../../coop/mirror';
+import { KestrelEquipment } from '../view/KestrelEquipment';
+import { KESTREL_EQUIPMENT, isCommonCraft, missionPaint, paintedHull, type CommonCraft } from '../../game/assets/fleetArt';
+import { breakupSample, selectBreakup, type BreakupIndex } from '../../game/assets/formationBreakups';
+import { localImpact, playFormationCut } from '../view/FormationWreck';
 import { PilotFlight } from '../../coop/PilotFlight';
 import { squadInput } from '../../coop/input';
-import { ARC_BOLT_SPEED, arcInterval, arcPattern, wingArcTrigger, type ArcPart } from '../../coop/wingArc';
+import { ARC_BOLT_SPEED, arcInterval, arcPattern, chargedBoltScale, isLightArcTarget, wingArcTrigger, type ArcPart, type ChargeLevel } from '../../coop/wingArc';
 import type { PilotOffers, PilotStatus } from '../../coop/campaign';
 import Phaser from 'phaser';
 import type { RadioCue, SoundCue } from '../../audio/SoundEngine';
@@ -14,13 +18,15 @@ import { ClassicSpaceEnvironment } from '../view/ClassicSpaceEnvironment';
 import { isWreckShip, playFleetWreck, shedCrownTurret } from '../view/fleetWreck';
 import { isBreakupShip, playShipBreakup } from '../view/shipBreakup';
 import { PlayerShieldView } from '../view/PlayerShieldView';
-import { currentShieldStyle } from '../view/shieldStyles';
+import { currentShieldStyle, impactSide } from '../view/shieldStyles';
 import { createSeraphModules, createSiegeModules, drawSeraphModules, drawSiegeModules } from '../view/bossModulesView';
 import { activeTurretCount, buildTurretVolley, createModularBoss, damageModularBoss, encounterHealthProgress, modularHealthRatio, seraphCollisionRects, seraphWingPose, siegeTurretPose, stepSiegeTurretAim, stepSiegeFlight, SIEGE_HULL_RECTS, SIEGE_TURRETS, type ModularBossState, type ModularVolley, type ModuleDamageTarget } from '../../game/simulation/modularBoss';
 import { createFlightMotion, stepFlightMotion, steerVelocity, type FlightMotion, type FlightProfile } from '../../game/simulation/flightMotion';
 import { buildEnemyVolley, bossPhase, type PatternEnemy } from '../../game/simulation/enemyPatterns';
 import { isFinaleMission, finaleBossKind } from '../../game/content/finale';
+import { arrivalsOpen, commandArrivalAt } from '../../game/content/missionPacing';
 import { restoreEncounterCursor } from '../../game/simulation/checkpoints';
+import { AdaptiveDifficulty, adaptiveFireProfile, adaptiveHealth, type AdaptiveTarget } from '../../game/simulation/adaptiveDifficulty';
 import {
   DIFFICULTY,
   ENEMIES,
@@ -171,6 +177,7 @@ export class BattleScene extends Phaser.Scene {
   private particles!: Phaser.GameObjects.Particles.ParticleEmitter;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys!: Record<'W' | 'A' | 'S' | 'D' | 'Z' | 'SPACE', Phaser.Input.Keyboard.Key>;
+  private lastBreakups = new Map<CommonCraft, BreakupIndex>();
   private transientViews = new Set<Phaser.GameObjects.GameObject>();
   private nextWaveAt = 0;
   private waveIndex = 0;
@@ -178,6 +185,8 @@ export class BattleScene extends Phaser.Scene {
   private entityId = 0;
   private debugSpecialistIndex = 0;
   private commandSpawned = false;
+  private adaptive?: AdaptiveDifficulty;
+  private adaptiveWave?: number;
   private commandRemaining = 0;
   private commandEncounterActive = false;
   private minibossSpawned = false;
@@ -252,7 +261,13 @@ export class BattleScene extends Phaser.Scene {
     window.addEventListener('aegis:pause', this.pauseHandler);
     window.addEventListener('aegis:resume', this.resumeHandler);
     window.addEventListener('aegis:emp', this.empHandler);
+    const followEquipment = () => {
+      if (connection.role === 'guest') return;
+      for (const pilot of this.pilots) pilot.equipment?.update(pilot.player, pilot.model);
+    };
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, followEquipment);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off(Phaser.Scenes.Events.POST_UPDATE, followEquipment);
       window.removeEventListener('aegis:start-mission', this.startHandler);
       window.removeEventListener('aegis:pause', this.pauseHandler);
       window.removeEventListener('aegis:resume', this.resumeHandler);
@@ -288,13 +303,14 @@ export class BattleScene extends Phaser.Scene {
       this.nextRemoteFrame=_wallTime+50;
       const wing=this.wing;
       const track=new Set<Phaser.GameObjects.GameObject>([...wing.playerShield?.objects??[]]);
+      wing.equipment?.layers.forEach(layer => track.add(layer));
       if(wing.stripes)track.add(wing.stripes);if(wing.marker)track.add(wing.marker);
       connection.publish?.(this.mirror.capture(this.teamSnapshot(), wing.player, track, {
         session: wingArcTrigger.session, press: wingArcTrigger.press, volley: wingArcTrigger.volley,
         held: wingArcTrigger.awaitingRelease,
         intervalMs: arcInterval(getArcVolley(wing.model.weapons.spread).intervalMs, wing.model.fireIntervalMultiplier),
         split: wing.model.modifiers.splitCapacitors, overdrive: wing.model.weaponOverdriveState !== 'inactive',
-        helios: wing.model.modifiers.heliosBattery, total: wing.primaryVolleyIndex,
+        helios: wing.model.modifiers.heliosBattery, total: wing.primaryVolleyIndex, chargeMs: wing.arcCharge.elapsedMs,
       }));
     }
     if (this.model.mode !== 'paused') this.scrollEnvironment(delta);
@@ -328,7 +344,6 @@ export class BattleScene extends Phaser.Scene {
     }
     const time = this.combatNow;
     if (restoration === 'shield') {
-      this.shieldPulse(0x35e8ff, 1.2, pilot);
       this.emitSound('shield-ready');
       this.announce('SHIELD ENERGY RESTORED');
       this.emitRadio('shield-restored');
@@ -391,14 +406,17 @@ export class BattleScene extends Phaser.Scene {
     }).setDepth(8);
   }
 
-  private scrollEnvironment(delta: number): void {
+  private readonly sceneryMotion = typeof window === 'undefined' ? undefined : window.matchMedia('(prefers-reduced-motion: reduce)');
+  private scrollEnvironment(frameDelta: number): void {
+    const speed = this.sceneryMotion?.matches ? 1 : 1.15;
     if (this.dimensionalEnvironment) {
       const density = this.enemyBullets ? Math.min(1, this.enemyBullets.countActive(true) / 36) : 0;
-      this.dimensionalEnvironment.update(delta, this.lead.player?.x ?? WORLD_WIDTH / 2, density);
+      this.dimensionalEnvironment.update(frameDelta, this.lead.player?.x ?? WORLD_WIDTH / 2, density, speed);
       return;
     }
-    if (this.classicSpaceEnvironment?.update(delta, this.lead.player?.x ?? WORLD_WIDTH / 2,
-      this.enemyBullets ? Math.min(1, this.enemyBullets.countActive(true) / 36) : 0)) return;
+    if (this.classicSpaceEnvironment?.update(frameDelta, this.lead.player?.x ?? WORLD_WIDTH / 2,
+      this.enemyBullets ? Math.min(1, this.enemyBullets.countActive(true) / 36) : 0, speed)) return;
+    const delta = frameDelta * speed;
     const forward = delta * 0.08;
     this.horizonHaze.tilePositionY -= forward * 0.15;
     this.ocean.tilePositionY -= forward * 0.35;
@@ -445,6 +463,7 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(6)
       .setVisible(false)
       .setActive(false);
+    if (this.dimensional && this.textures.exists(KESTREL_EQUIPMENT)) pilot.equipment = new KestrelEquipment(this);
     pilot.player.setCollideWorldBounds(true);
     (pilot.player.body as Phaser.Physics.Arcade.Body).setSize(28, 42).setOffset(30, 31);
     pilot.playerShield = new PlayerShieldView(this, currentShieldStyle());
@@ -538,6 +557,7 @@ export class BattleScene extends Phaser.Scene {
       const lastRamAt = (target.getData(ramKey) as number | undefined) ?? Number.NEGATIVE_INFINITY;
       if (this.combatNow - lastRamAt < 250) return;
       target.setData(ramKey, this.combatNow);
+      if (target.getData('kind') === 'razorwing' && target.getData('state') === 'dive') target.setData('rammed',true);
       this.damagePlayer(false, 'ram', pilot, zone);
       const kind = target.getData('kind') as EnemyKind;
       if (!COMMAND_ENEMIES.includes(kind)) this.damageEnemy(target, 8, undefined, undefined, undefined, undefined, pilot);
@@ -579,6 +599,7 @@ export class BattleScene extends Phaser.Scene {
     pilot.playerShadow.setVisible(visible); pilot.contrails.setVisible(visible);
     pilot.stripes?.setVisible(visible);
     if (!visible) {
+      pilot.equipment?.hide();
       pilot.drones.forEach(drone => drone.setVisible(false));
       pilot.playerShield?.update(pilot.player.x,pilot.player.y,0,0,pilot.model.shieldMax,this.combatNow,false);
     }
@@ -615,10 +636,10 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private combatTarget(enemy: Phaser.Physics.Arcade.Sprite): {x:number;y:number} {
+  private combatTarget(enemy: Phaser.Physics.Arcade.Sprite, tracking = false): {x:number;y:number} {
     if (!this.flyingCoop || !this.wing) return this.lead.player;
     const locked = enemy.getData('lockedAim');
-    if (enemy.getData('telegraph') && locked) return locked;
+    if (!tracking && enemy.getData('telegraph') && locked) return locked;
     const preferred = (Number(enemy.getData('entityId')) % 2) ? this.lead : this.wing;
     const target = preferred.down ? (preferred.seat ? this.lead : this.wing) : preferred;
     const point = {x:target.player.x, y:target.player.y};
@@ -628,11 +649,13 @@ export class BattleScene extends Phaser.Scene {
 
   private teamSnapshot(): GameSnapshot {
     const team = this.model.snapshot();
+    if (this.adaptive) team.adaptiveHealthPercent = this.adaptive.percent;
     if (!this.flyingCoop || !this.wing) return team;
     const status = (p: PilotFlight): PilotStatus => ({
       hull:p.model.hull, hullMax:p.model.hullMax, shield:p.model.shield, shieldMax:p.model.shieldMax,
       shieldBaseMax:p.model.shieldBaseMax, emp:p.model.empCharges, empMax:p.model.empMax, down:p.down,
-      rescueAvailable:p.rescueAvailable, rescueMs:p.rescueMs, x:p.player.x, y:p.player.y, weapons:{...p.model.weapons}, shots:p.model.shotsFired
+      rescueAvailable:p.rescueAvailable, rescueMs:p.rescueMs, x:p.player.x, y:p.player.y, weapons:{...p.model.weapons}, shots:p.model.shotsFired,
+      lateralSpeedMultiplier:p.model.modifiers.lateralSpeedMultiplier
     });
     team.shotsFired += this.wing.model.shotsFired; team.shotsHit += this.wing.model.shotsHit;
     team.damageTaken += this.wing.model.damageTaken;
@@ -672,8 +695,10 @@ export class BattleScene extends Phaser.Scene {
     this.missionEnding = false;
     this.damageAttempts = 0;
     this.lastDamageResult = 'none';
-    this.waveIndex = 0;
+    const lab = new URLSearchParams(window.location.search);
+    this.waveIndex = import.meta.env.DEV && lab.get('lab') === '1' && lab.get('encounter') === 'charge-pass' && config.mission.id === 'coastal' ? 5 : 0;
     this.entityId = 0;
+    this.lastBreakups.clear();
     this.lead.nextPrimaryAt = 0;
     this.lead.nextMissileAt = 0;
     this.lead.nextLaserAt = 0;
@@ -722,13 +747,14 @@ export class BattleScene extends Phaser.Scene {
     this.model.highScore = BattleScene.loadHighScore(this.flyingCoop);
     this.model.start(config);
     this.lead.playerShield?.reset();
-    this.lead.playerShield?.setStyle(currentShieldStyle());
     this.lead.playerBank = 0;
     this.dimensionalEnvironment?.setMission(config.mission.id);
     this.classicSpaceEnvironment?.setMission(config.mission.id);
     this.encounterDirector = new EncounterDirector(config.campaignSeed, config.difficulty, config.mission.id);
     // The model validates imported saves. Never restore render cursors from a rejected save.
     const acceptedResume = this.model.latestWaypointId !== undefined ? config.resumeFrom : undefined;
+    this.adaptive = config.adaptiveDifficulty ? new AdaptiveDifficulty(acceptedResume?.encounter.adaptive) : undefined;
+    this.adaptiveWave = undefined;
     if (acceptedResume) this.restoreEncounterCheckpoint(acceptedResume);
 
     const missionTints: Record<string, number> = {
@@ -799,7 +825,7 @@ export class BattleScene extends Phaser.Scene {
     };
     const {x,y} = input;
     const direction = new Phaser.Math.Vector2(x, y).normalize();
-    pilot.player.setVelocity(direction.x * 430, direction.y * 430);
+    pilot.player.setVelocity(direction.x * 430 * pilot.model.modifiers.lateralSpeedMultiplier, direction.y * 430);
 
     if (pilot.player.y < PLAYER_COMBAT_MIN_Y) {
       pilot.player.y = PLAYER_COMBAT_MIN_Y;
@@ -826,7 +852,10 @@ export class BattleScene extends Phaser.Scene {
     pilot.contrails.lineStyle(2, pilot.seat === 1 ? 0xfff2c4 : 0xdffcff, 0.34).lineBetween(pilot.player.x - 17, pilot.player.y + 37, pilot.player.x - 18 - direction.x * 9, pilot.player.y + 77);
     pilot.contrails.lineBetween(pilot.player.x + 17, pilot.player.y + 37, pilot.player.x + 18 - direction.x * 9, pilot.player.y + 77);
     const tapped = pilot.seat === 1 && connection.role === 'host' && wingArcTrigger.takeTap();
-    if (input.fire || tapped) this.fireWeapons(time, pilot, !input.fire);
+    pilot.arcFiring = Boolean(input.fire || tapped);
+    pilot.arcCharge.advance(delta, pilot.arcFiring);
+    if (pilot.arcFiring) this.fireWeapons(time, pilot, !input.fire);
+    pilot.playerShield?.charge(pilot.arcCharge.level);
   }
 
   private fireWeapons(time: number, pilot = this.lead, primaryOnly = false): void {
@@ -838,13 +867,14 @@ export class BattleScene extends Phaser.Scene {
       const volley = getArcVolley(spreadLevel);
       const centerAngle = Math.min(...volley.angles.map(Math.abs));
       const id = connection.role === 'host' && pilot.seat === 1 ? wingArcTrigger.next(wingArcTrigger.session) : undefined;
-      arcPattern(volley.angles, pilot.model.modifiers.splitCapacitors).forEach((part, index) => {
+      const charge = pilot.arcCharge.spend();
+      arcPattern(volley.angles, pilot.model.modifiers.splitCapacitors, charge).forEach((part, index) => {
         const extra = index === volley.angles.length;
         const prism = !extra && pilot.model.modifiers.prismaticCore && Math.abs(part.angle) <= centerAngle + .001
           ? volley.angles.length % 2 === 0 ? 1.25 : 1.5 : 1;
-        const damage = (extra ? 1 : volley.damage * prism) * (heliosVolley ? 1.5 : 1);
+        const damage = (extra ? 1 : volley.damage * prism * (1 + part.charge)) * (heliosVolley ? 1.5 : 1);
         this.spawnPlayerBullet(pilot.player.x + part.x, pilot.player.y + part.y, ASSET_KEYS.playerBullet,
-          part.angle, damage, heliosVolley, 'spread', pilot, id ? [id, index] : undefined);
+          part.angle, damage, heliosVolley, 'spread', pilot, id ? [id, index] : undefined, part.charge);
       });
       const muzzle = this.weaponMuzzle('spread', pilot.player.x, pilot.player.y - 42, heliosVolley || pilot.model.weaponOverdriveState !== 'inactive');
       if (id) muzzle.setData('wingArc', [id, -1]);
@@ -998,7 +1028,7 @@ export class BattleScene extends Phaser.Scene {
     angle: number,
     baseDamage: number,
     forceOverdriveVisual = false,
-    weaponKind: WeaponType = 'spread', pilot = this.lead, arc?: ArcPart): void {
+    weaponKind: WeaponType = 'spread', pilot = this.lead, arc?: ArcPart, charge: ChargeLevel = 0): void {
     const overdriveState = pilot.model.weaponOverdriveState;
     const overdriveVisual = overdriveState !== 'inactive' || forceOverdriveVisual;
     const renderTexture = !overdriveVisual
@@ -1017,6 +1047,7 @@ export class BattleScene extends Phaser.Scene {
       this.particles.setParticleTint(OVERDRIVE_GOLD);
       this.particles.explode(2, x, y);
     }
+    if (charge) bullet.setScale(...chargedBoltScale(charge)).setTint(charge === 2 ? 0xffefd0 : 0xc0faff);
     if (texture === ASSET_KEYS.laser && pilot.model.modifiers.splitCapacitors) bullet.setScale(1.2, 1);
     const body = bullet.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
@@ -1026,7 +1057,7 @@ export class BattleScene extends Phaser.Scene {
     body.setSize(isLaser && pilot.model.modifiers.splitCapacitors ? 11 : isWing ? 7 : 8, isLaser ? 48 : isWing ? 16 : isArc ? 24 : 18);
     const missile = texture === ASSET_KEYS.missile;
     bullet.setDataEnabled()
-      .setData('wingArc', arc)
+      .setData('wingArc', arc).setData('charge', charge).setData('lightPierce', charge === 2)
       .setData('seat', pilot.seat).setData('damage', baseDamage * (weaponKind === 'spread' ? pilot.model.arcDamageMultiplier : pilot.model.damageMultiplier))
       .setData('missile', missile)
       .setData('weaponKind', weaponKind)
@@ -1153,26 +1184,35 @@ export class BattleScene extends Phaser.Scene {
       this.announce(`THREAT LEVEL ${threat} // PRESSURE RISING`);
       this.emitSound('warning');
     }
-    if (this.maybeSpawnMiniboss(progress)) return;
-    if (this.maybeIntroduceBulwark(progress)) return;
-    this.maybeSpawnArmamentCarrier(progress);
-    this.maybeSpawnCommandTargets();
     if (this.model.stageElapsedMs >= this.model.stageDurationMs && this.commandSpawned && this.commandRemaining <= 0) {
       // A late command kill can create an Armament pair after the mission clock
       // expires. Preserve its full choice window before extraction clears pickups.
       if (!this.hasActiveArmamentPair()) this.completeMission(false);
       return;
     }
+    if (!this.enemyArrivalsOpen()) return;
+    const commandDue = this.model.stageElapsedMs >= commandArrivalAt(this.model.mission.id, this.model.stageDurationMs);
+    if (commandDue) {
+      // A surviving miniboss or a busy carrier encounter cannot defer the required targets.
+      this.maybeSpawnCommandTargets();
+    } else {
+      if (this.maybeSpawnMiniboss(progress)) return;
+      if (this.maybeIntroduceBulwark(progress)) return;
+      this.maybeSpawnArmamentCarrier(progress);
+    }
     if (this.commandEncounterActive || time < this.nextWaveAt || this.enemies.countActive(true) >= MAX_ACTIVE_ENEMIES - 4) return;
+    this.adaptiveWave = this.waveIndex;
     this.spawnWave(this.waveIndex);
     this.waveIndex += 1;
     const tuning = this.encounterDirector?.tuning(progress) ?? getThreatTuning(progress, this.model.difficulty, this.model.mission.id);
-    this.spawnThreatEscorts(tuning.waveBudget);
+    const teachingFlight = this.model.mission.id === 'coastal' && this.waveIndex <= 6;
+    if (!teachingFlight) this.spawnThreatEscorts(tuning.waveBudget);
     if (this.flyingCoop && this.pilots.every(pilot => !pilot.down) &&
-        (this.model.mission.id !== 'coastal' || this.nextCarrierIndex > 0) &&
+        !teachingFlight && (this.model.mission.id !== 'coastal' || this.nextCarrierIndex > 0) &&
         this.enemies.countActive(true) < MAX_ACTIVE_ENEMIES - 3) {
       this.spawnEnemy('scout', this.waveX(this.waveIndex,246,150,1130),-145,this.waveIndex);
     }
+    this.adaptiveWave = undefined;
     this.nextWaveAt = time + tuning.waveIntervalMs;
   }
 
@@ -1258,6 +1298,7 @@ export class BattleScene extends Phaser.Scene {
 
   private encounterCheckpoint(): EncounterCheckpointSnapshot {
     return {
+      adaptive: this.adaptive?.checkpoint(),
       waveIndex: this.waveIndex,
       nextCarrierIndex: this.nextCarrierIndex,
       killsSinceUtilityDrop: this.killsSinceUtilityDrop,
@@ -1355,6 +1396,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private maybeSpawnArmamentCarrier(progress: number): void {
+    if (!this.enemyArrivalsOpen()) return;
     const milestones = carrierMilestones(this.model.mission.id);
     if (this.nextCarrierIndex >= milestones.length || progress < milestones[this.nextCarrierIndex]) return;
     if (this.enemies.countActive(true) >= MAX_ACTIVE_ENEMIES - 2 || this.commandEncounterActive) return;
@@ -1369,10 +1411,7 @@ export class BattleScene extends Phaser.Scene {
     const firstCoastalCarrier = this.model.mission.id === 'coastal' && localIndex === 0;
     this.markCarrier(carrier, globalCarrierIndex(this.model.mission.id, localIndex), !firstCoastalCarrier);
     if (firstCoastalCarrier) {
-      // The first upgrade is a replacement encounter, not an extra wave. Consume
-      // the upcoming cursor only after a successful spawn, so retry/save cursors
-      // and deterministic future formations remain in sync.
-      this.waveIndex += 1;
+      // Give the first reward its own beat without skipping an authored flight lesson.
       const tuning = getThreatTuning(progress, this.model.difficulty, this.model.mission.id);
       this.nextWaveAt = Math.max(this.combatNow, this.nextWaveAt) + tuning.waveIntervalMs;
     }
@@ -1381,10 +1420,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private maybeSpawnCommandTargets(): void {
-    if (this.commandSpawned) return;
-    const remaining = this.model.stageDurationMs - this.model.stageElapsedMs;
-    if (this.model.mission.id === 'coastal' && remaining <= 18_000) {
-      const leader = this.spawnEnemy('elite', WORLD_WIDTH / 2, -80, 0);
+    if (this.commandSpawned || !this.enemyArrivalsOpen() || this.model.stageElapsedMs < commandArrivalAt(this.model.mission.id, this.model.stageDurationMs)) return;
+    if (this.model.mission.id === 'coastal') {
+      const leader = this.spawnEnemy('elite', WORLD_WIDTH / 2, -80, 0, true);
       if (!leader) return;
       this.commandSpawned = true;
       this.commandRemaining = 1;
@@ -1393,12 +1431,12 @@ export class BattleScene extends Phaser.Scene {
       this.configureDepthArrival(leader, 1_200);
       this.spawnEnemy('interceptor', 220, -45, 1);
       this.spawnEnemy('interceptor', WORLD_WIDTH - 220, -45, 2);
-    } else if (this.model.mission.id === 'minefield' && this.model.stageElapsedMs >= this.model.stageDurationMs * 0.785) {
+    } else if (this.model.mission.id === 'minefield') {
       this.enemies.clear(true, true);
       this.enemyHitZones.clear(true, true);
       this.enemyBullets.clear(true, true);
       this.cleanupDetachedViews();
-      const warden = this.spawnEnemy('warden', WORLD_WIDTH / 2, -105, 0);
+      const warden = this.spawnEnemy('warden', WORLD_WIDTH / 2, -105, 0, true);
       if (!warden) return;
       this.commandSpawned = true;
       this.commandRemaining = 1;
@@ -1408,8 +1446,8 @@ export class BattleScene extends Phaser.Scene {
       warden.setData('commandTarget', true).setData('attackIndex', 0);
       this.markCarrier(warden, globalCarrierIndex('minefield', 3), false);
       this.model.setBoss('WARDEN', 1);
-    } else if (this.model.mission.id === 'aurora' && remaining <= 20_000) {
-      const sentinel = this.spawnEnemy('elite', WORLD_WIDTH / 2, -90, 0);
+    } else if (this.model.mission.id === 'aurora') {
+      const sentinel = this.spawnEnemy('elite', WORLD_WIDTH / 2, -90, 0, true);
       if (!sentinel) return;
       this.commandSpawned = true;
       this.commandRemaining = 1;
@@ -1420,11 +1458,11 @@ export class BattleScene extends Phaser.Scene {
       this.configureDepthArrival(sentinel, 1_200);
       this.spawnEnemy('prism', 330, -140, 1);
       this.spawnEnemy('leech', 950, -180, 2);
-    } else if (this.model.mission.id === 'fortress' && remaining <= 25_000) {
+    } else if (this.model.mission.id === 'fortress') {
       // Both leaders are required; wait for two slots before starting the formation.
       if (this.enemies.countActive(true) > MAX_ACTIVE_ENEMIES - 2) return;
-      const left = this.spawnEnemy('elite', 390, -80, 1);
-      const right = this.spawnEnemy('elite', 890, -130, 2);
+      const left = this.spawnEnemy('elite', 390, -80, 1, true);
+      const right = this.spawnEnemy('elite', 890, -130, 2, true);
       this.commandRemaining = Number(Boolean(left)) + Number(Boolean(right));
       if (this.commandRemaining === 0) return;
       this.commandSpawned = true;
@@ -1437,8 +1475,8 @@ export class BattleScene extends Phaser.Scene {
       right?.setData('commandTarget', true);
       if (right) this.configureDepthArrival(right, 1_200);
       this.spawnEnemy('shieldCarrier', WORLD_WIDTH / 2, -180, 0);
-    } else if ((this.model.mission.id === 'stormbreak' || this.model.mission.id === 'graveyard') && remaining <= 20_000) {
-      const command = this.spawnEnemy('elite', WORLD_WIDTH / 2, -90, 0);
+    } else if (this.model.mission.id === 'stormbreak' || this.model.mission.id === 'graveyard') {
+      const command = this.spawnEnemy('elite', WORLD_WIDTH / 2, -90, 0, true);
       if (!command) return;
       this.commandSpawned = true;
       this.commandRemaining = 1;
@@ -1449,8 +1487,8 @@ export class BattleScene extends Phaser.Scene {
         this.spawnEnemy('phantom', 300, -140, 1);
         this.spawnEnemy('phantom', 980, -140, 2);
       } else this.spawnEnemy('reclaimer', WORLD_WIDTH / 2 + 230, -150, 1);
-    } else if (this.model.mission.id === 'carrierSiege' && remaining <= 30_000) {
-      const carrier = this.spawnEnemy('carrierBoss', WORLD_WIDTH / 2, -110, 0);
+    } else if (this.model.mission.id === 'carrierSiege') {
+      const carrier = this.spawnEnemy('carrierBoss', WORLD_WIDTH / 2, -110, 0, true);
       if (!carrier) return;
       this.commandSpawned = true;
       this.commandRemaining = 1;
@@ -1464,6 +1502,22 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnWave(index: number): void {
+    if (!this.enemyArrivalsOpen()) return;
+    if (this.model.mission.id === 'coastal' && index <= 5) {
+      const center = WORLD_WIDTH / 2;
+      if (index === 0) {
+        this.spawnEnemy('scout', center-60, -50, -1);
+        this.spawnEnemy('scout', center+60, -50, 1);
+      } else if (index === 1) this.spawnEnemy('interceptor', -40, 124, 1);
+      else if (index === 2) this.spawnEnemy('bomber', center, -42, 0);
+      else if (index === 3) this.spawnEnemy('charger', center-160, -65, 0);
+      else if (index === 4) this.spawnEnemy('sniper', center+180, -60, 0);
+      else {
+        this.spawnEnemy('interceptor', WORLD_WIDTH+40, 118, 0);
+        this.spawnEnemy('bomber', center-72, 62, 0);
+      }
+      return;
+    }
     const pattern = index % 6;
     const progress = this.model.stageElapsedMs / this.model.stageDurationMs;
     if (this.model.mission.id === 'aurora') {
@@ -1577,6 +1631,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private spawnThreatEscorts(waveBudget: number): void {
+    if (!this.enemyArrivalsOpen()) return;
     const bonusCount = Math.min(3, Math.max(0, Math.floor((waveBudget - 4) / 3)));
     for (let bonus = 0; bonus < bonusCount; bonus += 1) {
       if (this.enemies.countActive(true) >= MAX_ACTIVE_ENEMIES - 1) return;
@@ -1610,14 +1665,33 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private spawnEnemy(kind: EnemyKind, x: number, y: number, phase: number): Phaser.Physics.Arcade.Sprite | undefined {
-    if (this.enemies.countActive(true) >= MAX_ACTIVE_ENEMIES) return undefined;
+  private enemyArrivalsOpen(): boolean {
+    const m = this.model;
+    return !this.missionEnding && arrivalsOpen(m.mission.id, m.stageElapsedMs, m.stageDurationMs, m.finalePhase, m.finaleBossStage, m.bossHealthRatio);
+  }
+
+  private visibleEnemy(enemy: Phaser.Physics.Arcade.Sprite): boolean {
+    return enemy.alpha > 0 && enemy.x + enemy.displayWidth / 2 >= 0 && enemy.x - enemy.displayWidth / 2 <= WORLD_WIDTH
+      && enemy.y + enemy.displayHeight / 2 >= 0 && enemy.y - enemy.displayHeight / 2 <= WORLD_HEIGHT;
+  }
+
+  private spawnEnemy(kind: EnemyKind, x: number, y: number, phase: number, required = false): Phaser.Physics.Arcade.Sprite | undefined {
+    const finale = isFinaleMission(this.model.mission.id);
+    const scheduledFinalBoss = required && finale && this.model.finalePhase === 'boss'
+      && kind === finaleBossKind(this.model.mission.id, this.model.finaleBossStage);
+    if (this.missionEnding || (!this.isolatedCraftPreview && !this.enemyArrivalsOpen() && !scheduledFinalBoss)) return undefined;
+    const reserved = !finale && !this.commandSpawned && !required ? (this.model.mission.id === 'fortress' ? 2 : 1) : 0;
+    if (this.enemies.countActive(true) >= MAX_ACTIVE_ENEMIES - reserved) return undefined;
     if (kind === 'bulwark' && this.countActiveEnemies('bulwark') >= 1) return undefined;
     if ((kind === 'artillery' || kind === 'reclaimer' || kind === 'carrierBoss' || kind === 'razorwing' || kind === 'gatekeeper' || kind === 'pursuer') && this.countActiveEnemies(kind) >= 1) return undefined;
     if ((kind === 'phantom' || kind === 'skimmer' || kind === 'prism') && this.countActiveEnemies(kind) >= 2) return undefined;
     if ((kind === 'weaver' || kind === 'leech' || EXPANSION_BOSSES.includes(kind)) && this.countActiveEnemies(kind) >= 1) return undefined;
-    const key = this.shipTexture(kind);
+    const paint = missionPaint(this.model.mission.id);
+    const livery = this.dimensional && isCommonCraft(kind) ? paintedHull(kind, paint) : undefined;
+    const marked = livery && this.textures.exists(livery);
+    const key = marked ? livery : this.shipTexture(kind);
     const enemy = this.physics.add.sprite(x, y, key, this.dimensional ? NEUTRAL_BANK : undefined).setDepth(3);
+    if (marked) enemy.setData('squadronPaint', paint);
     this.enemies.add(enemy);
     const config = ENEMIES[kind];
     const progress = Math.min(1, this.model.stageElapsedMs / Math.max(1, this.model.stageDurationMs));
@@ -1625,9 +1699,17 @@ export class BattleScene extends Phaser.Scene {
     const healthProgress = encounterHealthProgress(kind, this.model.stageElapsedMs, this.model.stageDurationMs, this.model.mission.approachDurationMs ?? 35_000);
     const healthTuning = getThreatTuning(healthProgress, this.model.difficulty, this.model.mission.id);
     const squadScale = !this.flyingCoop ? 1 : COMMAND_ENEMIES.includes(kind) ? 1.65 : kind === 'elite' ? 1.25 : 1;
-    const health = Math.max(1, Math.round(config.health * healthTuning.enemyHealth * squadScale));
+    const authoredHealth = Math.max(1, Math.round(config.health * healthTuning.enemyHealth * squadScale));
+    let health = authoredHealth;
+    let adaptiveTarget: AdaptiveTarget | undefined;
+    if (this.adaptive && this.adaptiveWave !== undefined) {
+      const strongestHit = Math.max(...this.pilots.map(p => adaptiveFireProfile(p.model).singleHit));
+      health = adaptiveHealth(kind, authoredHealth, strongestHit, this.adaptive.percent);
+      adaptiveTarget = this.adaptive.target(kind, this.adaptiveWave, health, strongestHit);
+    }
     enemy.setDataEnabled()
       .setData('entityId', ++this.entityId)
+      .setData('adaptiveTarget', adaptiveTarget)
       .setData('kind', kind)
       .setData('textureDensity', this.dimensional ? shipTextureDensity(kind) : 1)
       .setData('displayScale', (kind === 'nullArchitect' ? 2 : kind === 'seraph' ? 1.14 : 1) / (this.dimensional ? shipTextureDensity(kind) : 1))
@@ -1643,8 +1725,13 @@ export class BattleScene extends Phaser.Scene {
       .setData('speedScale', threat.movementSpeed)
       .setData('fireScale', threat.fireRate)
       .setData('chronoScale', 1)
-      .setData('openingFirstSalvoPending', kind === 'bomber' && isCoastalOpening(this.model.mission.id, progress))
       .setData('nextFire', this.combatNow + Phaser.Math.Between(900, 2_100));
+    if (kind === 'warden') enemy.setData('fieldEmitters', [0, 1].map(() => Math.ceil(health * .055)));
+    if (kind === 'warden' || kind === 'bomber' || kind === 'razorwing') {
+      const mounts = this.add.graphics().setDepth(4.1);
+      enemy.setData('mountLights', mounts);
+      this.transientViews.add(mounts);
+    }
     if (kind === 'bulwark') {
       enemy.setData('reactorHealth', [7, 7])
         .setData('armorBroken', false)
@@ -1698,6 +1785,7 @@ export class BattleScene extends Phaser.Scene {
                   : 900;
       this.configureDepthArrival(enemy, duration);
     }
+    if (this.visibleEnemy(enemy)) enemy.setData('seenInBattle', true);
     event('aegis:enemy-seen', kind);
     return enemy;
   }
@@ -1717,8 +1805,15 @@ export class BattleScene extends Phaser.Scene {
     if (kind === 'artillery') return ARTILLERY_HITBOXES;
     if (kind === 'carrierBoss') return CARRIER_BOSS_HITBOXES;
     if (kind === 'gatekeeper') return GATEKEEPER_HITBOXES;
+    // Front-facing mounts are tested first, even when their art overlaps a wing.
+    if (kind === 'warden') return [
+      { role: 'weakpoint', x: -.34, y: .22, width: .23, height: .39 },
+      { role: 'weakpoint', x: .34, y: .22, width: .23, height: .39 }, ...LARGE_HITBOXES,
+    ];
+    if (kind === 'bomber') return [{ role:'weakpoint', x: .24, y: .28, width: .27, height: .36 }, ...LARGE_HITBOXES];
+    if (kind === 'razorwing') return [{ role:'weakpoint', x: 0, y: .35, width: .38, height: .30 }, ...LARGE_HITBOXES];
     if (kind === 'seraph') return seraphCollisionRects(0).map((plate, index) => ({ role: index === 0 ? 'core' : 'wing', ...plate }));
-    if (kind === 'boss' || kind === 'warden' || kind === 'razorwing' || kind === 'pursuer' || kind === 'elite' || kind === 'bomber') return LARGE_HITBOXES;
+    if (kind === 'boss' || kind === 'pursuer' || kind === 'elite') return LARGE_HITBOXES;
     // Open hulls use perimeter colliders; shots can pass through their negative space.
     if (kind === 'nullArchitect') return [
       ...SIEGE_TURRETS.map((mount) => ({ role: 'weakpoint' as const, ...mount })),
@@ -1786,7 +1881,10 @@ export class BattleScene extends Phaser.Scene {
       // the authored rear gun mounts unreachable to straight ARC projectiles.
       const outerCrownPlate = enemy.getData('kind') === 'nullArchitect' && zoneIndex > SIEGE_TURRETS.length;
       const lockedCrownPlate = outerCrownPlate && activeTurretCount(enemy.getData('modularBoss') as ModularBossState) > 0;
-      body.enable = ready && zone.getData('reactorDestroyed') !== true && !lockedCrownPlate;
+      const closedMount = definition.role === 'weakpoint' &&
+        ((enemy.getData('kind') === 'bomber' && !enemy.getData('podOpen')) ||
+         (enemy.getData('kind') === 'razorwing' && enemy.getData('state') !== 'vent'));
+      body.enable = ready && zone.getData('reactorDestroyed') !== true && !lockedCrownPlate && !closedMount;
       zone.setActive(body.enable);
       if (this.hitboxGraphics) {
         const role = zone.getData('role') as EnemyHitZoneRole;
@@ -1804,12 +1902,30 @@ export class BattleScene extends Phaser.Scene {
 
   private updateEnemies(time: number, delta: number): void {
     this.enemyMotionDelta = delta;
+    const rescuing = this.adaptive && this.pilots.some(p => p.down || p.rescueMs > 0);
+    const attackers = this.adaptive && !rescuing ? this.pilots.filter(p => p.arcFiring && p.arcCharge.level === 0)
+      .map(p => ({ x: p.player.x, y: p.player.y, power: adaptiveFireProfile(p.model).damagePerMs })) : [];
     this.enemies.children.each((child) => {
       const enemy = child as Phaser.Physics.Arcade.Sprite;
       if (!enemy.active) return true;
+      if (!enemy.getData('seenInBattle') && enemy !== this.boss) {
+        if (!this.enemyArrivalsOpen() && !enemy.getData('commandTarget') && !enemy.getData('midboss')) {
+          this.removeEscapedEnemy(enemy);
+          return true;
+        }
+        if (this.visibleEnemy(enemy)) enemy.setData('seenInBattle', true);
+      }
       if (enemy.getData('combatReady') === false) {
         this.updateDepthArrival(enemy, delta);
         return true;
+      }
+      if (this.adaptive) {
+        const target = enemy.getData('adaptiveTarget') as AdaptiveTarget | undefined;
+        if (target && rescuing) enemy.setData('adaptiveTarget', undefined);
+        else if (target && enemy.y >= 0 && enemy.x >= 0 && enemy.x <= WORLD_WIDTH && enemy.alpha >= .5) {
+          const inLane = attackers.filter(p => p.y > enemy.y && Math.abs(p.x - enemy.x) <= enemy.displayWidth / 2 + 55);
+          this.adaptive.observe(target, delta, inLane.reduce((sum, p) => sum + p.power, 0));
+        }
       }
       const body = enemy.body as Phaser.Physics.Arcade.Body;
       const priorChronoScale = (enemy.getData('chronoScale') as number | undefined) ?? 1;
@@ -1918,7 +2034,8 @@ export class BattleScene extends Phaser.Scene {
       if (this.dimensional) {
         // View-only bank state: never reset movement origins, velocity or hit zones.
         const lateral = visualLateralSpeed(enemy.getData('visualLastX') as number | undefined, enemy.x, delta, body.velocity.x);
-        const target = Phaser.Math.Clamp(-lateral * .14, -36, 42);
+        const target = kind === 'razorwing' && enemy.getData('state') === 'diveWarning'
+          ? (enemy.getData('targetX') < enemy.x ? 38 : -34) : Phaser.Math.Clamp(-lateral * .14, -36, 42);
         // The Crown's separate guns use the neutral hull's projected mounts.
         const bank = EXPANSION_BOSSES.includes(kind) ? 0 : easeBank((enemy.getData('visualBank') as number | undefined) ?? 0, target, delta);
         enemy.setData('visualBank', bank).setFrame(bankFrame(bank));
@@ -1944,6 +2061,20 @@ export class BattleScene extends Phaser.Scene {
     const carrierAura = enemy.getData('carrierAura') as Phaser.GameObjects.Arc | undefined;
     if (carrierAura?.active) carrierAura.setPosition(enemy.x, enemy.y).setRotation(this.combatNow * 0.001);
     this.syncEnemyHitZones(enemy);
+    const lights = enemy.getData('mountLights') as Phaser.GameObjects.Graphics | undefined;
+    if (lights) {
+      lights.clear();
+      const zones = enemy.getData('hitZones') as Phaser.GameObjects.Zone[];
+      for (const zone of zones) {
+        if (!zone.active || zone.getData('role') !== 'weakpoint') continue;
+        const warden = enemy.getData('kind') === 'warden';
+        const color = warden ? 0xaadfff : 0xffab62;
+        const radius = Math.min(10, zone.width*.32);
+        lights.fillStyle(color, .16).fillCircle(zone.x, zone.y, radius+3);
+        lights.lineStyle(2, color, .86).strokeCircle(zone.x, zone.y, radius);
+        lights.lineStyle(2, 0xfff4cf, .95).lineBetween(zone.x-radius/2,zone.y,zone.x+radius/2,zone.y);
+      }
+    }
     const modules = enemy.getData('modulesView') as Phaser.GameObjects.Graphics | Phaser.GameObjects.Container | undefined;
     if (modules?.active) {
       const warning = enemy.getData('state') === 'volleyWarning';
@@ -1985,38 +2116,59 @@ export class BattleScene extends Phaser.Scene {
   private updateStandardEnemy(enemy: Phaser.Physics.Arcade.Sprite, kind: EnemyKind, time: number): void {
     if (kind === 'bomber' && enemy.getData('state') === 'entry' && enemy.y > 135) this.beginStandardCombatMotion(enemy, time);
     if (kind === 'elite' && enemy.getData('state') === 'entry' && enemy.y > 125) this.beginStandardCombatMotion(enemy, time);
-    if (kind === 'scout') this.steerEnemy(enemy, 'sweep');
-    if (kind === 'bomber' && enemy.getData('state') === 'combat') {
-      this.steerEnemy(enemy, enemy.getData('commandTarget') ? 'command' : 'strike');
+    const scale = enemy.getData('speedScale') as number;
+    if (kind === 'scout') {
+      const origin = enemy.getData('originX') as number;
+      const side = origin === WORLD_WIDTH/2 ? (enemy.getData('phase') % 2 ? -1 : 1) : Math.sign(origin - WORLD_WIDTH/2);
+      const split = Phaser.Math.Clamp((enemy.y - 40) / 80, 0, 1);
+      enemy.setVelocity(side * (22 + 158*split) * scale, (144 - 28*split) * scale);
+    }
+    if (kind === 'interceptor') {
+      const side = enemy.getData('originX') < WORLD_WIDTH/2 ? 1 : -1;
+      const traveled = Math.abs(enemy.x - (enemy.getData('originX') as number));
+      const pastCenter = traveled > WORLD_WIDTH * .52;
+      enemy.setVelocity(side * (pastCenter ? 397 : 318) * scale, (pastCenter ? -96 : 107) * scale);
+      enemy.setAngle(side * (pastCenter ? -37 : -21));
+    }
+    if (kind === 'bomber') {
+      if (enemy.getData('state') === 'combat') this.updateBombingLane(enemy, time);
+      return;
     }
     if (kind === 'elite' && enemy.getData('state') === 'combat') {
       // Required command targets must remain available until defeated.
       this.steerEnemy(enemy, enemy.getData('commandTarget') ? 'command' : 'strike');
-    }
-    if (enemy.getData('openingFirstSalvoPending')) {
-      // Entry travel is not part of the warning clock. The first volley is
-      // readable even if the random fire timer elapsed while flying onscreen.
-      if (enemy.getData('state') !== 'combat') return;
-      let salvoAt = enemy.getData('openingFirstSalvoAt') as number | undefined;
-      if (salvoAt === undefined) {
-        salvoAt = time + COASTAL_FIRST_SALVO_WARNING_MS;
-        const warning = this.add.circle(enemy.x, enemy.y + 24, 24, 0xffb640, 0.12)
-          .setDepth(5).setStrokeStyle(3, 0xffcf68, 0.95);
-        enemy.setData('telegraph', warning).setData('openingFirstSalvoAt', salvoAt)
-          .setData('nextFire', salvoAt);
-        this.transientViews.add(warning);
-      }
-      const warning = enemy.getData('telegraph') as Phaser.GameObjects.Arc | undefined;
-      warning?.setPosition(enemy.x, enemy.y + 24).setAlpha(0.6 + 0.4 * Math.sin((salvoAt - time) * 0.008) ** 2);
-      if (time < salvoAt) return;
-      this.destroyEnemyView(enemy, 'telegraph');
-      enemy.setData('openingFirstSalvoPending', false);
     }
     if (enemy.y > 45 && enemy.y < 470 && time >= (enemy.getData('nextFire') as number)) {
       this.enemyFire(enemy, kind);
       const base = ENEMIES[kind].fireMs / (DIFFICULTY[this.model.difficulty].enemyFireRate * (enemy.getData('fireScale') as number));
       enemy.setData('nextFire', time + base * Phaser.Math.FloatBetween(0.82, 1.24));
     }
+  }
+
+  private updateBombingLane(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
+    const opened = enemy.getData('podOpen') === true;
+    if (opened) {
+      enemy.setVelocity(0,0);
+      if (time < enemy.getData('bombAt')) return;
+      this.destroyEnemyView(enemy, 'telegraph');
+      const lane = enemy.getData('bombLane') as number;
+      for (const offset of [-14,0,14]) this.spawnEnemyBullet(lane+offset,enemy.y+30,Math.PI/2,true);
+      enemy.setData('podOpen',false).setData('nextFire', time+1900/(enemy.getData('fireScale') as number));
+      this.emitSound('enemy-fire');
+      return;
+    }
+    this.steerEnemy(enemy, enemy.getData('commandTarget') ? 'command' : 'strike');
+    if (time < enemy.getData('nextFire') || enemy.y < 60) return;
+    const lane = enemy.x + enemy.displayWidth*.24;
+    const warning = this.add.graphics().setDepth(2.5);
+    warning.fillStyle(0xedac62,.047).fillRect(lane-20,enemy.y+22,40,WORLD_HEIGHT);
+    warning.lineStyle(1.5,0xffb86a,.57);
+    for (let y=enemy.y+35;y<WORLD_HEIGHT;y+=32) {
+      warning.lineBetween(lane-17,y,lane-17,y+12).lineBetween(lane+17,y,lane+17,y+12);
+    }
+    this.transientViews.add(warning);
+    enemy.setVelocity(0,0).setData('podOpen',true).setData('telegraph',warning)
+      .setData('bombLane',lane).setData('bombAt',time + COASTAL_FIRST_SALVO_WARNING_MS + 750);
   }
 
   private beginStandardCombatMotion(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
@@ -2046,9 +2198,12 @@ export class BattleScene extends Phaser.Scene {
       this.steerEnemy(enemy, 'strike', true);
       if (time >= (enemy.getData('nextSpecial') as number)) {
         const targetX = aimPoint.x;
-        const lane = this.add.rectangle(targetX, WORLD_HEIGHT / 2, 72, WORLD_HEIGHT, 0xff3f56, 0.09)
-          .setDepth(2)
-          .setStrokeStyle(2, 0xff667c, 0.75);
+        const angle = Phaser.Math.Angle.Between(enemy.x,enemy.y,targetX,Math.max(enemy.y+100,aimPoint.y));
+        const lane = this.add.graphics().setDepth(2);
+        const endX = enemy.x+Math.cos(angle)*1200, endY = enemy.y+Math.sin(angle)*1200;
+        lane.lineStyle(24,0xff485f,.08).lineBetween(enemy.x,enemy.y,endX,endY);
+        lane.lineStyle(2,0xff778b,.8).lineBetween(enemy.x,enemy.y,endX,endY);
+        enemy.setVelocity(0,0).setData('diveAngle',angle);
         this.transientViews.add(lane);
         this.tweens.add({ targets: lane, alpha: { from: 0.35, to: 0.8 }, duration: 130, yoyo: true, repeat: 2 });
         enemy.setData('state', 'telegraph').setData('targetX', targetX).setData('specialAt', time + 650).setData('telegraph', lane);
@@ -2058,22 +2213,27 @@ export class BattleScene extends Phaser.Scene {
     }
     if (state === 'telegraph' && time >= (enemy.getData('specialAt') as number)) {
       this.destroyEnemyView(enemy, 'telegraph');
-      const targetX = enemy.getData('targetX') as number;
-      const speedScale = enemy.getData('speedScale') as number;
-      enemy.setData('state', 'dive').setVelocity(Phaser.Math.Clamp((targetX - enemy.x) * 2.2, -430, 430) * speedScale, 650 * speedScale);
-      enemy.setAngle(Phaser.Math.Clamp((targetX - enemy.x) * 0.06, -24, 24));
+      const angle = enemy.getData('diveAngle') as number;
+      const speed = 650 * (enemy.getData('speedScale') as number);
+      enemy.setData('state','dive').setVelocity(Math.cos(angle)*speed,Math.sin(angle)*speed).setRotation(angle-Math.PI/2);
     }
   }
 
   private updateSniper(enemy: Phaser.Physics.Arcade.Sprite, time: number): void {
-    const aimPoint = this.combatTarget(enemy);
     const state = enemy.getData('state') as string;
     if (state === 'entry' && enemy.y >= 120) {
       this.beginStandardCombatMotion(enemy, time);
       enemy.setData('state', 'hover').setData('nextFire', time + 1_300);
       return;
     }
-    if (state !== 'entry') this.steerEnemy(enemy, 'artillery', state !== 'hover');
+    if (state === 'relocate') {
+      const targetX = enemy.getData('relocateX') as number;
+      const dx = targetX-enemy.x;
+      if (Math.abs(dx) < 10) enemy.setVelocity(0,0).setData('state','hover').setData('nextFire',time+650);
+      else enemy.setVelocity(Phaser.Math.Clamp(dx*2.2,-270,270),0);
+      return;
+    }
+    if (state !== 'entry') enemy.setVelocity(0,0);
     if (state === 'hover') {
       if (time >= (enemy.getData('nextFire') as number)) {
         const aim = this.add.graphics().setDepth(4);
@@ -2084,6 +2244,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (state === 'tracking') {
+      const aimPoint = this.combatTarget(enemy, true);
       const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, aimPoint.x, aimPoint.y);
       enemy.setData('aimAngle', angle);
       const aim = enemy.getData('telegraph') as Phaser.GameObjects.Graphics;
@@ -2107,7 +2268,7 @@ export class BattleScene extends Phaser.Scene {
       }
       if (time >= (enemy.getData('lockedUntil') as number)) {
         this.fireSniperBeam(enemy, angle);
-        enemy.setData('state', 'hover').setData('nextFire', time + ENEMIES.sniper.fireMs / (enemy.getData('fireScale') as number));
+        enemy.setData('state', 'relocate').setData('relocateX', WORLD_WIDTH * (enemy.x >= WORLD_WIDTH/2 ? .29 : .71));
       }
     }
   }
@@ -2324,25 +2485,27 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private updateWarden(warden: Phaser.Physics.Arcade.Sprite, time: number): void {
-    const aimPoint = this.combatTarget(warden);
     if (warden.getData('state') === 'entry' && warden.y < 125) {
       warden.setVelocityY(50);
       return;
     }
     if (warden.getData('state') === 'entry') this.beginStandardCombatMotion(warden, time);
-    const aliveMs = time - (warden.getData('motionStartedAt') as number);
     this.steerEnemy(warden, 'command');
     const healthRatio = (warden.getData('health') as number) / (warden.getData('maxHealth') as number);
     this.model.setBoss('WARDEN', healthRatio);
     if (time < (warden.getData('nextFire') as number)) return;
-    const attack = warden.getData('attackIndex') as number;
-    if (attack % 2 === 0) {
-      const aim = Phaser.Math.Angle.Between(warden.x, warden.y, aimPoint.x, aimPoint.y);
-      for (let index = -2; index <= 2; index += 1) this.spawnEnemyBullet(warden.x, warden.y + 38, aim + index * 0.16, index === 0);
-    } else {
-      const count = healthRatio < 0.5 ? 14 : 10;
-      for (let index = 0; index < count; index += 1) this.spawnEnemyBullet(warden.x, warden.y + 20, (Math.PI * 2 * index) / count + aliveMs * 0.00035, index % 4 === 0);
+    const attack = (warden.getData('attackIndex') as number | undefined) ?? 0;
+    const emitters = warden.getData('fieldEmitters') as number[];
+    const mounts = warden.getData('hitZones') as Phaser.GameObjects.Zone[];
+    for (const side of [0,1]) {
+      if (emitters[side] <= 0) continue;
+      const sign = side === 0 ? 1 : -1;
+      const fan = attack % 2 ? [.19,.35,.54,.76] : [.12,.28,.46];
+      for (const spread of fan) this.spawnEnemyBullet(mounts[side].x, mounts[side].y,
+        Math.PI/2 + sign*spread, spread === fan[0]);
     }
+    // The spine still fires straight ahead after both lateral fields fail.
+    this.spawnEnemyBullet(warden.x, warden.y+38, Math.PI/2, true);
     warden.setData('attackIndex', attack + 1);
     warden.setData('nextFire', time + ENEMIES.warden.fireMs * (healthRatio < 0.5 ? 0.78 : 1) / (DIFFICULTY[this.model.difficulty].enemyFireRate * (warden.getData('fireScale') as number)));
     this.emitSound('enemy-fire');
@@ -2355,6 +2518,12 @@ export class BattleScene extends Phaser.Scene {
     this.model.setBoss('RAZORWING ACE', healthRatio);
     if (state === 'entry') {
       enemy.setVelocity(0, 0).setData('state', 'hover').setData('nextFire', time + 650);
+      return;
+    }
+    if (state === 'vent') {
+      enemy.setVelocity(0,-24);
+      enemy.angle = Phaser.Math.Linear(enemy.angle, 0, .1);
+      if (time >= enemy.getData('ventUntil')) enemy.setData('state','recover');
       return;
     }
     if (state === 'recover') {
@@ -2373,23 +2542,25 @@ export class BattleScene extends Phaser.Scene {
       const body = enemy.body as Phaser.Physics.Arcade.Body;
       const targetX = enemy.getData('targetX') as number;
       const velocity = steerVelocity({ x: enemy.x, y: enemy.y, vx: body.velocity.x, vy: body.velocity.y },
-        targetX, 600, this.enemyMotionDelta, 460, 800);
+        targetX, enemy.getData('targetY')+110, this.enemyMotionDelta, 590, 1450);
       enemy.setVelocity(velocity.vx, velocity.vy);
-      if (time >= (enemy.getData('diveEndsAt') as number) || enemy.y >= 435) {
-        enemy.setData('state', 'recover').setData('recoveryX', Phaser.Math.Clamp(enemy.x, 220, WORLD_WIDTH - 220));
+      if (time >= (enemy.getData('diveEndsAt') as number) || enemy.y >= Math.min(WORLD_HEIGHT-62,(enemy.getData('targetY') as number)+45)) {
+        enemy.setData('state', enemy.getData('rammed') ? 'recover' : 'vent').setData('ventUntil', time+1450)
+          .setData('recoveryX', Phaser.Math.Clamp(enemy.x, 220, WORLD_WIDTH - 220));
       }
       return;
     }
     this.steerEnemy(enemy, 'ace', state !== 'hover');
     if (state === 'hover' && time >= (enemy.getData('nextFire') as number)) {
-      const attack = enemy.getData('attackIndex') as number;
-      const dive = healthRatio <= 0.5 && attack % 2 === 1;
+      const attack = (enemy.getData('attackIndex') as number | undefined) ?? 0;
+      const dive = attack % 2 === 0;
       const warning = this.add.graphics().setDepth(4);
       if (dive) {
         const targetX = aimPoint.x;
         warning.fillStyle(0xff557a, 0.08).fillRect(targetX - 42, 0, 84, WORLD_HEIGHT);
         warning.lineStyle(2, 0xff8aa3, 0.85).strokeRect(targetX - 42, 0, 84, WORLD_HEIGHT);
-        enemy.setData('targetX', targetX);
+        enemy.setData('targetX', targetX).setData('targetY',aimPoint.y).setData('rammed',false);
+        enemy.setAngle(targetX < enemy.x ? 24 : -24);
       } else {
         const aim = Phaser.Math.Angle.Between(enemy.x, enemy.y, aimPoint.x, aimPoint.y);
         warning.lineStyle(7, 0xff557a, 0.12).lineBetween(enemy.x, enemy.y, enemy.x + Math.cos(aim) * 1_300, enemy.y + Math.sin(aim) * 1_300);
@@ -2409,7 +2580,7 @@ export class BattleScene extends Phaser.Scene {
       if (state === 'diveWarning') {
         const targetX = enemy.getData('targetX') as number;
         const aim = Phaser.Math.Angle.Between(enemy.x, enemy.y, targetX, 560);
-        enemy.setRotation(aim - Math.PI / 2).setData('state', 'dive').setData('diveEndsAt', time + 1_250);
+        enemy.setRotation(aim - Math.PI / 2).setData('state', 'dive').setData('diveEndsAt', time + 1_650);
       } else {
         const aim = enemy.getData('aimAngle') as number;
         [-0.28, -0.14, 0, 0.14, 0.28].forEach((offset) => this.spawnEnemyBullet(enemy.x, enemy.y + 22, aim + offset, offset === 0));
@@ -2700,7 +2871,7 @@ export class BattleScene extends Phaser.Scene {
     this.emitSound('warning');
     event('aegis:music', 'boss');
     this.cameras.main.shake(550, 0.006);
-    this.boss = this.spawnEnemy(kind, WORLD_WIDTH / 2, -100, 0);
+    this.boss = this.spawnEnemy(kind, WORLD_WIDTH / 2, -100, 0, true);
     this.boss?.setData('attackIndex', 0);
     if (this.boss && initialHealthRatio < 1) {
       const maxHealth = this.boss.getData('maxHealth') as number;
@@ -2750,6 +2921,7 @@ export class BattleScene extends Phaser.Scene {
     const hitTargets = bullet.getData('hitTargets') as Set<number>;
     if (hitTargets.has(targetId)) return;
     hitTargets.add(targetId);
+    if (this.adaptive && bullet.getData('charge')) enemy.setData('adaptiveTarget', undefined);
     pilot.model.registerHit();
     const damage = bullet.getData('damage') as number;
     const missile = bullet.getData('missile') as boolean;
@@ -2757,7 +2929,8 @@ export class BattleScene extends Phaser.Scene {
     const impactX = zone.x;
     const impactY = zone.y;
     const pierce = bullet.getData('pierce') as number;
-    if (pierce > 0) bullet.setData('pierce', pierce - 1);
+    if (bullet.getData('lightPierce') && isLightArcTarget(enemy.getData('kind'))) bullet.setData('lightPierce', false);
+    else if (pierce > 0) bullet.setData('pierce', pierce - 1);
     else this.disableBody(bullet);
     const overdriveVisual = Boolean(bullet.getData('overdriveVisual'));
     const breakup = this.damageEnemy(enemy, damage, zone.getData('role') as EnemyHitZoneRole, zone.getData('zoneIndex') as number, overdriveVisual, undefined, pilot, contact);
@@ -2888,6 +3061,22 @@ export class BattleScene extends Phaser.Scene {
       }
       return false;
     }
+    if (role === 'weakpoint' && !areaDamage) {
+      if (kind === 'bomber' && enemy.getData('podOpen')) rawDamage *= 2;
+      if (kind === 'razorwing' && enemy.getData('state') === 'vent') rawDamage *= 2.6;
+      if (kind === 'warden' && zoneIndex >= 0 && zoneIndex < 2) {
+        const hp = enemy.getData('fieldEmitters') as number[];
+        if (hp[zoneIndex] <= 0) return false;
+        hp[zoneIndex] = Math.max(0,hp[zoneIndex]-rawDamage);
+        if (!hp[zoneIndex]) {
+          const mount = (enemy.getData('hitZones') as Phaser.GameObjects.Zone[])[zoneIndex];
+          mount.setData('reactorDestroyed', true).setActive(false);
+          (mount.body as Phaser.Physics.Arcade.Body).enable = false;
+          this.particles.setParticleTint(0x94ebff).explode(15,mount.x,mount.y);
+          this.emitSound('explode',mount.x);
+        }
+      }
+    }
     if (kind === 'artillery' && role === 'weakpoint' && enemy.getData('state') === 'barrageWarning') {
       this.clearArtilleryMarkers(enemy);
       enemy.setData('state', 'hover').setData('nextFire', this.combatNow + 1_600);
@@ -2938,6 +3127,11 @@ export class BattleScene extends Phaser.Scene {
     const shieldMitigation = this.model.difficulty === 'cadet' ? .55 : this.model.difficulty === 'pilot' ? .4 : .3;
     const damage = rawDamage * (protectedByCarrier ? shieldMitigation : 1) * (bulwarkArmor ? 0.45 : 1);
     const health = (enemy.getData('health') as number) - damage;
+    if (this.adaptive) {
+      const sample = enemy.getData('adaptiveTarget') as AdaptiveTarget | undefined;
+      if (sample && (areaDamage || protectedByCarrier || this.pilots.some(p => p.down))) enemy.setData('adaptiveTarget', undefined);
+      else if (sample && !sample.remainingAfterContact && health > 0) sample.remainingAfterContact = health;
+    }
     enemy.setData('health', health);
     // A filled tint hides Seraph's materials under sustained multi-weapon fire.
     // Multiplicative tint keeps its armor readable even between rapid impacts.
@@ -2978,6 +3172,8 @@ export class BattleScene extends Phaser.Scene {
 
   private destroyEnemy(enemy: Phaser.Physics.Arcade.Sprite, pilot = this.lead, impact?: { x: number; y: number }): boolean {
     if (!enemy.active) return false;
+    const sample = this.adaptive && enemy.getData('adaptiveTarget') as AdaptiveTarget | undefined;
+    if (sample) this.adaptive!.finish(sample);
     const kind = enemy.getData('kind') as EnemyKind;
     const commandTarget = Boolean(enemy.getData('commandTarget'));
     const carrierIndex = enemy.getData('carrierIndex') as number | undefined;
@@ -2991,9 +3187,19 @@ export class BattleScene extends Phaser.Scene {
     this.destroyEnemyView(enemy, 'arrivalRing');
     this.destroyEnemyView(enemy, 'carrierAura');
     this.destroyEnemyView(enemy, 'analyzer');
+    this.destroyEnemyView(enemy, 'mountLights');
     const playSecondary = (cue: 'rack-ignition' | 'field-collapse', at: number) => this.emitSound(cue, at);
     const contact = impact ?? pilot.player;
-    const breakup = this.dimensional && (isBreakupShip(kind)
+    let formationCut = false;
+    const paint = enemy.getData('squadronPaint');
+    if (paint && isCommonCraft(kind)) {
+      const hit = localImpact(enemy, contact);
+      const choice = selectBreakup(kind, hit.x * 2 / enemy.width, hit.y * 2 / enemy.height,
+        this.lastBreakups.get(kind), breakupSample(this.model.campaignSeed, enemy.getData('entityId')));
+      this.lastBreakups.set(kind, choice);
+      if (choice) formationCut = playFormationCut(this, kind, enemy, paint, choice, hit.x < 0 ? -1 : 1, this.transientViews, playSecondary);
+    }
+    const breakup = formationCut || this.dimensional && (isBreakupShip(kind)
       ? playShipBreakup(this, kind, enemy, contact, this.transientViews, playSecondary)
       : isWreckShip(kind) && playFleetWreck(this, kind, enemy, contact, this.transientViews, playSecondary) > 0);
     this.destroyEnemyView(enemy, 'modulesView');
@@ -3320,8 +3526,8 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     if (result === 'shield' || result === 'reserve') {
-      pilot.playerShield?.hit(this.combatNow);
-      this.shieldPulse(0x35e8ff, 1, pilot);
+      const direction = impact ? impactSide(impact.x - pilot.player.x, impact.y - pilot.player.y, pilot.player.rotation) : -Math.PI/2;
+      pilot.playerShield?.hit(this.combatNow, direction, previousShield > 0 && pilot.model.shield === 0);
       this.emitSound('shield-hit');
       if (pilot.model.modifiers.repulsorShield) this.clearEnemyBullets(pilot.player.x, pilot.player.y, 130);
       if (result === 'reserve') this.announce('AEGIS RESERVE // SHIELD RESTORED');
@@ -3363,6 +3569,9 @@ export class BattleScene extends Phaser.Scene {
       pod.once('destroy', () => { if (pilot.escapePod === pod) pilot.escapePod = undefined; });
     };
     this.tweens.killTweensOf(ship);
+    pilot.arcCharge.spend();
+    pilot.arcFiring = false;
+    pilot.playerShield?.reset();
     const wreckMs = this.dimensional ? playFleetWreck(this, 'player', ship, impact, this.transientViews,
       (cue, x) => this.emitSound(cue, x), wingmateFlying ? { ...beacon, takePod } : undefined) : 0;
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) this.cameras.main.shake(650, .02);
@@ -3660,6 +3869,7 @@ export class BattleScene extends Phaser.Scene {
     this.destroyEnemyView(enemy, 'arrivalRing');
     this.destroyEnemyView(enemy, 'carrierAura');
     this.destroyEnemyView(enemy, 'analyzer');
+    this.destroyEnemyView(enemy, 'mountLights');
     this.clearArtilleryMarkers(enemy);
     this.destroyEnemyHitZones(enemy);
     enemy.destroy();

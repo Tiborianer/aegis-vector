@@ -68,6 +68,7 @@ describe('CampaignModel', () => {
     expect(campaign.selectRoute(route === 'storm' ? 'salvage' : 'storm')).toBe(false);
     const reward = earlyRoute === 'storm' ? 'aegis-bastion' : 'arc-resonator';
     expect(campaign.snapshot().routeReward).toBe(reward);
+    expect(campaign.snapshot().lateRouteReward).toBeUndefined();
     expect(campaign.snapshot().credits).toBe(expectedCredits);
     for (const id of [route === 'storm' ? 'stormbreak' : 'graveyard', 'carrierSiege', 'dreadnought', 'lastLight']) {
       expect(campaign.currentMission().id).toBe(id);
@@ -76,6 +77,7 @@ describe('CampaignModel', () => {
       expect(next.earlyRoute).toBe(earlyRoute);
       expect(next.route).toBe(route);
       expect(next.routeReward).toBe(reward);
+      expect(next.lateRouteReward).toBe(route === 'storm' ? 'vector-vanes' : 'salvagers-license');
     }
     expect(campaign.snapshot().phase).toBe('victory');
     expect(expectedKills).toBe(7);
@@ -117,7 +119,7 @@ describe('CampaignModel', () => {
     for (const route of ['storm', 'salvage'] as const) {
       const original: CampaignSnapshot = { ...fundedCampaign(), version: 6, currentMissionId: route === 'storm' ? 'stormbreak' : 'graveyard', route };
       const migrated = new CampaignModel(original).snapshot();
-      expect(migrated.version).toBe(8);
+      expect(migrated.version).toBe(9);
       expect(migrated.currentMissionId).toBe(original.currentMissionId);
       expect(migrated.route).toBe(route);
       expect(migrated.earlyRoute).toBe('salvage');
@@ -145,7 +147,7 @@ describe('CampaignModel', () => {
     // Simulate the old on-disk representation while retaining the exact cursor.
     const oldCheckpoint = { ...campaign.exportSave(), version: 7 as const, earlyRoute: undefined, route: earlyRoute };
     const refreshed = new CampaignModel(JSON.parse(JSON.stringify(oldCheckpoint)) as CampaignSnapshot);
-    expect(refreshed.snapshot()).toMatchObject({ version: 8, phase: 'mission', earlyRoute, routeReward: reward, credits: 500, campaignSeed: 177 });
+    expect(refreshed.snapshot()).toMatchObject({ version: 9, phase: 'mission', earlyRoute, routeReward: reward, credits: 500, campaignSeed: 177 });
     expect(refreshed.snapshot().route).toBeUndefined();
     expect(refreshed.snapshot().activeWaypoint).toEqual(waypoint);
     const resume = refreshed.beginMission();
@@ -175,7 +177,7 @@ describe('CampaignModel', () => {
         ...fundedCampaign(), version: 7, currentMissionId: missionId, route, routeReward: reward,
       };
       const migrated = new CampaignModel(original);
-      expect(migrated.snapshot()).toMatchObject({ version: 8, currentMissionId: missionId, earlyRoute: route, route, routeReward: reward, credits: original.credits });
+      expect(migrated.snapshot()).toMatchObject({ version: 9, currentMissionId: missionId, earlyRoute: route, route, routeReward: reward, credits: original.credits });
       expect(migrated.selectRoute(route === 'storm' ? 'salvage' : 'storm')).toBe(false);
       expect(new CampaignModel(migrated.exportSave()).snapshot()).toEqual(migrated.snapshot());
     }
@@ -254,6 +256,64 @@ describe('CampaignModel', () => {
     }
   });
 
+  it.each(['storm', 'salvage'] as const)('migrates each recorded late %s clear and never awards it for choosing or failing', route => {
+    const missionId = route === 'storm' ? 'stormbreak' : 'graveyard';
+    const chapter = route === 'storm' ? 'stillwater-directive' : 'project-crown';
+    const reward = route === 'storm' ? 'vector-vanes' : 'salvagers-license';
+    const saved: CampaignSnapshot = { ...CampaignModel.fresh('pilot'), version: 8, phase: 'hangar', currentMissionId: missionId, earlyRoute: 'storm', route };
+    const preclear = new CampaignModel(saved);
+    expect(preclear.snapshot().lateRouteReward).toBeUndefined();
+    preclear.beginMission(); preclear.failMission();
+    expect(CampaignModel.restore(preclear.exportSave())?.lateRouteReward).toBeUndefined();
+    const report = { missionId, title: '', score: 1, kills: 1, creditsEarned: 0, damageTaken: 0, shotsFired: 1, shotsHit: 1, accuracy: 100 } as const;
+    for (const evidence of [
+      { phase: 'story' as const, pendingStoryChapter: chapter },
+      { currentMissionId: 'carrierSiege' as const, seenStoryChapters: [chapter] },
+      { currentMissionId: 'carrierSiege' as const, lastReport: report },
+    ]) {
+      const recovered = CampaignModel.restore({ ...saved, ...evidence })!;
+      expect(recovered.lateRouteReward).toBe(reward);
+      expect(CampaignModel.restore(recovered)?.lateRouteReward).toBe(reward);
+    }
+    const matchingOldClear = CampaignModel.restore({ ...saved, version: 6, currentMissionId: 'fortress', seenStoryChapters: ['warden-key'] })!;
+    expect(matchingOldClear.routeReward).toBe('arc-resonator');
+  });
+
+  it('applies the Salvager’s License on each subsequent sortie while retries keep the installed module', () => {
+    const pilot = new CampaignModel({ ...CampaignModel.fresh('pilot'), currentMissionId: 'carrierSiege', phase: 'hangar',
+      earlyRoute: 'storm', route: 'salvage', seenStoryChapters: ['aurora-key', 'project-crown'], credits: 15 });
+    expect(pilot.purchaseSortieModule('reserve-emp').reason).toBe('insufficient');
+    expect(pilot.purchaseSortieModule('armament-scanner').ok).toBe(true);
+    expect(pilot.snapshot().credits).toBe(0);
+    expect(pilot.purchaseSortieModule('reserve-emp').reason).toBe('equipped');
+    const battle = new GameModel();
+    battle.start(pilot.beginMission()); pilot.failMission();
+    const resumed = new CampaignModel(pilot.exportSave());
+    expect(resumed.beginMission().sortieModule).toBe('armament-scanner');
+    battle.complete(); resumed.completeMission(battle.snapshot()); resumed.completeStoryChapter();
+    const credits = resumed.snapshot().credits;
+    expect(resumed.purchaseSortieModule('reserve-emp').ok).toBe(true);
+    expect(resumed.snapshot().credits).toBe(credits - 20);
+  });
+
+  it('replays a legacy missing commander before the cutoff while preserving a cleared quiet-window checkpoint', () => {
+    const battle = new GameModel(), flight = new CampaignModel({ ...CampaignModel.fresh('pilot'), currentMissionId: 'fortress', phase: 'hangar' });
+    battle.start(flight.beginMission());
+    battle.tick(battle.stageDurationMs - 2500);
+    battle.registerKill(240, 8);
+    for (const commandSpawned of [false, true]) {
+      const point = waypointFor(battle, 2);
+      point.encounter.commandSpawned = commandSpawned;
+      const restored = new CampaignModel({ ...flight.snapshot(), activeWaypoint: point });
+      const replay = new GameModel();
+      replay.start(restored.beginMission());
+      expect(replay.stageElapsedMs).toBe(battle.stageDurationMs - (commandSpawned ? 2500 : 25000));
+      expect(restored.snapshot().activeWaypoint?.capturedAtMs).toBe(replay.stageElapsedMs);
+      expect(replay.score).toBe(240);
+      expect(replay.creditsEarned).toBe(8);
+    }
+  });
+
   it('enforces prerequisites and exclusive sibling choices', () => {
     const campaign = new CampaignModel(fundedCampaign());
     expect(campaign.purchase('split-capacitors')).toEqual({ ok: false, reason: 'locked' });
@@ -314,7 +374,7 @@ describe('CampaignModel', () => {
   it('migrates version one campaigns without changing their carried equipment', () => {
     const legacy = fundedCampaign();
     const campaign = new CampaignModel(legacy);
-    expect(campaign.snapshot().version).toBe(8);
+    expect(campaign.snapshot().version).toBe(9);
     expect(campaign.snapshot().weapons.ion).toBe(0);
     expect(campaign.snapshot().campaignSeed).toBeTypeOf('number');
     expect(campaign.snapshot().weapons.spread).toBe(2);
@@ -525,7 +585,7 @@ describe('CampaignModel', () => {
     for (const version of [4, 5] as const) {
       const original = { ...fundedCampaign(), version, currentMissionId: 'dreadnought' as const, phase: 'victory' as const, seenStoryChapters: ['last-vector' as const] };
       const migrated = new CampaignModel(original).snapshot();
-      expect(migrated.version).toBe(8);
+      expect(migrated.version).toBe(9);
       expect(migrated.phase).toBe('victory');
       expect(migrated.credits).toBe(original.credits);
       expect(migrated.weapons).toEqual(original.weapons);
@@ -546,7 +606,7 @@ describe('CampaignModel', () => {
           expect(campaign.saveWaypoint(waypointFor(battle, id))).toBe(true);
           const exported = campaign.exportSave();
           campaign = new CampaignModel({ ...JSON.parse(JSON.stringify(exported)) as CampaignSnapshot, version });
-          expect(campaign.snapshot().version).toBe(8);
+          expect(campaign.snapshot().version).toBe(9);
           expect(campaign.snapshot().phase).toBe('mission');
           const retry = new GameModel();
           retry.start(campaign.beginMission());

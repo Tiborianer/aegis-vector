@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CLOUD_KEY, cloudLayerVisibility, forwardSurfaceFrame, SURFACE_SEAM_BLEND_FRACTION, surfaceKey, wrappedPlaneY } from '../../game/assets/visuals';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../game/content/balance';
-import { FORTRESS_PLATFORMS, STRUCTURE_CLEAR_CORRIDOR, STRUCTURE_OPACITY, STRUCTURE_TILE_HEIGHT, STRUCTURE_TILE_WIDTH, STRUCTURE_SPEED_PX_PER_SECOND, structuralGapFractionLowerBound, structuralPlaneEnabled } from '../../game/assets/structuralPlane';
+import { FORTRESS_PLATFORMS, STRUCTURE_CLEAR_CORRIDOR, STRUCTURE_OPACITY, STRUCTURE_TILE_HEIGHT, STRUCTURE_TILE_WIDTH, STRUCTURE_SPEED_PX_PER_SECOND, structuralGapFractionLowerBound, structuralPlaneEnabled, fortressDepth } from '../../game/assets/structuralPlane';
 import type { GraphicsQuality, MissionId } from '../../game/simulation/types';
 import { AsteroidFieldView } from './AsteroidFieldView';
 
@@ -91,10 +91,13 @@ class StructuralPlane {
   private offset = 0;
 
   constructor(scene: Phaser.Scene) {
-    const key = 'dimensional-fortress-maintenance-docks-v4';
+    const key = 'dimensional-fortress-edge-docks-v5';
     if (!scene.textures.exists(key)) {
       const view = scene.make.graphics({ x: 0, y: 0 });
-      for (const platform of FORTRESS_PLATFORMS) {
+      for (const platform of [FORTRESS_PLATFORMS[0],FORTRESS_PLATFORMS[3]]) {
+        for (const dilation of [8,16,26]) {
+          view.fillStyle(0x060e19, .075).fillPoints(platform.outline.map(({x,y}) => ({x:x+dilation,y:y+dilation*1.55})),true);
+        }
         view.fillStyle(0x020810, .70).fillPoints(platform.outline.map(({ x, y }) => ({ x: x + 10, y: y + 14 })), true);
         view.fillStyle(0x1c2831, 1).fillPoints(platform.outline, true);
         view.lineStyle(2, 0x71808a, .5).strokePoints(platform.outline, true, true);
@@ -168,6 +171,8 @@ export class DimensionalEnvironment {
   private nearVapor: SurfacePlane;
   private grade: Phaser.GameObjects.Rectangle;
   private structure: StructuralPlane;
+  private cloudShadow: SurfacePlane;
+  private showShadow = false;
   private asteroidField: AsteroidFieldView;
   private mission: MissionId = 'coastal';
   private drift = 0;
@@ -181,6 +186,7 @@ export class DimensionalEnvironment {
     this.nearVapor.update(550, 0);
     this.grade = scene.add.rectangle(WORLD_WIDTH/2,WORLD_HEIGHT/2,WORLD_WIDTH,WORLD_HEIGHT,0x020918,.18).setDepth(-11);
     this.structure = new StructuralPlane(scene);
+    this.cloudShadow = new SurfacePlane(scene, CLOUD_KEY, WORLD_WIDTH+540, -15, true).tint(0x071626).alpha(.25).visible(false);
     this.asteroidField = new AsteroidFieldView(scene, quality);
   }
 
@@ -189,6 +195,9 @@ export class DimensionalEnvironment {
     this.drift = 0;
     this.structure.reset();
     this.structure.visible(structuralPlaneEnabled(mission, window.location.search));
+    this.showShadow = mission === 'fortress' && fortressDepth(window.location.search) === 'cloud';
+    this.cloudShadow.setTexture(CLOUD_KEY);
+    this.cloudShadow.visible(this.showShadow);
     this.asteroidField.setVisible(mission === 'lastLight');
     this.surface.visible(mission !== 'lastLight');
     this.atmosphere.visible(mission !== 'lastLight');
@@ -203,8 +212,8 @@ export class DimensionalEnvironment {
     }
   }
 
-  update(deltaMs: number, playerX: number, projectileDensity: number): void {
-    const dt = Math.min(50, Math.max(0, deltaMs));
+  update(deltaMs: number, playerX: number, projectileDensity: number, speed = 1): void {
+    const dt = Math.min(50, Math.max(0, deltaMs)) * speed;
     this.drift += dt;
     const follow = (playerX-WORLD_WIDTH/2)/WORLD_WIDTH;
     this.pointerDrift += (follow-this.pointerDrift) * (1-Math.exp(-dt/700));
@@ -213,6 +222,7 @@ export class DimensionalEnvironment {
     this.atmosphere.update(dt*.047, -this.pointerDrift*22 + Math.sin(this.drift*.00008)*18);
     this.nearVapor.update(dt*.079, -this.pointerDrift*38 + Math.sin(this.drift*.00011)*35);
     this.structure.update(dt, -this.pointerDrift*28);
+    if (this.showShadow) this.cloudShadow.update(dt*.036,-this.pointerDrift*13+70);
     this.asteroidField.update(dt, this.pointerDrift, projectileDensity);
     const cloudVisibility = cloudLayerVisibility(this.mission, this.quality, projectileDensity);
     this.atmosphere.alpha(cloudVisibility.atmosphere);
@@ -221,10 +231,10 @@ export class DimensionalEnvironment {
 
   destroy(): void {
     this.surface.destroy(); this.atmosphere.destroy(); this.nearVapor.destroy(); this.grade.destroy();
-    this.structure.destroy(); this.asteroidField.destroy();
+    this.structure.destroy(); this.cloudShadow.destroy(); this.asteroidField.destroy();
   }
 
   snapshot(): object {
-    return { mission: this.mission, surface: this.surface.snapshot(), atmosphere: this.atmosphere.snapshot(), foreground: this.nearVapor.snapshot(), structure: this.structure.snapshot(), asteroidField: this.asteroidField.snapshot() };
+    return { mission: this.mission, surface: this.surface.snapshot(), atmosphere: this.atmosphere.snapshot(), foreground: this.nearVapor.snapshot(), structure: this.structure.snapshot(), cloudShadow: this.cloudShadow.snapshot(), asteroidField: this.asteroidField.snapshot() };
   }
 }

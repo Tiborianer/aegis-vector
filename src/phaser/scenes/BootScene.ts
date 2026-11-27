@@ -3,6 +3,7 @@ import { generateTextures } from '../view/generateTextures';
 import { WRECK_SHEETS, wreckAsset, wreckKey } from '../view/fleetWreck';
 import { BREAKUP_SHIPS, breakupAsset, breakupKey } from '../view/shipBreakup';
 import { publicAssetUrl } from '../../game/assets/publicAsset';
+import { COMMON_CRAFT, PAINT, FORMATION_PARTS, KESTREL_EQUIPMENT, paintedHull, paintedWreck, ROADMAP_ART } from '../../game/assets/fleetArt';
 import { SHIP_SIZES, shipFrameSize, shipKey, surfaceKey, ENVIRONMENT_IDS, CLOUD_KEY, environmentAsset } from '../../game/assets/visuals';
 
 export class BootScene extends Phaser.Scene {
@@ -11,6 +12,17 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
+    this.load.spritesheet(KESTREL_EQUIPMENT, publicAssetUrl(ROADMAP_ART + 'kestrel-equipment.webp'), { frameWidth: 88, frameHeight: 104 });
+    this.load.atlas(FORMATION_PARTS, publicAssetUrl(ROADMAP_ART + 'formation-parts.webp'), publicAssetUrl(ROADMAP_ART + 'formation-parts.json'));
+    for (const kind of COMMON_CRAFT) {
+      const [frameWidth, frameHeight] = SHIP_SIZES[kind];
+      for (const paint of PAINT) {
+        const base = publicAssetUrl(ROADMAP_ART + kind + '-' + paint);
+        this.load.spritesheet(paintedHull(kind, paint), base + '.webp', { frameWidth, frameHeight });
+        this.load.atlas(paintedWreck(kind, paint), base + '-original.webp',
+          publicAssetUrl(kind === 'charger' ? ROADMAP_ART + 'charger-original.json' : breakupAsset(kind) + '.json'));
+      }
+    }
     for (const sheet of WRECK_SHEETS) {
       const file = wreckAsset(sheet);
       this.load.atlas(wreckKey(sheet), publicAssetUrl(file + '.webp'), publicAssetUrl(file + '.json'));
